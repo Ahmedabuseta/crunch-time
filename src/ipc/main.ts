@@ -1,6 +1,6 @@
 import { ipcMain } from 'electron'
 import { getDb } from '../db/client'
-import { eq, and, desc, sql, gte, lte, like } from 'drizzle-orm'
+import { eq, and, desc, sql, gte, lte } from 'drizzle-orm'
 import * as schema from '../db/schema'
 import { randomUUID } from 'crypto'
 import { hashPin, verifyPin } from '../lib/auth'
@@ -42,9 +42,10 @@ export function registerIpcHandlers() {
     return { ok: true }
   })
 
-  ipcMain.handle('category:reorder', (_e, ids: string[]) => {
-    const stmt = db.update(categories).set({ sortOrder: sql`?` }).where(eq(categories.id, sql`?`))
-    ids.forEach((id, i) => stmt.run(i, id))
+  ipcMain.handle('category:reorder', (_e: any, ids: string[]) => {
+    ids.forEach((id, i) => {
+      db.update(categories).set({ sortOrder: i }).where(eq(categories.id, id)).run()
+    })
     return { ok: true }
   })
 
@@ -159,18 +160,20 @@ export function registerIpcHandlers() {
     return { ok: true }
   })
 
-  ipcMain.handle('modifier:listByProduct', (_e, productId: string) => {
+  ipcMain.handle('modifier:listByProduct', (_e: any, productId: string) => {
     const groups = db.select({
       groupId: modifierGroups.id, groupName: modifierGroups.name, groupType: modifierGroups.type,
     }).from(modifierGroups)
       .innerJoin(productModifierGroups, eq(modifierGroups.id, productModifierGroups.modifierGroupId))
       .where(eq(productModifierGroups.productId, productId))
+      .all()
 
-    return groups.map(g => ({
+    return groups.map((g: any) => ({
       ...g,
       modifiers: db.select().from(modifiers)
         .where(and(eq(modifiers.active, true), eq(modifiers.modifierGroupId, g.groupId)))
-        .orderBy(modifiers.sortOrder),
+        .orderBy(modifiers.sortOrder)
+        .all(),
     }))
   })
 
@@ -620,7 +623,6 @@ export function registerIpcHandlers() {
     const user = db.select().from(users).where(eq(users.id, shift.userId)).get()
     const shiftOrders = db.select().from(orders)
       .where(and(eq(orders.shiftId, shiftId), sql`${orders.status} != 'CANCELLED'`)).all()
-    const movements = db.select().from(cashMovements).where(eq(cashMovements.shiftId, shiftId)).all()
     return {
       shiftId,
       userName: user?.name || 'unknown',
