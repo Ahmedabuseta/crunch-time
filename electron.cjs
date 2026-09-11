@@ -10,8 +10,9 @@ function createWindow() {
     minWidth: 1024,
     minHeight: 700,
     webPreferences: {
-      nodeIntegration: false,
+      preload: path.join(__dirname, 'src', 'ipc', 'preload.ts'),
       contextIsolation: true,
+      nodeIntegration: false,
     },
     backgroundColor: '#0a0a0a',
     autoHideMenuBar: true,
@@ -21,7 +22,16 @@ function createWindow() {
   win.webContents.openDevTools()
 }
 
-app.whenReady().then(createWindow)
+app.whenReady().then(() => {
+  // Register IPC handlers (compiled TS will be used in production)
+  try {
+    const { registerIpcHandlers } = require('./src/ipc/main')
+    registerIpcHandlers()
+  } catch (e) {
+    console.log('IPC handlers will be registered from compiled TS')
+  }
+  createWindow()
+})
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
