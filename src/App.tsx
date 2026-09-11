@@ -1,0 +1,77 @@
+import { useState } from 'react'
+import { ProductGrid } from '@/components/ProductGrid'
+import { Cart } from '@/components/Cart'
+import { CategorySidebar } from '@/components/CategorySidebar'
+import { OrderHistory } from '@/components/OrderHistory'
+import { Reports } from '@/components/Reports'
+import { Clock, LayoutGrid, BarChart3 } from 'lucide-react'
+import { cn } from '@/lib/utils'
+
+type View = 'menu' | 'history' | 'reports'
+
+function App() {
+  const [view, setView] = useState<View>('menu')
+  const [category, setCategory] = useState<string | null>(null)
+
+  const tabs: { id: View; label: string; icon: typeof LayoutGrid }[] = [
+    { id: 'menu', label: 'القائمة', icon: LayoutGrid },
+    { id: 'history', label: 'الطلبات', icon: Clock },
+    { id: 'reports', label: 'التقارير', icon: BarChart3 },
+  ]
+
+  return (
+    <div className="flex h-screen w-screen bg-background" dir="rtl">
+      {/* Categories Sidebar */}
+      <CategorySidebar selected={category} onSelect={(id) => { setCategory(id); setView('menu'); }} />
+
+      {/* Center: Main Content */}
+      <div className="flex flex-col flex-1 min-w-0 border-l">
+        {/* Top Bar */}
+        <div className="flex items-center justify-between px-6 py-4">
+          <div className="flex items-center gap-3">
+            <div className="flex items-center justify-center w-10 h-10 rounded-2xl bg-primary/10">
+              <span className="text-xl">🍔</span>
+            </div>
+            <div>
+              <h1 className="text-lg font-black tracking-tight">فاست فود</h1>
+              <p className="text-[11px] text-muted-foreground font-medium">نقطة البيع</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-1 bg-secondary/60 rounded-full p-1">
+            {tabs.map(({ id, label, icon: Icon }) => (
+              <button
+                key={id}
+                onClick={() => setView(id)}
+                className={cn(
+                  "flex items-center gap-1.5 px-4 py-1.5 rounded-full text-sm font-bold transition-all cursor-pointer",
+                  view === id
+                    ? "bg-primary text-primary-foreground shadow-md shadow-primary/20"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                <Icon className="h-4 w-4" />
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="h-px bg-border" />
+
+        {/* Main Area */}
+        <div className="flex-1 overflow-hidden">
+          {view === 'menu' && <ProductGrid category={category} />}
+          {view === 'history' && <OrderHistory />}
+          {view === 'reports' && <Reports />}
+        </div>
+      </div>
+
+      {/* Cart Panel */}
+      <div className="w-[360px] shrink-0 bg-card">
+        <Cart />
+      </div>
+    </div>
+  )
+}
+
+export default App
