@@ -1,4 +1,7 @@
-import { rendererApi } from './db/renderer-db'
+import { initRendererDb, rendererApi } from './db/renderer-db'
 
-// Expose renderer DB as window.api (same shape as IPC preload)
-;(window as any).api = rendererApi
+// Initialize SQLite (async — WASM loading), then expose as window.api
+export async function bootstrap() {
+  await initRendererDb()
+  ;(window as any).api = rendererApi
+}
