@@ -1,15 +1,12 @@
 import Database from 'better-sqlite3'
 import { drizzle } from 'drizzle-orm/better-sqlite3'
-import { eq, and, sql, desc, gte, lte } from 'drizzle-orm'
-import { randomUUID } from 'crypto'
 import * as schema from '../db/schema'
 
 const {
-  categories, products, addons, productAddons,
+  categories, products, addons,
   modifierGroups, modifiers, productModifierGroups,
-  orders, orderItems, payments,
-  users, shifts, cashMovements,
-  ingredients, recipes, inventoryTransactions,
+  users,
+  ingredients, recipes,
 } = schema
 
 export function createTestDb() {
@@ -42,7 +39,6 @@ export function createTestDb() {
 
 export function seedTestData(db: ReturnType<typeof drizzle>) {
   const now = new Date().toISOString()
-  const uuid = () => randomUUID()
 
   // Categories
   const cats = [

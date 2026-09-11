@@ -1,5 +1,6 @@
-import { useCartStore } from '@/store/cart'
-import { useOrdersStore } from '@/store/orders'
+import { useCartStore } from '@/services/cart/cart.store'
+import { useOrderStore } from '@/services/order/order.store'
+import { useInventoryStore } from '@/services/inventory/inventory.store'
 import { CartItem } from './CartItem'
 import { OrderTypeSelector } from './OrderTypeSelector'
 import { Button } from '@/components/ui/button'
@@ -16,16 +17,42 @@ export function Cart() {
   const tableNumber = useCartStore((s) => s.tableNumber)
   const deliveryAddress = useCartStore((s) => s.deliveryAddress)
   const deliveryPhone = useCartStore((s) => s.deliveryPhone)
-  const addOrder = useOrdersStore((s) => s.addOrder)
-
+  const createOrder = useOrderStore((s) => s.create)
+  const deductForOrder = useInventoryStore((s) => s.deductForOrder)
+  const fetchAlerts = useInventoryStore((s) => s.fetchAlerts)
+  const fetchOrders = useOrderStore((s) => s.fetch)
   const [submitted, setSubmitted] = useState(false)
 
   const tax = subtotal() * 0.14
   const deliveryFee = orderType === 'delivery' ? 25 : 0
   const total = subtotal() + tax + deliveryFee
 
-  const handleCheckout = () => {
-    addOrder(items, total, orderType, tableNumber, deliveryAddress, deliveryPhone)
+  const handleCheckout = async () => {
+    const orderItems = items.map((item) => ({
+      productId: item.product.id,
+      quantity: item.quantity,
+      unitPrice: item.product.price + item.modifiers.reduce((s, m) => s + m.priceAdjustment, 0),
+      modifiers: item.modifiers,
+      addons: item.addons.map((a) => a.id),
+    }))
+
+    const result = await createOrder({
+      orderType,
+      tableNumber,
+      deliveryAddress,
+      deliveryPhone,
+      subtotal: subtotal(),
+      tax,
+      deliveryFee,
+      total,
+      items: orderItems,
+    })
+
+    // Deduct inventory
+    await deductForOrder(result)
+    await fetchAlerts()
+    await fetchOrders()
+
     setSubmitted(true)
     setTimeout(() => {
       clearCart()
@@ -33,7 +60,6 @@ export function Cart() {
     }, 1200)
   }
 
-  // Success flash
   if (submitted) {
     return (
       <div className="flex flex-col items-center justify-center h-full gap-4 animate-scale-in">
@@ -48,7 +74,6 @@ export function Cart() {
 
   return (
     <div className="flex flex-col h-full">
-      {/* Header */}
       <div className="flex items-center justify-between px-5 pt-5 pb-3">
         <div className="flex items-center gap-2">
           <div className="w-8 h-8 rounded-xl bg-primary/10 flex items-center justify-center">
@@ -62,18 +87,12 @@ export function Cart() {
           )}
         </div>
         {items.length > 0 && (
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7 text-muted-foreground hover:text-destructive rounded-lg"
-            onClick={clearCart}
-          >
+          <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive rounded-lg" onClick={clearCart}>
             <Trash2 className="h-3.5 w-3.5" />
           </Button>
         )}
       </div>
 
-      {/* Order Type */}
       <div className="px-4 pb-3">
         <OrderTypeSelector />
       </div>
@@ -98,7 +117,6 @@ export function Cart() {
             ))}
           </ScrollArea>
 
-          {/* Totals */}
           <div className="px-5 py-4 space-y-2 bg-secondary/20 rounded-t-3xl">
             <div className="flex justify-between text-xs">
               <span className="text-muted-foreground">المجموع الفرعي</span>
@@ -122,11 +140,7 @@ export function Cart() {
                 <span className="text-xs text-muted-foreground font-medium">ج.م</span>
               </div>
             </div>
-            <Button
-              className="w-full rounded-2xl h-12 text-base font-black shadow-lg shadow-primary/25 mt-1 transition-transform active:scale-[0.98]"
-              size="lg"
-              onClick={handleCheckout}
-            >
+            <Button className="w-full rounded-2xl h-12 text-base font-black shadow-lg shadow-primary/25 mt-1 transition-transform active:scale-[0.98]" size="lg" onClick={handleCheckout}>
               تأكيد الطلب
             </Button>
           </div>

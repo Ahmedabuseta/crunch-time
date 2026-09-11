@@ -11,6 +11,14 @@ export default defineConfig({
     },
   },
   base: './',
+  optimizeDeps: {
+    exclude: ['better-sqlite3'],
+  },
+  build: {
+    rollupOptions: {
+      external: ['better-sqlite3'],
+    },
+  },
   test: {
     globals: true,
     environment: 'node',

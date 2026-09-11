@@ -1,5 +1,5 @@
-import type { Product } from '@/data/products'
-import { useCartStore } from '@/store/cart'
+import type { Product } from '@/services/product/product.types'
+import { useCartStore } from '@/services/cart/cart.store'
 import { cn } from '@/lib/utils'
 
 interface ProductCardProps {
@@ -22,23 +22,16 @@ export function ProductCard({ product, index }: ProductCardProps) {
         inCart && "border-primary/50 bg-primary/5 shadow-lg shadow-primary/15"
       )}
     >
-      {/* Quantity badge */}
       {inCart && (
         <span className="absolute top-2.5 left-2.5 flex h-7 min-w-7 items-center justify-center rounded-full bg-primary text-xs font-black text-primary-foreground px-2 animate-scale-in">
           {inCart.quantity}
         </span>
       )}
-
-      {/* Emoji */}
       <span className="text-5xl group-hover:scale-110 transition-transform duration-200">{product.emoji}</span>
-
-      {/* Name & Description */}
       <div className="text-center space-y-0.5">
         <p className="text-sm font-bold leading-tight">{product.name}</p>
         <p className="text-[11px] text-muted-foreground">{product.description}</p>
       </div>
-
-      {/* Price pill */}
       <span className="inline-flex items-center px-3.5 py-1.5 rounded-full bg-secondary text-sm font-black text-primary">
         {product.price} <span className="text-[10px] font-medium mr-1">ج.م</span>
       </span>

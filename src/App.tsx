@@ -1,4 +1,9 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { useCategoryStore } from '@/services/category/category.store'
+import { useProductStore } from '@/services/product/product.store'
+import { useAddonStore } from '@/services/addon/addon.store'
+import { useOrderStore } from '@/services/order/order.store'
+import { useInventoryStore } from '@/services/inventory/inventory.store'
 import { ProductGrid } from '@/components/ProductGrid'
 import { Cart } from '@/components/Cart'
 import { CategorySidebar } from '@/components/CategorySidebar'
@@ -13,6 +18,21 @@ function App() {
   const [view, setView] = useState<View>('menu')
   const [category, setCategory] = useState<string | null>(null)
 
+  // Load data on mount
+  const fetchCategories = useCategoryStore((s) => s.fetch)
+  const fetchProducts = useProductStore((s) => s.fetch)
+  const fetchAddons = useAddonStore((s) => s.fetch)
+  const fetchOrders = useOrderStore((s) => s.fetch)
+  const fetchAlerts = useInventoryStore((s) => s.fetchAlerts)
+
+  useEffect(() => {
+    fetchCategories()
+    fetchProducts()
+    fetchAddons()
+    fetchOrders()
+    fetchAlerts()
+  }, [])
+
   const tabs: { id: View; label: string; icon: typeof LayoutGrid }[] = [
     { id: 'menu', label: 'القائمة', icon: LayoutGrid },
     { id: 'history', label: 'الطلبات', icon: Clock },
@@ -21,12 +41,9 @@ function App() {
 
   return (
     <div className="flex h-screen w-screen bg-background" dir="rtl">
-      {/* Categories Sidebar */}
       <CategorySidebar selected={category} onSelect={(id) => { setCategory(id); setView('menu'); }} />
 
-      {/* Center: Main Content */}
       <div className="flex flex-col flex-1 min-w-0 border-l">
-        {/* Top Bar */}
         <div className="flex items-center justify-between px-6 py-4">
           <div className="flex items-center gap-3">
             <div className="flex items-center justify-center w-10 h-10 rounded-2xl bg-primary/10">
@@ -58,7 +75,6 @@ function App() {
 
         <div className="h-px bg-border" />
 
-        {/* Main Area */}
         <div className="flex-1 overflow-hidden">
           {view === 'menu' && <ProductGrid category={category} />}
           {view === 'history' && <OrderHistory />}
@@ -66,7 +82,6 @@ function App() {
         </div>
       </div>
 
-      {/* Cart Panel */}
       <div className="w-[360px] shrink-0 bg-card">
         <Cart />
       </div>

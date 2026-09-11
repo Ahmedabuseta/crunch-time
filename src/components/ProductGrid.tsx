@@ -1,26 +1,27 @@
-import { products } from '@/data/products'
-import type { Addon } from '@/data/products'
+import { useProductStore } from '@/services/product/product.store'
+import { useCartStore } from '@/services/cart/cart.store'
+import type { Addon } from '@/services/addon/addon.types'
 import { ProductCard } from './ProductCard'
 import { AddonsPanel } from './AddonsPanel'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { useCartStore } from '@/store/cart'
 
 interface ProductGridProps {
   category: string | null
 }
 
 export function ProductGrid({ category }: ProductGridProps) {
+  const products = useProductStore((s) => s.products)
   const items = useCartStore((s) => s.items)
-  const addAddonToItem = useCartStore((s) => s.addAddonToItem)
+  const addAddon = useCartStore((s) => s.addAddon)
 
   const filtered = category
-    ? products.filter((p) => p.category === category)
+    ? products.filter((p) => p.categoryId === category)
     : products
 
   const handleAddAddon = (addon: Addon) => {
     if (items.length > 0) {
       const lastItem = items[items.length - 1]
-      addAddonToItem(lastItem.product.id, addon)
+      addAddon(lastItem.product.id, addon)
     }
   }
 

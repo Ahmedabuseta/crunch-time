@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { eq, and, sql, desc } from 'drizzle-orm'
+import { eq, and, sql } from 'drizzle-orm'
 import { createTestDb, seedTestData, createUserWithPin } from './setup'
 import { randomUUID } from 'crypto'
 import * as schema from '../db/schema'
