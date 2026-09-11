@@ -1,22 +1,49 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useUserStore } from '@/services/user/user.store'
 import { Button } from '@/components/ui/button'
-import { Plus, Pencil, Trash2, Shield, User } from 'lucide-react'
+import { Plus, Pencil, Trash2, Shield, User, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 export function UsersPage() {
   const users = useUserStore((s) => s.users)
   const fetch = useUserStore((s) => s.fetch)
+  const create = useUserStore((s) => s.create)
   const remove = useUserStore((s) => s.remove)
+  const [showForm, setShowForm] = useState(false)
+  const [form, setForm] = useState({ name: '', pin: '', role: 'cashier' })
 
   useEffect(() => { fetch() }, [])
+
+  const handleCreate = async () => {
+    if (!form.name || !form.pin) return
+    await create({ name: form.name, pin: form.pin, role: form.role as 'admin' | 'cashier' })
+    setForm({ name: '', pin: '', role: 'cashier' })
+    setShowForm(false)
+  }
 
   return (
     <div className="flex flex-col h-full">
       <div className="flex items-center justify-between px-5 py-4 border-b">
         <h2 className="text-base font-black">المستخدمين</h2>
-        <Button size="sm" className="gap-1.5 rounded-xl"><Plus className="h-4 w-4" /> إضافة مستخدم</Button>
+        <Button size="sm" className="gap-1.5 rounded-xl" onClick={() => setShowForm(!showForm)}>
+          {showForm ? <X className="h-4 w-4" /> : <Plus className="h-4 w-4" />} {showForm ? 'إغلاق' : 'إضافة مستخدم'}
+        </Button>
       </div>
+
+      {showForm && (
+        <div className="mx-5 mt-4 p-4 border-2 rounded-2xl bg-card space-y-3 animate-slide-up">
+          <div className="grid grid-cols-2 gap-3">
+            <input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="الاسم" className="px-3 py-2 rounded-xl bg-secondary text-sm border-0 focus:ring-1 focus:ring-primary focus:outline-none" dir="rtl" />
+            <input value={form.pin} onChange={e => setForm(f => ({ ...f, pin: e.target.value }))} placeholder="الرقم السري (4 أرقام)" maxLength={4} className="px-3 py-2 rounded-xl bg-secondary text-sm border-0 focus:ring-1 focus:ring-primary focus:outline-none text-center" />
+          </div>
+          <select value={form.role} onChange={e => setForm(f => ({ ...f, role: e.target.value }))} className="w-full px-3 py-2 rounded-xl bg-secondary text-sm border-0 focus:ring-1 focus:ring-primary focus:outline-none">
+            <option value="cashier">كاشير</option>
+            <option value="admin">مدير</option>
+          </select>
+          <Button className="w-full rounded-xl" onClick={handleCreate}>إضافة</Button>
+        </div>
+      )}
+
       <div className="flex-1 p-5 space-y-2">
         {users.map(u => (
           <div key={u.id} className="flex items-center gap-4 border-2 rounded-xl bg-card p-4">

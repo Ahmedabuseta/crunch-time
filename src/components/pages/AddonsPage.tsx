@@ -1,21 +1,45 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useAddonStore } from '@/services/addon/addon.store'
 import { Button } from '@/components/ui/button'
-import { Plus, Pencil, Trash2 } from 'lucide-react'
+import { Plus, Pencil, Trash2, X } from 'lucide-react'
 
 export function AddonsPage() {
   const addons = useAddonStore((s) => s.addons)
   const fetch = useAddonStore((s) => s.fetch)
+  const create = useAddonStore((s) => s.create)
   const remove = useAddonStore((s) => s.remove)
+  const [showForm, setShowForm] = useState(false)
+  const [form, setForm] = useState({ name: '', emoji: '', price: '' })
 
   useEffect(() => { fetch() }, [])
+
+  const handleCreate = async () => {
+    if (!form.name || !form.price) return
+    await create({ name: form.name, emoji: form.emoji || '➕', price: parseFloat(form.price) })
+    setForm({ name: '', emoji: '', price: '' })
+    setShowForm(false)
+  }
 
   return (
     <div className="flex flex-col h-full">
       <div className="flex items-center justify-between px-5 py-4 border-b">
         <h2 className="text-base font-black">الإضافات</h2>
-        <Button size="sm" className="gap-1.5 rounded-xl"><Plus className="h-4 w-4" /> إضافة</Button>
+        <Button size="sm" className="gap-1.5 rounded-xl" onClick={() => setShowForm(!showForm)}>
+          {showForm ? <X className="h-4 w-4" /> : <Plus className="h-4 w-4" />} {showForm ? 'إغلاق' : 'إضافة'}
+        </Button>
       </div>
+
+      {showForm && (
+        <div className="mx-5 mt-4 p-4 border-2 rounded-2xl bg-card space-y-3 animate-slide-up">
+          <div className="grid grid-cols-3 gap-3">
+            <input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="اسم الإضافة" className="px-3 py-2 rounded-xl bg-secondary text-sm border-0 focus:ring-1 focus:ring-primary focus:outline-none col-span-2" dir="rtl" />
+            <input value={form.emoji} onChange={e => setForm(f => ({ ...f, emoji: e.target.value }))} placeholder="ايموجي" className="px-3 py-2 rounded-xl bg-secondary text-sm border-0 focus:ring-1 focus:ring-primary focus:outline-none text-center" />
+          </div>
+          <input type="number" value={form.price} onChange={e => setForm(f => ({ ...f, price: e.target.value }))} placeholder="السعر (ج.م)" className="w-full px-3 py-2 rounded-xl bg-secondary text-sm border-0 focus:ring-1 focus:ring-primary focus:outline-none" />
+          <Button className="w-full rounded-xl" onClick={handleCreate}>إضافة</Button>
+        </div>
+      )}
+
       <div className="flex-1 p-5 grid grid-cols-2 lg:grid-cols-4 gap-3">
         {addons.map(a => (
           <div key={a.id} className="border-2 rounded-2xl bg-card p-4 flex flex-col items-center gap-2">
