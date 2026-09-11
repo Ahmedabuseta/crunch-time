@@ -107,31 +107,54 @@ export function LoginPage({ onLogin }: LoginPageProps) {
           <p className="text-sm text-muted-foreground">سجل دخولك بالرقم السري</p>
         </div>
 
-        {/* User Selection */}
-        <div className="flex gap-3 justify-center">
-          {users.map((user) => (
-            <button
-              key={user.id}
-              onClick={() => { setSelectedUser(user.id); setPin(''); setError('') }}
-              className={cn(
-                "flex flex-col items-center gap-2 px-6 py-4 rounded-2xl transition-all cursor-pointer border-2 backdrop-blur-sm",
-                selectedUser === user.id
-                  ? "bg-primary/15 border-primary text-primary shadow-lg shadow-primary/10"
-                  : "bg-card/80 border-transparent hover:border-border hover:bg-card"
-              )}
-            >
-              <div className={cn(
-                "w-12 h-12 rounded-full flex items-center justify-center text-lg font-black transition-all",
-                selectedUser === user.id
-                  ? "bg-primary text-primary-foreground shadow-md shadow-primary/25"
-                  : "bg-secondary text-muted-foreground"
-              )}>
-                {user.name.charAt(0)}
-              </div>
-              <span className="text-sm font-bold">{user.name}</span>
-              <span className="text-[10px] text-muted-foreground">{user.role === 'admin' ? 'مدير' : 'كاشير'}</span>
-            </button>
-          ))}
+        {/* User Selection — big cards with opposite slopes */}
+        <div className="flex gap-5 justify-center">
+          {users.map((user) => {
+            const isSelected = selectedUser === user.id
+            const isAdmin = user.role === 'admin'
+            // Opposite slopes: admin tilts right (3deg), cashier tilts left (-3deg)
+            const tilt = isAdmin ? 'rotate(2deg)' : 'rotate(-2deg)'
+            const tiltHover = isAdmin ? 'rotate(-1deg)' : 'rotate(1deg)'
+
+            return (
+              <button
+                key={user.id}
+                onClick={() => { setSelectedUser(user.id); setPin(''); setError('') }}
+                style={{ transform: isSelected ? tiltHover : tilt }}
+                className={cn(
+                  "flex flex-col items-center gap-3 px-10 py-6 rounded-3xl transition-all cursor-pointer border-2 backdrop-blur-sm w-[160px]",
+                  isSelected
+                    ? "bg-primary/15 border-primary text-primary shadow-xl shadow-primary/15 !rotate-0 scale-105"
+                    : "bg-card/80 border-transparent hover:border-border hover:bg-card hover:shadow-lg hover:scale-[1.03]"
+                )}
+              >
+                {/* Avatar with icon */}
+                <div className={cn(
+                  "w-16 h-16 rounded-2xl flex items-center justify-center transition-all relative overflow-hidden",
+                  isSelected
+                    ? "bg-primary text-primary-foreground shadow-lg shadow-primary/30"
+                    : "bg-secondary"
+                )}>
+                  {isAdmin ? (
+                    <svg className={cn("w-9 h-9", isSelected ? "text-primary-foreground" : "text-muted-foreground")} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M12 2L15 8L22 9L17 14L18 21L12 18L6 21L7 14L2 9L9 8Z" />
+                    </svg>
+                  ) : (
+                    <svg className={cn("w-9 h-9", isSelected ? "text-primary-foreground" : "text-muted-foreground")} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                      <circle cx="12" cy="8" r="4" />
+                      <path d="M6 21v-2a4 4 0 014-4h4a4 4 0 014 4v2" />
+                    </svg>
+                  )}
+                </div>
+                <div className="text-center space-y-0.5">
+                  <p className="text-base font-black">{user.name}</p>
+                  <p className={cn("text-xs font-medium", isSelected ? "text-primary" : "text-muted-foreground")}>
+                    {isAdmin ? 'مدير النظام' : 'كاشير'}
+                  </p>
+                </div>
+              </button>
+            )
+          })}
         </div>
 
         {/* PIN Display */}
