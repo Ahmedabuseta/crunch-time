@@ -92,7 +92,7 @@ export function LoginPage({ onLogin }: LoginPageProps) {
         {selectedUser && (
           <div className="space-y-4 animate-slide-up">
             <div className="flex justify-center gap-3">
-              {Array.from({ length: 6 }).map((_, i) => (
+              {Array.from({ length: 4 }).map((_, i) => (
                 <div
                   key={i}
                   className={cn(
