@@ -57,12 +57,12 @@ export function CartItem({ item }: CartItemProps) {
       {/* Addons */}
       {item.addons.length > 0 && (
         <div className="mr-13 mt-2 grid grid-cols-2 gap-1.5">
-          {item.addons.map((addon) => (
-            <div key={addon.id} className="flex items-center gap-1.5 text-[11px] bg-secondary/70 rounded-xl px-2.5 py-1.5 font-medium group">
+          {item.addons.map((addon: any) => (
+            <div key={addon._uid || addon.id} className="flex items-center gap-1.5 text-[11px] bg-secondary/70 rounded-xl px-2.5 py-1.5 font-medium group">
               <span className="text-sm">{addon.emoji}</span>
               <span className="flex-1 truncate">{addon.name}</span>
               <span className="text-primary font-bold text-[10px]">+{addon.price}</span>
-              <button onClick={() => removeAddon(item.product.id, addon.id)} className="hover:text-destructive cursor-pointer opacity-0 group-hover:opacity-100 transition-opacity">
+              <button onClick={() => removeAddon(item.product.id, addon._uid || addon.id)} className="hover:text-destructive cursor-pointer opacity-0 group-hover:opacity-100 transition-opacity">
                 <X className="h-3 w-3" />
               </button>
             </div>

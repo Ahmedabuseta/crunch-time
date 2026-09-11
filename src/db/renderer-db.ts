@@ -89,6 +89,8 @@ function seed() {
   // Modifier groups + modifiers
   tables.modifierGroups.insert({ id: 'grp-size', name: 'الحجم', type: 'single-select', sortOrder: 1, active: true })
   tables.modifierGroups.insert({ id: 'grp-sauce', name: 'الصوص', type: 'multi-select', sortOrder: 2, active: true })
+  tables.modifierGroups.insert({ id: 'grp-cooking', name: 'السلق', type: 'single-select', sortOrder: 3, active: true })
+  tables.modifierGroups.insert({ id: 'grp-extras', name: 'إضافات المشروبات', type: 'multi-select', sortOrder: 4, active: true })
   for (const m of [
     { id: 'mod-regular', modifierGroupId: 'grp-size', name: 'عادي', priceAdjustment: 0, sortOrder: 1, active: true },
     { id: 'mod-large', modifierGroupId: 'grp-size', name: 'كبير', priceAdjustment: 30, sortOrder: 2, active: true },
@@ -96,14 +98,22 @@ function seed() {
     { id: 'mod-bbq', modifierGroupId: 'grp-sauce', name: 'باربكيو', priceAdjustment: 0, sortOrder: 1, active: true },
     { id: 'mod-garlic', modifierGroupId: 'grp-sauce', name: 'ثوم', priceAdjustment: 0, sortOrder: 2, active: true },
     { id: 'mod-spicy', modifierGroupId: 'grp-sauce', name: 'حار', priceAdjustment: 10, sortOrder: 3, active: true },
+    { id: 'mod-well-done', modifierGroupId: 'grp-cooking', name: 'مستوي', priceAdjustment: 0, sortOrder: 1, active: true },
+    { id: 'mod-medium', modifierGroupId: 'grp-cooking', name: 'متوسط', priceAdjustment: 0, sortOrder: 2, active: true },
+    { id: 'mod-rare', modifierGroupId: 'grp-cooking', name: 'نيء', priceAdjustment: 0, sortOrder: 3, active: true },
+    { id: 'mod-ice', modifierGroupId: 'grp-extras', name: 'ثلج', priceAdjustment: 0, sortOrder: 1, active: true },
+    { id: 'mod-lemon', modifierGroupId: 'grp-extras', name: 'ليمون', priceAdjustment: 5, sortOrder: 2, active: true },
+    { id: 'mod-mint', modifierGroupId: 'grp-extras', name: 'نعناع', priceAdjustment: 5, sortOrder: 3, active: true },
   ]) tables.modifiers.insert(m)
 
-  for (const pid of ['b1', 'b2', 'b3', 'b4', 'p1', 'p2', 'p3', 'p4']) {
-    tables.productModifierGroups.insert({ productId: pid, modifierGroupId: 'grp-size' })
-  }
-  for (const pid of ['b1', 'b2', 'b3', 'b4']) {
-    tables.productModifierGroups.insert({ productId: pid, modifierGroupId: 'grp-sauce' })
-  }
+  // Link size to burgers + pizza
+  for (const pid of ['b1', 'b2', 'b3', 'b4', 'p1', 'p2', 'p3', 'p4']) tables.productModifierGroups.insert({ productId: pid, modifierGroupId: 'grp-size' })
+  // Link sauce to burgers
+  for (const pid of ['b1', 'b2', 'b3', 'b4']) tables.productModifierGroups.insert({ productId: pid, modifierGroupId: 'grp-sauce' })
+  // Link cooking to chicken
+  for (const pid of ['c1', 'c2', 'c3']) tables.productModifierGroups.insert({ productId: pid, modifierGroupId: 'grp-cooking' })
+  // Link extras to drinks
+  for (const pid of ['d1', 'd2', 'd3', 'd4']) tables.productModifierGroups.insert({ productId: pid, modifierGroupId: 'grp-extras' })
 
   // Ingredients
   for (const i of [

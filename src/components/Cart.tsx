@@ -33,7 +33,7 @@ export function Cart() {
       quantity: item.quantity,
       unitPrice: item.product.price + item.modifiers.reduce((s, m) => s + m.priceAdjustment, 0),
       modifiers: item.modifiers,
-      addons: item.addons.map((a) => a.id),
+      addons: item.addons.map((a: any) => a.id),
     }))
 
     const result = await createOrder({

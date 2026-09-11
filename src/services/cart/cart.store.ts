@@ -52,16 +52,21 @@ export const useCartStore = create<CartStore>((set, get) => ({
   addAddon: (productId, addon) =>
     set((state) => ({
       items: state.items.map((i) =>
-        i.product.id === productId && !i.addons.find((a) => a.id === addon.id)
-          ? { ...i, addons: [...i.addons, addon] } : i
+        i.product.id === productId
+          ? { ...i, addons: [...i.addons, { ...addon, _uid: Date.now() + Math.random() }] } : i
       ),
     })),
 
-  removeAddon: (productId, addonId) =>
+  removeAddon: (productId, _addonId) =>
     set((state) => ({
-      items: state.items.map((i) =>
-        i.product.id === productId ? { ...i, addons: i.addons.filter((a) => a.id !== addonId) } : i
-      ),
+      items: state.items.map((i) => {
+        if (i.product.id !== productId) return i
+        const idx = i.addons.findIndex((a: any) => a._uid === _addonId || a.id === _addonId)
+        if (idx === -1) return i
+        const newAddons = [...i.addons]
+        newAddons.splice(idx, 1)
+        return { ...i, addons: newAddons }
+      }),
     })),
 
   setModifiers: (productId, modifiers) =>
