@@ -2,6 +2,7 @@ export interface Product {
   id: string
   name: string
   price: number
+  costPrice: number
   categoryId: string
   emoji: string
   description: string
@@ -11,6 +12,7 @@ export interface Product {
 export interface CreateProductInput {
   name: string
   price: number
+  costPrice?: number
   categoryId: string
   emoji: string
   description: string
@@ -19,6 +21,7 @@ export interface CreateProductInput {
 export interface UpdateProductInput {
   name?: string
   price?: number
+  costPrice?: number
   categoryId?: string
   emoji?: string
   description?: string

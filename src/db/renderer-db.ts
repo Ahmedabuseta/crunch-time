@@ -181,12 +181,12 @@ function seed() {
 
   // Ingredients
   for (const i of [
-    { id: 'ing-bread', name: 'خبز', unit: 'pcs', stockQuantity: 200, minStock: 20, costPerUnit: 3, active: true },
-    { id: 'ing-beef', name: 'لحم بقري', unit: 'g', stockQuantity: 10000, minStock: 1000, costPerUnit: 0.2, active: true },
-    { id: 'ing-chicken', name: 'صدر دجاج', unit: 'g', stockQuantity: 8000, minStock: 1000, costPerUnit: 0.15, active: true },
-    { id: 'ing-cheese', name: 'جبنة', unit: 'g', stockQuantity: 5000, minStock: 500, costPerUnit: 0.1, active: true },
-    { id: 'ing-potato', name: 'بطاطس', unit: 'g', stockQuantity: 15000, minStock: 2000, costPerUnit: 0.03, active: true },
-    { id: 'ing-cola', name: 'كولا', unit: 'ml', stockQuantity: 20000, minStock: 2000, costPerUnit: 0.01, active: true },
+    { id: 'ing-bread', name: 'خبز', emoji: '🍞', unit: 'pcs', stockQuantity: 200, minStock: 20, costPerUnit: 3, active: true },
+    { id: 'ing-beef', name: 'لحم بقري', emoji: '🥩', unit: 'g', stockQuantity: 10000, minStock: 1000, costPerUnit: 0.2, active: true },
+    { id: 'ing-chicken', name: 'صدر دجاج', emoji: '🍗', unit: 'g', stockQuantity: 8000, minStock: 1000, costPerUnit: 0.15, active: true },
+    { id: 'ing-cheese', name: 'جبنة', emoji: '🧀', unit: 'g', stockQuantity: 5000, minStock: 500, costPerUnit: 0.1, active: true },
+    { id: 'ing-potato', name: 'بطاطس', emoji: '🥔', unit: 'g', stockQuantity: 15000, minStock: 2000, costPerUnit: 0.03, active: true },
+    { id: 'ing-cola', name: 'كولا', emoji: '🥤', unit: 'ml', stockQuantity: 20000, minStock: 2000, costPerUnit: 0.01, active: true },
   ]) T.ingredients.insert(i)
 
   // Recipes

@@ -1,6 +1,7 @@
 export interface Ingredient {
   id: string
   name: string
+  emoji: string
   unit: 'g' | 'ml' | 'pcs' | 'kg' | 'l'
   stockQuantity: number
   minStock: number

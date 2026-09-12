@@ -7,36 +7,53 @@ export function AddonsPage() {
   const addons = useAddonStore((s) => s.addons)
   const fetch = useAddonStore((s) => s.fetch)
   const create = useAddonStore((s) => s.create)
+  const update = useAddonStore((s) => s.update)
   const remove = useAddonStore((s) => s.remove)
   const [showForm, setShowForm] = useState(false)
+  const [editId, setEditId] = useState<string | null>(null)
   const [form, setForm] = useState({ name: '', emoji: '', price: '' })
 
   useEffect(() => { fetch() }, [])
 
+  const resetForm = () => { setForm({ name: '', emoji: '', price: '' }); setEditId(null); setShowForm(false) }
+
   const handleCreate = async () => {
     if (!form.name || !form.price) return
     await create({ name: form.name, emoji: form.emoji || '➕', price: parseFloat(form.price) })
-    setForm({ name: '', emoji: '', price: '' })
-    setShowForm(false)
+    resetForm()
+  }
+
+  const handleUpdate = async () => {
+    if (!editId || !form.name) return
+    await update(editId, { name: form.name, emoji: form.emoji, price: parseFloat(form.price) })
+    resetForm()
+  }
+
+  const startEdit = (a: any) => {
+    setEditId(a.id); setShowForm(false)
+    setForm({ name: a.name, emoji: a.emoji, price: String(a.price) })
   }
 
   return (
     <div className="flex flex-col h-full">
       <div className="flex items-center justify-between px-5 py-4 border-b">
-        <h2 className="text-base font-black">الإضافات</h2>
-        <Button size="sm" className="gap-1.5 rounded-xl" onClick={() => setShowForm(!showForm)}>
+        <h2 className="text-base font-black">الإضافات ({addons.length})</h2>
+        <Button size="sm" className="gap-1.5 rounded-xl" onClick={() => { showForm ? resetForm() : setShowForm(true); setEditId(null) }}>
           {showForm ? <X className="h-4 w-4" /> : <Plus className="h-4 w-4" />} {showForm ? 'إغلاق' : 'إضافة'}
         </Button>
       </div>
 
-      {showForm && (
+      {(showForm || editId) && (
         <div className="mx-5 mt-4 p-4 border-2 rounded-2xl bg-card space-y-3 animate-slide-up">
           <div className="grid grid-cols-3 gap-3">
             <input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="اسم الإضافة" className="px-3 py-2 rounded-xl bg-secondary text-sm border-0 focus:ring-1 focus:ring-primary focus:outline-none col-span-2" dir="rtl" />
-            <input value={form.emoji} onChange={e => setForm(f => ({ ...f, emoji: e.target.value }))} placeholder="ايموجي" className="px-3 py-2 rounded-xl bg-secondary text-sm border-0 focus:ring-1 focus:ring-primary focus:outline-none text-center" />
+            <input value={form.emoji} onChange={e => setForm(f => ({ ...f, emoji: e.target.value }))} placeholder="🧀" className="px-3 py-2 rounded-xl bg-secondary text-sm border-0 focus:ring-1 focus:ring-primary focus:outline-none text-center" />
           </div>
           <input type="number" value={form.price} onChange={e => setForm(f => ({ ...f, price: e.target.value }))} placeholder="السعر (ج.م)" className="w-full px-3 py-2 rounded-xl bg-secondary text-sm border-0 focus:ring-1 focus:ring-primary focus:outline-none" />
-          <Button className="w-full rounded-xl" onClick={handleCreate}>إضافة</Button>
+          <div className="flex gap-2">
+            <Button className="flex-1 rounded-xl" onClick={editId ? handleUpdate : handleCreate}>{editId ? 'تحديث' : 'إضافة'}</Button>
+            {editId && <Button variant="ghost" className="rounded-xl" onClick={resetForm}>إلغاء</Button>}
+          </div>
         </div>
       )}
 
@@ -47,7 +64,7 @@ export function AddonsPage() {
             <p className="font-bold text-sm">{a.name}</p>
             <p className="font-black text-primary text-sm">{a.price} ج.م</p>
             <div className="flex gap-1">
-              <Button variant="ghost" size="icon" className="h-7 w-7 rounded-lg"><Pencil className="h-3.5 w-3.5" /></Button>
+              <Button variant="ghost" size="icon" className="h-7 w-7 rounded-lg" onClick={() => startEdit(a)}><Pencil className="h-3.5 w-3.5" /></Button>
               <Button variant="ghost" size="icon" className="h-7 w-7 rounded-lg text-destructive" onClick={() => remove(a.id)}><Trash2 className="h-3.5 w-3.5" /></Button>
             </div>
           </div>
