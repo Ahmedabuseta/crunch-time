@@ -37,22 +37,41 @@ function rollbackInventory(orderId: string) {
   }
 }
 
-// Partial rollback — REFUNDED: only return ingredients for products that support rollback
+// Partial rollback — REFUNDED: only return products+addons that support rollback
 function rollbackInventoryPartial(orderId: string): number {
   const items = T.orderItems.select(r => r.orderId === orderId)
   let refundedAmount = 0
   for (const item of items) {
     const product = T.products.get(p => p.id === item.productId)
-    if (!product || !product.supportsRollback) continue
-    // Rollback ingredients for this item
-    for (const r of T.recipes.select(r => r.productId === item.productId)) {
-      const qty = r.quantityPerUnit * item.quantity
-      const ing = T.ingredients.get(i => i.id === r.ingredientId)
-      if (ing) ing.stockQuantity += qty
-      T.inventoryTransactions.insert({ id: uuid(), ingredientId: r.ingredientId, type: 'ADJUSTMENT', quantity: qty, referenceOrderId: orderId, note: `إرجاع جزئي طلب ${orderId} — ${product.name}`, createdAt: now() })
+    if (!product) continue
+
+    let itemRefund = 0
+
+    // Product rollback
+    if (product.supportsRollback) {
+      for (const r of T.recipes.select(r => r.productId === item.productId)) {
+        const qty = r.quantityPerUnit * item.quantity
+        const ing = T.ingredients.get(i => i.id === r.ingredientId)
+        if (ing) ing.stockQuantity += qty
+        T.inventoryTransactions.insert({ id: uuid(), ingredientId: r.ingredientId, type: 'ADJUSTMENT', quantity: qty, referenceOrderId: orderId, note: `إرجاع جزئي ${orderId} — ${product.name}`, createdAt: now() })
+      }
+      itemRefund += product.price * item.quantity
     }
-    // Calculate refund for this item
-    refundedAmount += item.unitPrice * item.quantity
+
+    // Addon rollback — check each addon's supportsRollback
+    if (item.selectedAddonsJson) {
+      try {
+        const addonIds = JSON.parse(item.selectedAddonsJson) as string[]
+        for (const addonId of addonIds) {
+          const addon = T.addons.get(a => a.id === addonId)
+          if (addon && addon.supportsRollback) {
+            itemRefund += addon.price * item.quantity
+          }
+        }
+      } catch {}
+    }
+
+    refundedAmount += itemRefund
   }
   return refundedAmount
 }
@@ -123,16 +142,16 @@ function seed() {
     { id: 'e3', name: 'براوني', price: 30, costPrice: 12, categoryId: 'cat-desserts', emoji: '🍫', description: 'براوني شوكولاتة', active: true, supportsRollback: false },
   ]) T.products.insert(p)
 
-  // Addons
+  // Addons (all support rollback)
   for (const a of [
-    { id: 'addon-cheese', name: 'جبنة إضافية', price: 5, emoji: '🧀', active: true },
-    { id: 'addon-bacon', name: 'بيكون', price: 10, emoji: '🥓', active: true },
-    { id: 'addon-sauce', name: 'صلصة خاصة', price: 3, emoji: '🫙', active: true },
-    { id: 'addon-fries', name: 'بطاطس زيادة', price: 8, emoji: '🍟', active: true },
-    { id: 'addon-drink', name: 'مشروب كبير', price: 7, emoji: '🥤', active: true },
-    { id: 'addon-onion', name: 'حلقات بصل', price: 8, emoji: '🧅', active: true },
-    { id: 'addon-coleslaw', name: 'كول سلو', price: 5, emoji: '🥗', active: true },
-    { id: 'addon-pickle', name: 'مخلل', price: 2, emoji: '🥒', active: true },
+    { id: 'addon-cheese', name: 'جبنة إضافية', price: 5, emoji: '🧀', active: true, supportsRollback: true },
+    { id: 'addon-bacon', name: 'بيكون', price: 10, emoji: '🥓', active: true, supportsRollback: true },
+    { id: 'addon-sauce', name: 'صلصة خاصة', price: 3, emoji: '🫙', active: true, supportsRollback: true },
+    { id: 'addon-fries', name: 'بطاطس زيادة', price: 8, emoji: '🍟', active: true, supportsRollback: true },
+    { id: 'addon-drink', name: 'مشروب كبير', price: 7, emoji: '🥤', active: true, supportsRollback: false },
+    { id: 'addon-onion', name: 'حلقات بصل', price: 8, emoji: '🧅', active: true, supportsRollback: true },
+    { id: 'addon-coleslaw', name: 'كول سلو', price: 5, emoji: '🥗', active: true, supportsRollback: true },
+    { id: 'addon-pickle', name: 'مخلل', price: 2, emoji: '🥒', active: true, supportsRollback: true },
   ]) T.addons.insert(a)
 
   // Modifier groups + modifiers
@@ -260,7 +279,7 @@ export const rendererApi = {
       const ts = now()
       const deliveryFee = data.orderType === 'delivery' ? (data.deliveryFee ?? settings.deliveryFee) : 0
       T.orders.insert({
-        id, status: 'PAID', orderType: data.orderType, tableNumber: data.tableNumber || null,
+        id, status: 'COMPLETED', orderType: data.orderType, tableNumber: data.tableNumber || null,
         customerName: data.customerName || null, customerPhone: data.customerPhone || null, customerAddress: data.customerAddress || null,
         subtotal: data.subtotal, tax: data.tax, deliveryFee,
         discountCode: data.discountCode || null, discountAmount: data.discountAmount || 0,
@@ -289,18 +308,32 @@ export const rendererApi = {
     getById: (id: string) => {
       const order = T.orders.get(r => r.id === id)
       if (!order) return null
-      const items = T.orderItems.select(r => r.orderId === id).map(item => { const p = T.products.get(pr => pr.id === item.productId); return { ...item, productName: p?.name, productEmoji: p?.emoji, supportsRollback: p?.supportsRollback ?? false } })
+      const items = T.orderItems.select(r => r.orderId === id).map(item => {
+        const p = T.products.get(pr => pr.id === item.productId)
+        // Check addon rollback status
+        let addonRollbackInfo: { name: string; emoji: string; supportsRollback: boolean; price: number }[] = []
+        if (item.selectedAddonsJson) {
+          try {
+            const addonIds = JSON.parse(item.selectedAddonsJson) as string[]
+            addonRollbackInfo = addonIds.map((aid: string) => {
+              const a = T.addons.get(ad => ad.id === aid)
+              return a ? { name: a.name, emoji: a.emoji, supportsRollback: a.supportsRollback ?? true, price: a.price } : { name: '?', emoji: '?', supportsRollback: false, price: 0 }
+            })
+          } catch {}
+        }
+        return { ...item, productName: p?.name, productEmoji: p?.emoji, supportsRollback: p?.supportsRollback ?? false, addonRollbackInfo }
+      })
       return { ...order, items, payments: T.payments.select(r => r.orderId === id) }
     },
     updateStatus: (id: string, status: string, reason?: string) => {
       const order = T.orders.get(r => r.id === id)
       if (!order) return { ok: false, error: 'الطلب غير موجود' }
-      if (status === 'CANCELLED' && (order.status === 'PAID' || order.status === 'PREPARING' || order.status === 'READY')) {
+      if (status === 'CANCELLED' && order.status === 'COMPLETED') {
         // Full rollback — all ingredients returned
         rollbackInventory(id)
       }
-      if (status === 'REFUNDED' && (order.status === 'PAID' || order.status === 'PREPARING' || order.status === 'READY' || order.status === 'COMPLETED')) {
-        // Partial rollback — only products that support rollback
+      if (status === 'REFUNDED' && order.status === 'COMPLETED') {
+        // Partial rollback — only products+addons that support rollback
         const refundedAmount = rollbackInventoryPartial(id)
         T.orders.update(r => r.id === id, { status, statusReason: reason || null, refundedAmount, updatedAt: now() })
         return { ok: true, refundedAmount }

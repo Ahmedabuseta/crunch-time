@@ -7,12 +7,9 @@ import { Search, Truck, UtensilsCrossed, ChevronDown, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 const statusConfig: Record<string, { label: string; color: string; bg: string }> = {
-  PAID: { label: 'مدفوع', color: 'text-green-400', bg: 'bg-green-500/10' },
-  PREPARING: { label: 'يحضّر', color: 'text-blue-400', bg: 'bg-blue-500/10' },
-  READY: { label: 'جاهز', color: 'text-yellow-400', bg: 'bg-yellow-500/10' },
-  COMPLETED: { label: 'مكتمل', color: 'text-muted-foreground', bg: 'bg-secondary' },
+  COMPLETED: { label: 'مكتمل', color: 'text-green-400', bg: 'bg-green-500/10' },
   CANCELLED: { label: 'ملغي', color: 'text-red-400', bg: 'bg-red-500/10' },
-  REFUNDED: { label: 'مسترد', color: 'text-purple-400', bg: 'bg-purple-500/10' },
+  REFUNDED: { label: 'مسترد', color: 'text-yellow-400', bg: 'bg-yellow-500/10' },
 }
 
 const paymentLabels: Record<string, string> = {
@@ -48,14 +45,6 @@ export function OrderHistory() {
     if (statusFilter && o.status !== statusFilter) return false
     return true
   })
-
-  const handleStatusChange = (orderId: string, status: string) => {
-    if (status === 'CANCELLED' || status === 'REFUNDED') {
-      setShowReasonFor(orderId)
-    } else {
-      updateStatus(orderId, status as any)
-    }
-  }
 
   const confirmStatusWithReason = (orderId: string, status: string) => {
     updateStatus(orderId, status as any, reasonMap[orderId] || undefined)
@@ -217,13 +206,26 @@ export function OrderHistory() {
                         <div className="bg-secondary/60 rounded-xl p-2.5 space-y-1.5">
                           <p className="text-[10px] font-bold text-muted-foreground">المنتجات القابلة للإرجاع:</p>
                           {(o.items || []).map((item: any) => (
-                            <div key={item.id} className="flex items-center justify-between text-[10px]">
-                              <span>{item.productEmoji} {item.productName}</span>
-                              {item.supportsRollback ? (
-                                <span className="text-green-400 font-bold">✓ يُرجع</span>
-                              ) : (
-                                <span className="text-red-400 font-bold">✗ لا يُرجع</span>
-                              )}
+                            <div key={item.id} className="space-y-0.5">
+                              <div className="flex items-center justify-between text-[10px]">
+                                <span>{item.productEmoji} {item.productName}</span>
+                                {item.supportsRollback ? (
+                                  <span className="text-green-400 font-bold">✓ يُرجع</span>
+                                ) : (
+                                  <span className="text-red-400 font-bold">✗ لا يُرجع</span>
+                                )}
+                              </div>
+                              {/* Addon rollback info */}
+                              {(item.addonRollbackInfo || []).map((addon: any, ai: number) => (
+                                <div key={ai} className="flex items-center justify-between text-[9px] mr-4 text-muted-foreground">
+                                  <span>↳ {addon.emoji} {addon.name}</span>
+                                  {addon.supportsRollback ? (
+                                    <span className="text-green-400/70 font-bold">✓</span>
+                                  ) : (
+                                    <span className="text-red-400/70 font-bold">✗</span>
+                                  )}
+                                </div>
+                              ))}
                             </div>
                           ))}
                         </div>
@@ -238,19 +240,13 @@ export function OrderHistory() {
                       </div>
                     )}
 
-                    {/* Status controls */}
-                    {!showReason && (
-                      <div className="flex items-center gap-2 pt-1">
-                        <div className="flex-1 flex gap-1.5">
-                          {(['PAID', 'PREPARING', 'READY', 'COMPLETED'] as const).map(s => (
-                            <button key={s} onClick={() => handleStatusChange(order.id, s)} className={cn("flex-1 py-1.5 rounded-xl text-[10px] font-bold transition-all cursor-pointer", order.status === s ? `${statusConfig[s].bg} ${statusConfig[s].color} ring-1 ring-current/20` : "bg-secondary/60 text-muted-foreground hover:text-foreground")}>
-                              {statusConfig[s].label}
-                            </button>
-                          ))}
-                          {isAdmin && order.status !== 'CANCELLED' && order.status !== 'REFUNDED' && (
-                            <button onClick={() => setShowReasonFor(order.id)} className="px-3 py-1.5 rounded-xl text-[10px] font-bold bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-all cursor-pointer">إلغاء</button>
-                          )}
-                        </div>
+                    {/* Status controls — only for COMPLETED orders, admin only */}
+                    {!showReason && order.status === 'COMPLETED' && isAdmin && (
+                      <div className="flex gap-2 pt-1">
+                        <button onClick={() => setShowReasonFor(order.id)}
+                          className="flex-1 py-2 rounded-xl text-xs font-bold bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20 transition-all cursor-pointer">
+                          إلغاء / استرداد
+                        </button>
                       </div>
                     )}
                   </div>
