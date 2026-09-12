@@ -78,7 +78,7 @@ export function Reports() {
               </div>
 
               {/* Extra info */}
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-4 gap-2">
                 <div className="bg-secondary/60 rounded-xl p-2.5 text-center">
                   <p className="text-[10px] text-muted-foreground mb-0.5">رسوم توصيل</p>
                   <p className="text-xs font-bold text-primary">{p.deliveryFees.toFixed(0)} ج.م</p>
@@ -90,6 +90,10 @@ export function Reports() {
                 <div className="bg-secondary/60 rounded-xl p-2.5 text-center">
                   <p className="text-[10px] text-muted-foreground mb-0.5">ضريبة محصلة</p>
                   <p className="text-xs font-bold text-blue-400">{p.taxCollected.toFixed(0)} ج.م</p>
+                </div>
+                <div className="bg-secondary/60 rounded-xl p-2.5 text-center">
+                  <p className="text-[10px] text-muted-foreground mb-0.5">مسترد</p>
+                  <p className="text-xs font-bold text-orange-400">{(p.totalRefunded || 0).toFixed(0)} ج.م</p>
                 </div>
               </div>
 

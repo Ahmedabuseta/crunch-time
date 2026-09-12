@@ -24,6 +24,7 @@ const now = () => new Date().toISOString()
 // ─── Helpers ────────────────────────────────────────────────
 function getSettings() { return T.settings.get(r => r.id === 'settings') || { deliveryFee: 25, taxRate: 0.14 } }
 
+// Full rollback — CANCELLED: return ALL ingredients
 function rollbackInventory(orderId: string) {
   const items = T.orderItems.select(r => r.orderId === orderId)
   for (const item of items) {
@@ -31,9 +32,29 @@ function rollbackInventory(orderId: string) {
       const qty = r.quantityPerUnit * item.quantity
       const ing = T.ingredients.get(i => i.id === r.ingredientId)
       if (ing) ing.stockQuantity += qty
-      T.inventoryTransactions.insert({ id: uuid(), ingredientId: r.ingredientId, type: 'ADJUSTMENT', quantity: qty, referenceOrderId: orderId, note: `إرجاع طلب ${orderId}`, createdAt: now() })
+      T.inventoryTransactions.insert({ id: uuid(), ingredientId: r.ingredientId, type: 'ADJUSTMENT', quantity: qty, referenceOrderId: orderId, note: `إرجاع كامل طلب ${orderId}`, createdAt: now() })
     }
   }
+}
+
+// Partial rollback — REFUNDED: only return ingredients for products that support rollback
+function rollbackInventoryPartial(orderId: string): number {
+  const items = T.orderItems.select(r => r.orderId === orderId)
+  let refundedAmount = 0
+  for (const item of items) {
+    const product = T.products.get(p => p.id === item.productId)
+    if (!product || !product.supportsRollback) continue
+    // Rollback ingredients for this item
+    for (const r of T.recipes.select(r => r.productId === item.productId)) {
+      const qty = r.quantityPerUnit * item.quantity
+      const ing = T.ingredients.get(i => i.id === r.ingredientId)
+      if (ing) ing.stockQuantity += qty
+      T.inventoryTransactions.insert({ id: uuid(), ingredientId: r.ingredientId, type: 'ADJUSTMENT', quantity: qty, referenceOrderId: orderId, note: `إرجاع جزئي طلب ${orderId} — ${product.name}`, createdAt: now() })
+    }
+    // Calculate refund for this item
+    refundedAmount += item.unitPrice * item.quantity
+  }
+  return refundedAmount
 }
 
 function deductInventory(orderId: string) {
@@ -76,30 +97,30 @@ function seed() {
     { id: 'cat-desserts', name: 'حلويات', emoji: '🍦', color: 'var(--cat-desserts)', sortOrder: 6, active: true },
   ]) T.categories.insert(c)
 
-  // Products (with costPrice for profit calc)
+  // Products (with costPrice for profit calc, supportsRollback for refund logic)
   for (const p of [
-    { id: 'b1', name: 'برجر كلاسيك', price: 85, costPrice: 35, categoryId: 'cat-burgers', emoji: '🍔', description: 'لحم، خس، طماطم', active: true },
-    { id: 'b2', name: 'برجر جبنة', price: 95, costPrice: 40, categoryId: 'cat-burgers', emoji: '🧀', description: 'جبنة مزدوجة، مخلل، بصل', active: true },
-    { id: 'b3', name: 'برجر بيكون', price: 110, costPrice: 48, categoryId: 'cat-burgers', emoji: '🥓', description: 'بيكون مقرمش، صوص باربكيو', active: true },
-    { id: 'b4', name: 'برجر فطر', price: 105, costPrice: 45, categoryId: 'cat-burgers', emoji: '🍄', description: 'جبنة سويسري، فطر', active: true },
-    { id: 'p1', name: 'مارغريتا', price: 120, costPrice: 45, categoryId: 'cat-pizza', emoji: '🍕', description: 'طماطم، موزاريلا، ريحان', active: true },
-    { id: 'p2', name: 'بيبروني', price: 145, costPrice: 55, categoryId: 'cat-pizza', emoji: '🌶️', description: 'بيبروني مزدوج، موزاريلا', active: true },
-    { id: 'p3', name: 'دجاج باربكيو', price: 155, costPrice: 60, categoryId: 'cat-pizza', emoji: '🍗', description: 'صوص باربكيو، دجاج، بصل أحمر', active: true },
-    { id: 'p4', name: 'خضار', price: 130, costPrice: 42, categoryId: 'cat-pizza', emoji: '🥬', description: 'خضار مشكلة، زيتون، فيتا', active: true },
-    { id: 'c1', name: 'ناجت دجاج (6)', price: 65, costPrice: 25, categoryId: 'cat-chicken', emoji: '🍗', description: 'ناجت ذهبي مقرمش', active: true },
-    { id: 'c2', name: 'أجنحة دجاج (8)', price: 105, costPrice: 42, categoryId: 'cat-chicken', emoji: '🍗', description: 'صوص بوفالو أو باربكيو', active: true },
-    { id: 'c3', name: 'ساندويتش دجاج', price: 90, costPrice: 35, categoryId: 'cat-chicken', emoji: '🥪', description: 'دجاج مقرمش، كول سلو، مخلل', active: true },
-    { id: 's1', name: 'بطاطس مقلية', price: 35, costPrice: 10, categoryId: 'cat-sides', emoji: '🍟', description: 'بطاطس ذهبية مقرمشة', active: true },
-    { id: 's2', name: 'حلقات بصل', price: 45, costPrice: 15, categoryId: 'cat-sides', emoji: '🧅', description: 'حلقات بصل مقرمشة', active: true },
-    { id: 's3', name: 'أصابع موزاريلا', price: 55, costPrice: 22, categoryId: 'cat-sides', emoji: '🧀', description: 'مع صوص مارينارا', active: true },
-    { id: 's4', name: 'كول سلو', price: 25, costPrice: 8, categoryId: 'cat-sides', emoji: '🥗', description: 'كول سلو كريمي', active: true },
-    { id: 'd1', name: 'كولا', price: 20, costPrice: 8, categoryId: 'cat-drinks', emoji: '🥤', description: 'كولا باردة', active: true },
-    { id: 'd2', name: 'ليمونادة', price: 25, costPrice: 10, categoryId: 'cat-drinks', emoji: '🍋', description: 'ليمون طازج', active: true },
-    { id: 'd3', name: 'ميلك شيك', price: 50, costPrice: 20, categoryId: 'cat-drinks', emoji: '🥛', description: 'فانيليا، شوكولاتة، أو فراولة', active: true },
-    { id: 'd4', name: 'شاي مثلج', price: 20, costPrice: 6, categoryId: 'cat-drinks', emoji: '🍵', description: 'محلى أو بدون سكر', active: true },
-    { id: 'e1', name: 'آيس كريم صنداي', price: 45, costPrice: 18, categoryId: 'cat-desserts', emoji: '🍦', description: '3 سكوب، صوص شوكولاتة، كرز', active: true },
-    { id: 'e2', name: 'تفاح محشو', price: 35, costPrice: 14, categoryId: 'cat-desserts', emoji: '🥧', description: 'دافئ بالقرفة', active: true },
-    { id: 'e3', name: 'براوني', price: 30, costPrice: 12, categoryId: 'cat-desserts', emoji: '🍫', description: 'براوني شوكولاتة', active: true },
+    { id: 'b1', name: 'برجر كلاسيك', price: 85, costPrice: 35, categoryId: 'cat-burgers', emoji: '🍔', description: 'لحم، خس، طماطم', active: true, supportsRollback: true },
+    { id: 'b2', name: 'برجر جبنة', price: 95, costPrice: 40, categoryId: 'cat-burgers', emoji: '🧀', description: 'جبنة مزدوجة، مخلل، بصل', active: true, supportsRollback: true },
+    { id: 'b3', name: 'برجر بيكون', price: 110, costPrice: 48, categoryId: 'cat-burgers', emoji: '🥓', description: 'بيكون مقرمش، صوص باربكيو', active: true, supportsRollback: true },
+    { id: 'b4', name: 'برجر فطر', price: 105, costPrice: 45, categoryId: 'cat-burgers', emoji: '🍄', description: 'جبنة سويسري، فطر', active: true, supportsRollback: true },
+    { id: 'p1', name: 'مارغريتا', price: 120, costPrice: 45, categoryId: 'cat-pizza', emoji: '🍕', description: 'طماطم، موزاريلا، ريحان', active: true, supportsRollback: true },
+    { id: 'p2', name: 'بيبروني', price: 145, costPrice: 55, categoryId: 'cat-pizza', emoji: '🌶️', description: 'بيبروني مزدوج، موزاريلا', active: true, supportsRollback: true },
+    { id: 'p3', name: 'دجاج باربكيو', price: 155, costPrice: 60, categoryId: 'cat-pizza', emoji: '🍗', description: 'صوص باربكيو، دجاج، بصل أحمر', active: true, supportsRollback: true },
+    { id: 'p4', name: 'خضار', price: 130, costPrice: 42, categoryId: 'cat-pizza', emoji: '🥬', description: 'خضار مشكلة، زيتون، فيتا', active: true, supportsRollback: true },
+    { id: 'c1', name: 'ناجت دجاج (6)', price: 65, costPrice: 25, categoryId: 'cat-chicken', emoji: '🍗', description: 'ناجت ذهبي مقرمش', active: true, supportsRollback: true },
+    { id: 'c2', name: 'أجنحة دجاج (8)', price: 105, costPrice: 42, categoryId: 'cat-chicken', emoji: '🍗', description: 'صوص بوفالو أو باربكيو', active: true, supportsRollback: true },
+    { id: 'c3', name: 'ساندويتش دجاج', price: 90, costPrice: 35, categoryId: 'cat-chicken', emoji: '🥪', description: 'دجاج مقرمش، كول سلو، مخلل', active: true, supportsRollback: true },
+    { id: 's1', name: 'بطاطس مقلية', price: 35, costPrice: 10, categoryId: 'cat-sides', emoji: '🍟', description: 'بطاطس ذهبية مقرمشة', active: true, supportsRollback: true },
+    { id: 's2', name: 'حلقات بصل', price: 45, costPrice: 15, categoryId: 'cat-sides', emoji: '🧅', description: 'حلقات بصل مقرمشة', active: true, supportsRollback: true },
+    { id: 's3', name: 'أصابع موزاريلا', price: 55, costPrice: 22, categoryId: 'cat-sides', emoji: '🧀', description: 'مع صوص مارينارا', active: true, supportsRollback: true },
+    { id: 's4', name: 'كول سلو', price: 25, costPrice: 8, categoryId: 'cat-sides', emoji: '🥗', description: 'كول سلو كريمي', active: true, supportsRollback: true },
+    { id: 'd1', name: 'كولا', price: 20, costPrice: 8, categoryId: 'cat-drinks', emoji: '🥤', description: 'كولا باردة', active: true, supportsRollback: false },
+    { id: 'd2', name: 'ليمونادة', price: 25, costPrice: 10, categoryId: 'cat-drinks', emoji: '🍋', description: 'ليمون طازج', active: true, supportsRollback: false },
+    { id: 'd3', name: 'ميلك شيك', price: 50, costPrice: 20, categoryId: 'cat-drinks', emoji: '🥛', description: 'فانيليا، شوكولاتة، أو فراولة', active: true, supportsRollback: false },
+    { id: 'd4', name: 'شاي مثلج', price: 20, costPrice: 6, categoryId: 'cat-drinks', emoji: '🍵', description: 'محلى أو بدون سكر', active: true, supportsRollback: false },
+    { id: 'e1', name: 'آيس كريم صنداي', price: 45, costPrice: 18, categoryId: 'cat-desserts', emoji: '🍦', description: '3 سكوب، صوص شوكولاتة، كرز', active: true, supportsRollback: false },
+    { id: 'e2', name: 'تفاح محشو', price: 35, costPrice: 14, categoryId: 'cat-desserts', emoji: '🥧', description: 'دافئ بالقرفة', active: true, supportsRollback: false },
+    { id: 'e3', name: 'براوني', price: 30, costPrice: 12, categoryId: 'cat-desserts', emoji: '🍫', description: 'براوني شوكولاتة', active: true, supportsRollback: false },
   ]) T.products.insert(p)
 
   // Addons
@@ -268,14 +289,21 @@ export const rendererApi = {
     getById: (id: string) => {
       const order = T.orders.get(r => r.id === id)
       if (!order) return null
-      const items = T.orderItems.select(r => r.orderId === id).map(item => { const p = T.products.get(pr => pr.id === item.productId); return { ...item, productName: p?.name, productEmoji: p?.emoji } })
+      const items = T.orderItems.select(r => r.orderId === id).map(item => { const p = T.products.get(pr => pr.id === item.productId); return { ...item, productName: p?.name, productEmoji: p?.emoji, supportsRollback: p?.supportsRollback ?? false } })
       return { ...order, items, payments: T.payments.select(r => r.orderId === id) }
     },
     updateStatus: (id: string, status: string, reason?: string) => {
       const order = T.orders.get(r => r.id === id)
       if (!order) return { ok: false, error: 'الطلب غير موجود' }
-      if ((status === 'CANCELLED' || status === 'REFUNDED') && (order.status === 'PAID' || order.status === 'PREPARING' || order.status === 'READY')) {
+      if (status === 'CANCELLED' && (order.status === 'PAID' || order.status === 'PREPARING' || order.status === 'READY')) {
+        // Full rollback — all ingredients returned
         rollbackInventory(id)
+      }
+      if (status === 'REFUNDED' && (order.status === 'PAID' || order.status === 'PREPARING' || order.status === 'READY' || order.status === 'COMPLETED')) {
+        // Partial rollback — only products that support rollback
+        const refundedAmount = rollbackInventoryPartial(id)
+        T.orders.update(r => r.id === id, { status, statusReason: reason || null, refundedAmount, updatedAt: now() })
+        return { ok: true, refundedAmount }
       }
       T.orders.update(r => r.id === id, { status, statusReason: reason || null, updatedAt: now() })
       return { ok: true }
@@ -331,22 +359,25 @@ export const rendererApi = {
       const day = all.filter(o => o.createdAt?.startsWith(d) && o.status !== 'CANCELLED')
       const cancelled = all.filter(o => o.createdAt?.startsWith(d) && o.status === 'CANCELLED')
       const refunded = all.filter(o => o.createdAt?.startsWith(d) && o.status === 'REFUNDED')
-      const revenue = day.reduce((s, o) => s + o.total, 0)
+      const totalRefunded = refunded.reduce((s, o) => s + (o.refundedAmount || 0), 0)
+      const revenue = day.reduce((s, o) => s + o.total, 0) - totalRefunded
       const costOfGoods = day.reduce((s, o) => {
         const items = T.orderItems.select(r => r.orderId === o.id)
         return s + items.reduce((is, item) => { const p = T.products.get(pr => pr.id === item.productId); return is + (p?.costPrice || 0) * item.quantity }, 0)
       }, 0)
-      return { date: d, totalOrders: day.length, totalRevenue: revenue, avgOrderValue: day.length > 0 ? revenue / day.length : 0, cancelledOrders: cancelled.length, refundedOrders: refunded.length, cancellationRate: 0, costOfGoods, grossProfit: revenue - costOfGoods }
+      return { date: d, totalOrders: day.length, totalRevenue: revenue, avgOrderValue: day.length > 0 ? revenue / day.length : 0, cancelledOrders: cancelled.length, refundedOrders: refunded.length, totalRefunded, cancellationRate: 0, costOfGoods, grossProfit: revenue - costOfGoods }
     },
     profitSummary: (from?: string, to?: string) => {
       const all = T.orders.select().filter(o => { if (o.status === 'CANCELLED') return false; if (from && o.createdAt < from) return false; if (to && o.createdAt > to) return false; return true })
-      const revenue = all.reduce((s, o) => s + o.total, 0)
+      const refunded = all.filter(o => o.status === 'REFUNDED')
+      const totalRefunded = refunded.reduce((s, o) => s + (o.refundedAmount || 0), 0)
+      const revenue = all.reduce((s, o) => s + o.total, 0) - totalRefunded
       const costOfGoods = all.reduce((s, o) => { const items = T.orderItems.select(r => r.orderId === o.id); return s + items.reduce((is, item) => { const p = T.products.get(pr => pr.id === item.productId); return is + (p?.costPrice || 0) * item.quantity }, 0) }, 0)
       const totalExpenses = T.expenses.select(r => r.active).reduce((s, e) => s + e.amount, 0)
       const deliveryFees = all.filter(o => o.orderType === 'delivery').reduce((s, o) => s + (o.deliveryFee || 0), 0)
       const discounts = all.reduce((s, o) => s + (o.discountAmount || 0), 0)
       const taxCollected = all.reduce((s, o) => s + o.tax, 0)
-      return { revenue, costOfGoods, grossProfit: revenue - costOfGoods, totalExpenses, deliveryFees, discounts, taxCollected, netProfit: revenue - costOfGoods - totalExpenses }
+      return { revenue, costOfGoods, grossProfit: revenue - costOfGoods, totalExpenses, deliveryFees, discounts, taxCollected, totalRefunded, netProfit: revenue - costOfGoods - totalExpenses }
     },
     hourlyBreakdown: () => [],
     topItems: (limit = 10) => {

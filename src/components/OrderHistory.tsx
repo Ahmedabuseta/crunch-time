@@ -199,16 +199,41 @@ export function OrderHistory() {
                       </div>
                     )}
 
-                    {/* Reason input for cancel/refund */}
+                    {/* Refunded amount */}
+                    {o.refundedAmount > 0 && (
+                      <div className="bg-yellow-500/5 border border-yellow-500/20 rounded-xl p-2.5 text-xs">
+                        <p className="text-muted-foreground mb-0.5">المبلغ المسترد</p>
+                        <p className="font-bold text-yellow-400">{o.refundedAmount.toFixed(0)} ج.م</p>
+                        <p className="text-[10px] text-muted-foreground mt-0.5">(المنتجات التي لا تُرجع لم تُسترد)</p>
+                      </div>
+                    )}
+
+                    {/* Refund info — show which items support rollback */}
                     {showReason && (
-                      <div className="bg-red-500/5 border border-red-500/20 rounded-xl p-3 space-y-2 animate-slide-up">
+                      <div className="bg-red-500/5 border border-red-500/20 rounded-xl p-3 space-y-3 animate-slide-up">
                         <p className="text-xs font-bold text-red-400">سبب الإلغاء/الاسترداد (مطلوب)</p>
+
+                        {/* Rollback preview */}
+                        <div className="bg-secondary/60 rounded-xl p-2.5 space-y-1.5">
+                          <p className="text-[10px] font-bold text-muted-foreground">المنتجات القابلة للإرجاع:</p>
+                          {(o.items || []).map((item: any) => (
+                            <div key={item.id} className="flex items-center justify-between text-[10px]">
+                              <span>{item.productEmoji} {item.productName}</span>
+                              {item.supportsRollback ? (
+                                <span className="text-green-400 font-bold">✓ يُرجع</span>
+                              ) : (
+                                <span className="text-red-400 font-bold">✗ لا يُرجع</span>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+
                         <input value={reasonMap[order.id] || ''} onChange={e => setReasonMap(r => ({ ...r, [order.id]: e.target.value }))} placeholder="مثال: العميل طلب الإلغاء"
                           className="w-full px-3 py-2 rounded-lg bg-secondary text-xs border-0 focus:ring-1 focus:ring-primary focus:outline-none" dir="rtl" />
                         <div className="flex gap-2">
-                          <Button size="sm" variant="destructive" className="rounded-lg text-xs flex-1" onClick={() => confirmStatusWithReason(order.id, 'CANCELLED')}>إلغاء الطلب</Button>
-                          <Button size="sm" variant="outline" className="rounded-lg text-xs flex-1" onClick={() => confirmStatusWithReason(order.id, 'REFUNDED')}>استرداد</Button>
-                          <Button size="sm" variant="ghost" className="rounded-lg text-xs" onClick={() => setShowReasonFor(null)}>إلغاء</Button>
+                          <Button size="sm" variant="destructive" className="rounded-lg text-xs flex-1" onClick={() => confirmStatusWithReason(order.id, 'CANCELLED')}>إلغاء كامل</Button>
+                          <Button size="sm" variant="outline" className="rounded-lg text-xs flex-1 border-yellow-500/30 text-yellow-400 hover:bg-yellow-500/10" onClick={() => confirmStatusWithReason(order.id, 'REFUNDED')}>استرداد جزئي</Button>
+                          <Button size="sm" variant="ghost" className="rounded-lg text-xs" onClick={() => setShowReasonFor(null)}>رجوع</Button>
                         </div>
                       </div>
                     )}
