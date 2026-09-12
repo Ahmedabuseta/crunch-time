@@ -278,13 +278,18 @@ export const rendererApi = {
       const id = `#${Date.now().toString().slice(-6)}`
       const ts = now()
       const deliveryFee = data.orderType === 'delivery' ? (data.deliveryFee ?? settings.deliveryFee) : 0
+
+      // Find current open shift
+      const currentShift = T.shifts.get(r => r.status === 'open')
+      const shiftId = currentShift?.id || data.shiftId || null
+
       T.orders.insert({
         id, status: 'COMPLETED', orderType: data.orderType, tableNumber: data.tableNumber || null,
         customerName: data.customerName || null, customerPhone: data.customerPhone || null, customerAddress: data.customerAddress || null,
         subtotal: data.subtotal, tax: data.tax, deliveryFee,
         discountCode: data.discountCode || null, discountAmount: data.discountAmount || 0,
         total: data.total, paymentType: data.paymentType || 'cash',
-        userId: data.userId || null, shiftId: data.shiftId || null,
+        userId: data.userId || null, shiftId,
         cashierName: data.cashierName || null, statusReason: null,
         createdAt: ts, updatedAt: ts,
       })
@@ -297,6 +302,12 @@ export const rendererApi = {
         })
       }
       if (data.discountCodeId) { const dc = T.discountCodes.get(r => r.id === data.discountCodeId); if (dc) dc.usedCount++ }
+
+      // Record SALE cash movement only for cash payments with an open shift
+      if (shiftId && (data.paymentType || 'cash') === 'cash') {
+        T.cashMovements.insert({ id: uuid(), shiftId, type: 'SALE', amount: data.total, note: `طلب ${id}`, createdAt: ts })
+      }
+
       return { id }
     },
     list: (filters?: any) => {
@@ -328,17 +339,27 @@ export const rendererApi = {
     updateStatus: (id: string, status: string, reason?: string) => {
       const order = T.orders.get(r => r.id === id)
       if (!order) return { ok: false, error: 'الطلب غير موجود' }
+      const ts = now()
+
       if (status === 'CANCELLED' && order.status === 'COMPLETED') {
-        // Full rollback — all ingredients returned
         rollbackInventory(id)
+        // If cash payment and has shift, record refund movement
+        if (order.paymentType === 'cash' && order.shiftId) {
+          T.cashMovements.insert({ id: uuid(), shiftId: order.shiftId, type: 'REFUND', amount: order.total, note: `إلغاء طلب ${id} — ${reason || ''}`, createdAt: ts })
+        }
       }
+
       if (status === 'REFUNDED' && order.status === 'COMPLETED') {
-        // Partial rollback — only products+addons that support rollback
         const refundedAmount = rollbackInventoryPartial(id)
-        T.orders.update(r => r.id === id, { status, statusReason: reason || null, refundedAmount, updatedAt: now() })
+        // If cash payment and has shift, record refund for the refunded portion only
+        if (order.paymentType === 'cash' && order.shiftId && refundedAmount > 0) {
+          T.cashMovements.insert({ id: uuid(), shiftId: order.shiftId, type: 'REFUND', amount: refundedAmount, note: `استرداد طلب ${id} — ${reason || ''}`, createdAt: ts })
+        }
+        T.orders.update(r => r.id === id, { status, statusReason: reason || null, refundedAmount, updatedAt: ts })
         return { ok: true, refundedAmount }
       }
-      T.orders.update(r => r.id === id, { status, statusReason: reason || null, updatedAt: now() })
+
+      T.orders.update(r => r.id === id, { status, statusReason: reason || null, updatedAt: ts })
       return { ok: true }
     },
   },
@@ -360,15 +381,38 @@ export const rendererApi = {
     },
   },
   shift: {
-    open: (data: any) => { const id = uuid(); T.shifts.insert({ id, userId: data.userId, startedAt: now(), openingCash: data.openingCash, closingCash: null, status: 'open' }); return { id } },
-    close: (id: string, closingCash: number) => { T.shifts.update(r => r.id === id, { endedAt: now(), closingCash, status: 'closed' }); return { ok: true } },
+    open: (data: any) => {
+      const id = uuid()
+      T.shifts.insert({ id, userId: data.userId, startedAt: now(), openingCash: data.openingCash, closingCash: null, status: 'open' })
+      T.cashMovements.insert({ id: uuid(), shiftId: id, type: 'OPENING', amount: data.openingCash, note: 'رصيد افتتاحي', createdAt: now() })
+      return { id }
+    },
+    close: (id: string, closingCash: number) => {
+      T.shifts.update(r => r.id === id, { endedAt: now(), closingCash, status: 'closed' })
+      T.cashMovements.insert({ id: uuid(), shiftId: id, type: 'CLOSING', amount: closingCash, note: 'إغلاق الوردية', createdAt: now() })
+      return { ok: true }
+    },
     getCurrent: () => T.shifts.get(r => r.status === 'open') || null,
     list: (filters?: any) => filters?.userId ? T.shifts.select(r => r.userId === filters.userId).sort((a, b) => b.startedAt.localeCompare(a.startedAt)) : T.shifts.select().sort((a, b) => b.startedAt.localeCompare(a.startedAt)),
   },
   cashDrawer: {
     addMovement: (data: any) => { const id = uuid(); T.cashMovements.insert({ id, ...data, createdAt: now() }); return { id } },
     listByShift: (shiftId: string) => T.cashMovements.select(r => r.shiftId === shiftId),
-    reconcile: () => null,
+    reconcile: (shiftId: string) => {
+      const shift = T.shifts.get(r => r.id === shiftId)
+      if (!shift) return null
+      const movs = T.cashMovements.select(r => r.shiftId === shiftId)
+      let expected = shift.openingCash
+      const breakdown: Record<string, number> = {}
+      for (const m of movs) {
+        if (m.type === 'OPENING' || m.type === 'CLOSING') continue
+        const sign = ['SALE', 'CASH_IN'].includes(m.type) ? 1 : -1
+        expected += m.amount * sign
+        breakdown[m.type] = (breakdown[m.type] || 0) + m.amount * sign
+      }
+      const actual = shift.closingCash ?? 0
+      return { openingCash: shift.openingCash, breakdown, expected, actual, difference: actual - expected }
+    },
   },
   inventory: {
     listIngredients: () => T.ingredients.select(r => r.active),
@@ -430,7 +474,28 @@ export const rendererApi = {
       const all = T.orders.select(r => r.status !== 'CANCELLED'); const del = all.filter(o => o.orderType === 'delivery'); const dine = all.filter(o => o.orderType === 'dine-in'); const t = all.length || 1
       return { delivery: { count: del.length, revenue: del.reduce((s, o) => s + o.total, 0), percentage: del.length / t * 100 }, dineIn: { count: dine.length, revenue: dine.reduce((s, o) => s + o.total, 0), percentage: dine.length / t * 100 } }
     },
-    shiftReport: () => null,
+    shiftReport: (shiftId: string) => {
+      const shift = T.shifts.get(r => r.id === shiftId)
+      if (!shift) return null
+      const user = T.users.get(r => r.id === shift.userId)
+      const shiftOrders = T.orders.select(o => o.shiftId === shiftId && o.status !== 'CANCELLED')
+      const movs = T.cashMovements.select(r => r.shiftId === shiftId)
+      let expected = shift.openingCash
+      for (const m of movs) {
+        if (m.type === 'OPENING' || m.type === 'CLOSING') continue
+        const sign = ['SALE', 'CASH_IN'].includes(m.type) ? 1 : -1
+        expected += m.amount * sign
+      }
+      return {
+        shiftId, userName: user?.name || 'غير معروف',
+        startedAt: shift.startedAt, endedAt: shift.endedAt,
+        orderCount: shiftOrders.length,
+        totalRevenue: shiftOrders.reduce((s, o) => s + o.total, 0),
+        openingCash: shift.openingCash, closingCash: shift.closingCash,
+        expectedCash: expected,
+        cashDifference: shift.closingCash != null ? shift.closingCash - expected : null,
+      }
+    },
     revenueTrend: (days = 7) => {
       const all = T.orders.select(r => r.status !== 'CANCELLED'); const result: any[] = []
       for (let d = days - 1; d >= 0; d--) { const date = new Date(Date.now() - d * 86400000).toISOString().slice(0, 10); const day = all.filter(o => o.createdAt?.startsWith(date)); result.push({ date, revenue: day.reduce((s, o) => s + o.total, 0), orderCount: day.length }) }
