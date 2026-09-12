@@ -9,6 +9,9 @@ interface CartStore {
   tableNumber: string
   deliveryAddress: string
   deliveryPhone: string
+  customerName: string
+  paymentType: 'cash' | 'card' | 'wallet'
+  discountCode: string
   addItem: (product: Product) => void
   removeItem: (productId: string) => void
   updateQuantity: (productId: string, quantity: number) => void
@@ -19,6 +22,9 @@ interface CartStore {
   setTableNumber: (num: string) => void
   setDeliveryAddress: (addr: string) => void
   setDeliveryPhone: (phone: string) => void
+  setCustomerName: (name: string) => void
+  setPaymentType: (type: 'cash' | 'card' | 'wallet') => void
+  setDiscountCode: (code: string) => void
   clearCart: () => void
   subtotal: () => number
   itemCount: () => number
@@ -30,6 +36,9 @@ export const useCartStore = create<CartStore>((set, get) => ({
   tableNumber: '',
   deliveryAddress: '',
   deliveryPhone: '',
+  customerName: '',
+  paymentType: 'cash',
+  discountCode: '',
 
   addItem: (product) =>
     set((state) => {
@@ -80,8 +89,11 @@ export const useCartStore = create<CartStore>((set, get) => ({
   setTableNumber: (num) => set({ tableNumber: num }),
   setDeliveryAddress: (addr) => set({ deliveryAddress: addr }),
   setDeliveryPhone: (phone) => set({ deliveryPhone: phone }),
+  setCustomerName: (name) => set({ customerName: name }),
+  setPaymentType: (type) => set({ paymentType: type }),
+  setDiscountCode: (code) => set({ discountCode: code }),
 
-  clearCart: () => set({ items: [], tableNumber: '', deliveryAddress: '', deliveryPhone: '' }),
+  clearCart: () => set({ items: [], tableNumber: '', deliveryAddress: '', deliveryPhone: '', customerName: '', discountCode: '' }),
 
   subtotal: () => get().items.reduce((sum, i) => {
     const addonTotal = i.addons.reduce((s, a) => s + a.price, 0)

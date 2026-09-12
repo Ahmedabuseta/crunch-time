@@ -1,22 +1,18 @@
 import { useEffect } from 'react'
 import { useReportStore } from '@/services/report/report.store'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { TrendingUp, ShoppingBag, DollarSign, BarChart3, Package } from 'lucide-react'
+import { TrendingUp, ShoppingBag, DollarSign, BarChart3, Package, ArrowDownRight, ArrowUpRight, Receipt, Wallet } from 'lucide-react'
+import { cn } from '@/lib/utils'
 
 export function Reports() {
-  const { dashboard, topItems, categoryRevenue, orderTypeSplit, revenueTrend, loading, refreshAll, refreshRevenueTrend } = useReportStore()
+  const { dashboard, topItems, categoryRevenue, orderTypeSplit, revenueTrend, profitSummary, loading, refreshAll, refreshRevenueTrend } = useReportStore()
 
-  useEffect(() => {
-    refreshAll()
-    refreshRevenueTrend(7)
-  }, [])
+  useEffect(() => { refreshAll(); refreshRevenueTrend(7) }, [])
 
   if (!dashboard && !loading) {
     return (
       <div className="flex flex-col items-center justify-center h-full text-muted-foreground gap-3">
-        <div className="w-16 h-16 rounded-3xl bg-secondary/60 flex items-center justify-center">
-          <BarChart3 className="h-7 w-7 opacity-40" />
-        </div>
+        <div className="w-16 h-16 rounded-3xl bg-secondary/60 flex items-center justify-center"><BarChart3 className="h-7 w-7 opacity-40" /></div>
         <div className="text-center">
           <p className="text-sm font-bold">لا توجد بيانات بعد</p>
           <p className="text-[11px] text-muted-foreground mt-0.5">أكمل طلبات لرؤية التقارير</p>
@@ -25,16 +21,91 @@ export function Reports() {
     )
   }
 
+  const p = profitSummary
+
   return (
     <ScrollArea className="h-full p-5">
       <div className="space-y-5">
+
         {/* Stat cards */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
           <StatCard icon={<ShoppingBag className="h-5 w-5" />} label="إجمالي الطلبات" value={`${dashboard?.totalOrders || 0}`} color="bg-primary/10 text-primary" />
-          <StatCard icon={<DollarSign className="h-5 w-5" />} label="إجمالي الإيرادات" value={`${(dashboard?.totalRevenue || 0).toFixed(0)} ج.م`} color="bg-green-500/10 text-green-400" />
+          <StatCard icon={<DollarSign className="h-5 w-5" />} label="الإيرادات" value={`${(dashboard?.totalRevenue || 0).toFixed(0)} ج.م`} color="bg-green-500/10 text-green-400" />
           <StatCard icon={<TrendingUp className="h-5 w-5" />} label="متوسط الطلب" value={`${(dashboard?.avgOrderValue || 0).toFixed(0)} ج.م`} color="bg-blue-500/10 text-blue-400" />
           <StatCard icon={<Package className="h-5 w-5" />} label="الملغيات" value={`${dashboard?.cancelledOrders || 0}`} color="bg-red-500/10 text-red-400" />
         </div>
+
+        {/* ═══ Profit Breakdown ═══ */}
+        {p && (
+          <div className="border-2 rounded-2xl bg-card overflow-hidden">
+            <div className="p-4 border-b">
+              <h3 className="text-sm font-black">تحليل الأرباح</h3>
+            </div>
+            <div className="p-4 space-y-3">
+              {/* Revenue */}
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <ArrowUpRight className="h-4 w-4 text-green-500" />
+                  <span className="text-sm font-medium">الإيرادات</span>
+                </div>
+                <span className="font-black text-green-400">{p.revenue.toFixed(0)} ج.م</span>
+              </div>
+
+              {/* COGS */}
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <ArrowDownRight className="h-4 w-4 text-red-400" />
+                  <span className="text-sm font-medium">تكلفة البضاعة</span>
+                </div>
+                <span className="font-black text-red-400">-{p.costOfGoods.toFixed(0)} ج.م</span>
+              </div>
+
+              <div className="h-px bg-border" />
+
+              {/* Gross Profit */}
+              <div className="flex items-center justify-between bg-green-500/5 rounded-xl p-3">
+                <span className="text-sm font-bold">إجمالي الربح</span>
+                <span className={cn("font-black text-lg", p.grossProfit >= 0 ? "text-green-400" : "text-red-400")}>{p.grossProfit.toFixed(0)} ج.م</span>
+              </div>
+
+              {/* Expenses */}
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Receipt className="h-4 w-4 text-red-400" />
+                  <span className="text-sm font-medium">المصروفات الثابتة</span>
+                </div>
+                <span className="font-black text-red-400">-{p.totalExpenses.toFixed(0)} ج.م</span>
+              </div>
+
+              {/* Extra info */}
+              <div className="grid grid-cols-3 gap-2">
+                <div className="bg-secondary/60 rounded-xl p-2.5 text-center">
+                  <p className="text-[10px] text-muted-foreground mb-0.5">رسوم توصيل</p>
+                  <p className="text-xs font-bold text-primary">{p.deliveryFees.toFixed(0)} ج.م</p>
+                </div>
+                <div className="bg-secondary/60 rounded-xl p-2.5 text-center">
+                  <p className="text-[10px] text-muted-foreground mb-0.5">خصومات</p>
+                  <p className="text-xs font-bold text-yellow-400">{p.discounts.toFixed(0)} ج.م</p>
+                </div>
+                <div className="bg-secondary/60 rounded-xl p-2.5 text-center">
+                  <p className="text-[10px] text-muted-foreground mb-0.5">ضريبة محصلة</p>
+                  <p className="text-xs font-bold text-blue-400">{p.taxCollected.toFixed(0)} ج.م</p>
+                </div>
+              </div>
+
+              <div className="h-px bg-border" />
+
+              {/* Net Profit */}
+              <div className={cn("flex items-center justify-between rounded-xl p-4", p.netProfit >= 0 ? "bg-green-500/10 border-2 border-green-500/20" : "bg-red-500/10 border-2 border-red-500/20")}>
+                <div className="flex items-center gap-2">
+                  <Wallet className={cn("h-5 w-5", p.netProfit >= 0 ? "text-green-500" : "text-red-500")} />
+                  <span className="font-black">صافي الربح</span>
+                </div>
+                <span className={cn("font-black text-2xl", p.netProfit >= 0 ? "text-green-400" : "text-red-400")}>{p.netProfit.toFixed(0)} <span className="text-sm">ج.م</span></span>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Revenue trend */}
         {revenueTrend.length > 0 && (

@@ -1,4 +1,23 @@
 export interface ApiBridge {
+  settings: {
+    get: () => Promise<any>
+    update: (data: any) => Promise<{ ok: boolean }>
+  }
+  discountCode: {
+    list: () => Promise<any[]>
+    create: (data: any) => Promise<{ id: string }>
+    update: (id: string, data: any) => Promise<{ ok: boolean }>
+    delete: (id: string) => Promise<{ ok: boolean }>
+    validate: (code: string) => Promise<any>
+    use: (id: string) => Promise<{ ok: boolean }>
+  }
+  expense: {
+    list: () => Promise<any[]>
+    create: (data: any) => Promise<{ id: string }>
+    update: (id: string, data: any) => Promise<{ ok: boolean }>
+    delete: (id: string) => Promise<{ ok: boolean }>
+    totalMonthly: () => Promise<number>
+  }
   category: {
     list: () => Promise<any[]>
     create: (data: any) => Promise<{ id: string }>
@@ -37,8 +56,7 @@ export interface ApiBridge {
     create: (data: any) => Promise<{ id: string }>
     list: (filters?: any) => Promise<any[]>
     getById: (id: string) => Promise<any>
-    updateStatus: (id: string, status: string) => Promise<{ ok: boolean }>
-    delete: (id: string) => Promise<{ ok: boolean }>
+    updateStatus: (id: string, status: string, reason?: string) => Promise<{ ok: boolean }>
   }
   payment: {
     create: (data: any) => Promise<{ id: string }>
@@ -87,6 +105,7 @@ export interface ApiBridge {
     revenueTrend: (days?: number) => Promise<any[]>
     inventoryAlerts: () => Promise<any[]>
     paymentMethodBreakdown: (from?: string, to?: string) => Promise<any[]>
+    profitSummary: (from?: string, to?: string) => Promise<any>
   }
   backup: {
     trigger: () => Promise<any>

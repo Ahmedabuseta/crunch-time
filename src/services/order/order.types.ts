@@ -35,18 +35,27 @@ export interface OrderWithItems extends Order {
 export interface CreateOrderInput {
   orderType: string
   tableNumber?: string
+  customerName?: string
+  customerPhone?: string
+  customerAddress?: string
   deliveryAddress?: string
   deliveryPhone?: string
   subtotal: number
   tax: number
   deliveryFee: number
   total: number
+  paymentType?: string
+  cashierName?: string
+  discountCode?: string
+  discountAmount?: number
+  discountCodeId?: string
   userId?: string
   shiftId?: string
   items: {
     productId: string
     quantity: number
     unitPrice: number
+    itemDiscount?: number
     modifiers?: any
     addons?: string[]
   }[]

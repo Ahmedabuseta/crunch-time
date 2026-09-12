@@ -1,12 +1,20 @@
 import { useCartStore } from '@/services/cart/cart.store'
 import { useOrderStore } from '@/services/order/order.store'
 import { useInventoryStore } from '@/services/inventory/inventory.store'
+import { useUserStore } from '@/services/user/user.store'
 import { CartItem } from './CartItem'
 import { OrderTypeSelector } from './OrderTypeSelector'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { ShoppingCart, Trash2, CheckCircle } from 'lucide-react'
+import { ShoppingCart, Trash2, CheckCircle, Banknote, CreditCard, Wallet } from 'lucide-react'
 import { useState } from 'react'
+import { cn } from '@/lib/utils'
+
+const paymentTypes = [
+  { id: 'cash' as const, label: 'كاش', icon: Banknote },
+  { id: 'card' as const, label: 'كارت', icon: CreditCard },
+  { id: 'wallet' as const, label: 'محفظة', icon: Wallet },
+]
 
 export function Cart() {
   const items = useCartStore((s) => s.items)
@@ -17,6 +25,10 @@ export function Cart() {
   const tableNumber = useCartStore((s) => s.tableNumber)
   const deliveryAddress = useCartStore((s) => s.deliveryAddress)
   const deliveryPhone = useCartStore((s) => s.deliveryPhone)
+  const customerName = useCartStore((s) => s.customerName)
+  const paymentType = useCartStore((s) => s.paymentType)
+  const setPaymentType = useCartStore((s) => s.setPaymentType)
+  const currentUser = useUserStore((s) => s.currentUser)
   const createOrder = useOrderStore((s) => s.create)
   const deductForOrder = useInventoryStore((s) => s.deductForOrder)
   const fetchAlerts = useInventoryStore((s) => s.fetchAlerts)
@@ -39,25 +51,24 @@ export function Cart() {
     const result = await createOrder({
       orderType,
       tableNumber,
-      deliveryAddress,
-      deliveryPhone,
+      customerName: orderType === 'delivery' ? customerName : undefined,
+      customerPhone: orderType === 'delivery' ? deliveryPhone : undefined,
+      customerAddress: orderType === 'delivery' ? deliveryAddress : undefined,
       subtotal: subtotal(),
       tax,
       deliveryFee,
       total,
+      paymentType,
+      cashierName: currentUser?.name,
       items: orderItems,
     })
 
-    // Deduct inventory
     await deductForOrder(result)
     await fetchAlerts()
     await fetchOrders()
 
     setSubmitted(true)
-    setTimeout(() => {
-      clearCart()
-      setSubmitted(false)
-    }, 1200)
+    setTimeout(() => { clearCart(); setSubmitted(false) }, 1200)
   }
 
   if (submitted) {
@@ -81,9 +92,7 @@ export function Cart() {
           </div>
           <h2 className="font-black text-sm">الطلب</h2>
           {items.length > 0 && (
-            <span className="text-[10px] text-muted-foreground bg-secondary rounded-full px-2 py-0.5 font-bold">
-              {itemCount()} أصناف
-            </span>
+            <span className="text-[10px] text-muted-foreground bg-secondary rounded-full px-2 py-0.5 font-bold">{itemCount()} أصناف</span>
           )}
         </div>
         {items.length > 0 && (
@@ -93,10 +102,7 @@ export function Cart() {
         )}
       </div>
 
-      <div className="px-4 pb-3">
-        <OrderTypeSelector />
-      </div>
-
+      <div className="px-4 pb-3"><OrderTypeSelector /></div>
       <div className="h-px bg-border mx-4" />
 
       {items.length === 0 ? (
@@ -112,9 +118,7 @@ export function Cart() {
       ) : (
         <>
           <ScrollArea className="flex-1 px-4">
-            {items.map((item) => (
-              <CartItem key={item.product.id} item={item} />
-            ))}
+            {items.map((item) => <CartItem key={item.product.id} item={item} />)}
           </ScrollArea>
 
           <div className="px-5 py-4 space-y-2 bg-secondary/20 rounded-t-3xl">
@@ -140,6 +144,18 @@ export function Cart() {
                 <span className="text-xs text-muted-foreground font-medium">ج.م</span>
               </div>
             </div>
+
+            {/* Payment type selector */}
+            <div className="flex gap-1.5 bg-secondary/60 p-1 rounded-xl">
+              {paymentTypes.map(({ id, label, icon: Icon }) => (
+                <button key={id} onClick={() => setPaymentType(id)}
+                  className={cn("flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer",
+                    paymentType === id ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}>
+                  <Icon className="h-3.5 w-3.5" />{label}
+                </button>
+              ))}
+            </div>
+
             <Button className="w-full rounded-2xl h-12 text-base font-black shadow-lg shadow-primary/25 mt-1 transition-transform active:scale-[0.98]" size="lg" onClick={handleCheckout}>
               تأكيد الطلب
             </Button>

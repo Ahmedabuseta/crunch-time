@@ -12,6 +12,7 @@ interface ReportStore {
   revenueTrend: RevenueTrendPoint[]
   paymentMethods: PaymentMethodBreakdown[]
   inventoryAlerts: any[]
+  profitSummary: any
   loading: boolean
   dateRange: { from: string; to: string }
   refreshDashboard: (date?: string) => Promise<void>
@@ -31,6 +32,7 @@ export const useReportStore = create<ReportStore>((set) => ({
   revenueTrend: [],
   paymentMethods: [],
   inventoryAlerts: [],
+  profitSummary: null,
   loading: false,
   dateRange: { from: new Date().toISOString().slice(0, 10), to: new Date().toISOString().slice(0, 10) },
 
@@ -45,7 +47,7 @@ export const useReportStore = create<ReportStore>((set) => ({
 
   refreshAll: async (from?, to?) => {
     set({ loading: true })
-    const [summary, hourly, topItems, catRev, addonStats, ticketDist, split, payMethods, invAlerts] = await Promise.all([
+    const [summary, hourly, topItems, catRev, addonStats, ticketDist, split, payMethods, invAlerts, profit] = await Promise.all([
       window.api.report.dailySummary(from),
       window.api.report.hourlyBreakdown(from),
       window.api.report.topItems(10, from, to),
@@ -55,6 +57,7 @@ export const useReportStore = create<ReportStore>((set) => ({
       window.api.report.orderTypeSplit(from, to),
       window.api.report.paymentMethodBreakdown(from, to),
       window.api.report.inventoryAlerts(),
+      window.api.report.profitSummary(from, to),
     ])
     set({
       dashboard: summary as DailySummary,
@@ -66,6 +69,7 @@ export const useReportStore = create<ReportStore>((set) => ({
       orderTypeSplit: split as OrderTypeSplit,
       paymentMethods: payMethods as PaymentMethodBreakdown[],
       inventoryAlerts: invAlerts as any[],
+      profitSummary: profit,
       loading: false,
     })
   },

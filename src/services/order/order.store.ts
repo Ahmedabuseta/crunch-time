@@ -8,8 +8,7 @@ interface OrderStore {
   fetch: (filters?: OrderFilters) => Promise<void>
   getById: (id: string) => Promise<OrderWithItems | null>
   create: (data: CreateOrderInput) => Promise<string>
-  updateStatus: (id: string, status: OrderStatus) => Promise<void>
-  remove: (id: string) => Promise<void>
+  updateStatus: (id: string, status: OrderStatus, reason?: string) => Promise<void>
 }
 
 export const useOrderStore = create<OrderStore>((set) => ({
@@ -35,13 +34,8 @@ export const useOrderStore = create<OrderStore>((set) => ({
     return result.id
   },
 
-  updateStatus: async (id, status) => {
-    await window.api.order.updateStatus(id, status)
-    await useOrderStore.getState().fetch()
-  },
-
-  remove: async (id) => {
-    await window.api.order.delete(id)
+  updateStatus: async (id, status, reason?) => {
+    await window.api.order.updateStatus(id, status, reason)
     await useOrderStore.getState().fetch()
   },
 }))
