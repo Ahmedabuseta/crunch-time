@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react'
 import { useOrderStore } from '@/services/order/order.store'
-import { useUserStore } from '@/services/user/user.store'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Search, Truck, UtensilsCrossed, ChevronDown, X } from 'lucide-react'
@@ -30,8 +29,6 @@ export function OrderHistory() {
   const orders = useOrderStore((s) => s.orders)
   const fetchOrders = useOrderStore((s) => s.fetch)
   const updateStatus = useOrderStore((s) => s.updateStatus)
-  const currentUser = useUserStore((s) => s.currentUser)
-  const isAdmin = currentUser?.role === 'admin'
   const [expandedOrder, setExpandedOrder] = useState<string | null>(null)
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<string | null>(null)
@@ -240,8 +237,8 @@ export function OrderHistory() {
                       </div>
                     )}
 
-                    {/* Status controls — only for COMPLETED orders, admin only */}
-                    {!showReason && order.status === 'COMPLETED' && isAdmin && (
+                    {/* Status controls — for COMPLETED orders */}
+                    {!showReason && order.status === 'COMPLETED' && (
                       <div className="flex gap-2 pt-1">
                         <button onClick={() => setShowReasonFor(order.id)}
                           className="flex-1 py-2 rounded-xl text-xs font-bold bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20 transition-all cursor-pointer">

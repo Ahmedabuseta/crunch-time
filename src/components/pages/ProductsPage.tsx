@@ -9,33 +9,47 @@ export function ProductsPage() {
   const products = useProductStore((s) => s.products)
   const fetchProducts = useProductStore((s) => s.fetch)
   const createProduct = useProductStore((s) => s.create)
+  const updateProduct = useProductStore((s) => s.update)
   const removeProduct = useProductStore((s) => s.remove)
   const categories = useCategoryStore((s) => s.categories)
   const fetchCategories = useCategoryStore((s) => s.fetch)
   const [showForm, setShowForm] = useState(false)
+  const [editId, setEditId] = useState<string | null>(null)
   const [form, setForm] = useState({ name: '', emoji: '', price: '', categoryId: '', description: '' })
 
   useEffect(() => { fetchProducts(); fetchCategories() }, [])
 
   const catMap = new Map(categories.map(c => [c.id, c]))
 
+  const resetForm = () => { setForm({ name: '', emoji: '', price: '', categoryId: '', description: '' }); setEditId(null); setShowForm(false) }
+
   const handleCreate = async () => {
     if (!form.name || !form.price || !form.categoryId) return
     await createProduct({ name: form.name, emoji: form.emoji || '🍽️', price: parseFloat(form.price), categoryId: form.categoryId, description: form.description })
-    setForm({ name: '', emoji: '', price: '', categoryId: '', description: '' })
-    setShowForm(false)
+    resetForm()
+  }
+
+  const handleUpdate = async () => {
+    if (!editId || !form.name) return
+    await updateProduct(editId, { name: form.name, emoji: form.emoji, price: parseFloat(form.price), categoryId: form.categoryId, description: form.description })
+    resetForm()
+  }
+
+  const startEdit = (p: any) => {
+    setEditId(p.id); setShowForm(false)
+    setForm({ name: p.name, emoji: p.emoji, price: String(p.price), categoryId: p.categoryId, description: p.description })
   }
 
   return (
     <div className="flex flex-col h-full">
       <div className="flex items-center justify-between px-5 py-4 border-b">
         <h2 className="text-base font-black">المنتجات</h2>
-        <Button size="sm" className="gap-1.5 rounded-xl" onClick={() => setShowForm(!showForm)}>
+        <Button size="sm" className="gap-1.5 rounded-xl" onClick={() => { showForm ? resetForm() : setShowForm(true); setEditId(null) }}>
           {showForm ? <X className="h-4 w-4" /> : <Plus className="h-4 w-4" />} {showForm ? 'إغلاق' : 'إضافة منتج'}
         </Button>
       </div>
 
-      {showForm && (
+      {(showForm || editId) && (
         <div className="mx-5 mt-4 p-4 border-2 rounded-2xl bg-card space-y-3 animate-slide-up">
           <div className="grid grid-cols-2 gap-3">
             <input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="اسم المنتج" className="px-3 py-2 rounded-xl bg-secondary text-sm border-0 focus:ring-1 focus:ring-primary focus:outline-none" dir="rtl" />
@@ -47,7 +61,10 @@ export function ProductsPage() {
             </select>
           </div>
           <input value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} placeholder="الوصف" className="w-full px-3 py-2 rounded-xl bg-secondary text-sm border-0 focus:ring-1 focus:ring-primary focus:outline-none" dir="rtl" />
-          <Button className="w-full rounded-xl" onClick={handleCreate}>إضافة</Button>
+          <div className="flex gap-2">
+            <Button className="flex-1 rounded-xl" onClick={editId ? handleUpdate : handleCreate}>{editId ? 'تحديث' : 'إضافة'}</Button>
+            {editId && <Button variant="ghost" className="rounded-xl" onClick={resetForm}>إلغاء</Button>}
+          </div>
         </div>
       )}
 
@@ -58,7 +75,7 @@ export function ProductsPage() {
               <div className="flex items-center justify-between">
                 <span className="text-3xl">{p.emoji}</span>
                 <div className="flex gap-1">
-                  <Button variant="ghost" size="icon" className="h-7 w-7 rounded-lg"><Pencil className="h-3.5 w-3.5" /></Button>
+                  <Button variant="ghost" size="icon" className="h-7 w-7 rounded-lg" onClick={() => startEdit(p)}><Pencil className="h-3.5 w-3.5" /></Button>
                   <Button variant="ghost" size="icon" className="h-7 w-7 rounded-lg text-destructive" onClick={() => removeProduct(p.id)}><Trash2 className="h-3.5 w-3.5" /></Button>
                 </div>
               </div>

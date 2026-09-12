@@ -10,7 +10,7 @@ interface CartStore {
   deliveryAddress: string
   deliveryPhone: string
   customerName: string
-  paymentType: 'cash' | 'card' | 'wallet'
+  paymentType: 'cash' | 'visa'
   discountCode: string
   addItem: (product: Product) => void
   removeItem: (productId: string) => void
@@ -23,7 +23,7 @@ interface CartStore {
   setDeliveryAddress: (addr: string) => void
   setDeliveryPhone: (phone: string) => void
   setCustomerName: (name: string) => void
-  setPaymentType: (type: 'cash' | 'card' | 'wallet') => void
+  setPaymentType: (type: 'cash' | 'visa') => void
   setDiscountCode: (code: string) => void
   clearCart: () => void
   subtotal: () => number
