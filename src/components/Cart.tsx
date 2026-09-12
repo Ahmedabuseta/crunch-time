@@ -8,7 +8,7 @@ import { OrderTypeSelector } from './OrderTypeSelector'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { ShoppingCart, Trash2, CheckCircle, Banknote, CreditCard, Wallet, Printer, RotateCcw } from 'lucide-react'
-import { useState, useRef } from 'react'
+import { useState } from 'react'
 import { cn } from '@/lib/utils'
 
 const paymentTypes = [
@@ -33,6 +33,90 @@ interface LastOrder {
   cashierName?: string
 }
 
+function buildReceiptHtml(o: LastOrder): string {
+  const now = new Date()
+  const dateStr = now.toLocaleDateString('ar-EG', { year: 'numeric', month: 'long', day: 'numeric' })
+  const timeStr = now.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })
+  const paymentLabels: Record<string, string> = { cash: 'كاش', card: 'كارت', wallet: 'محفظة' }
+
+  let itemsHtml = ''
+  for (const item of o.items) {
+    const addonTotal = item.addons.reduce((s: number, a: any) => s + a.price, 0)
+    const modifierTotal = item.modifiers.reduce((s: number, m: any) => s + m.priceAdjustment, 0)
+    const lineTotal = (item.product.price + addonTotal + modifierTotal) * item.quantity
+    itemsHtml += `<div style="display:flex;justify-content:space-between;margin-bottom:4px"><span style="font-weight:700">${item.product.emoji} ${item.product.name} ×${item.quantity}</span><span style="font-weight:700">${lineTotal} ج.م</span></div>`
+    for (const m of item.modifiers) {
+      itemsHtml += `<div style="display:flex;justify-content:space-between;color:#666;font-size:11px;padding-right:16px"><span>↳ ${m.modifierName}</span>${m.priceAdjustment > 0 ? `<span>+${m.priceAdjustment * item.quantity} ج.م</span>` : ''}</div>`
+    }
+    for (const a of item.addons) {
+      itemsHtml += `<div style="display:flex;justify-content:space-between;color:#666;font-size:11px;padding-right:16px"><span>↳ ${a.emoji} ${a.name}</span><span>+${a.price * item.quantity} ج.م</span></div>`
+    }
+  }
+
+  let deliveryHtml = ''
+  if (o.orderType === 'delivery') {
+    if (o.customerName) deliveryHtml += `<div style="display:flex;justify-content:space-between"><span style="color:#666">العميل</span><span style="font-weight:700">${o.customerName}</span></div>`
+    if (o.customerPhone) deliveryHtml += `<div style="display:flex;justify-content:space-between"><span style="color:#666">التليفون</span><span style="font-weight:700">${o.customerPhone}</span></div>`
+    if (o.customerAddress) deliveryHtml += `<div style="display:flex;justify-content:space-between"><span style="color:#666">العنوان</span><span style="font-weight:700">${o.customerAddress}</span></div>`
+  }
+
+  return `<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<title>Receipt ${o.id}</title>
+<link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;700;900&display=swap" rel="stylesheet">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Tajawal', monospace; font-size: 13px; color: #000; background: #fff; }
+  @media print { @page { margin: 0; size: 80mm auto; } body { margin: 0; } }
+  .receipt { width: 80mm; margin: 0 auto; padding: 8mm 6mm; }
+  .center { text-align: center; }
+  .row { display: flex; justify-content: space-between; margin-bottom: 3px; }
+  .bold { font-weight: 900; }
+  .gray { color: #666; }
+  .big { font-size: 20px; }
+</style>
+</head>
+<body>
+<div class="receipt">
+  <div class="center" style="padding-bottom:10px;border-bottom:2px dashed #999;margin-bottom:10px">
+    <p class="bold big">🍔 فاست فود</p>
+    <p class="gray" style="font-size:11px">نقطة البيع</p>
+    <p class="gray" style="font-size:11px;margin-top:4px">${dateStr} — ${timeStr}</p>
+  </div>
+
+  <div style="border-bottom:1.5px dashed #ccc;padding-bottom:8px;margin-bottom:8px;font-size:12px">
+    <div class="row"><span class="gray">رقم الطلب</span><span class="bold">${o.id}</span></div>
+    <div class="row"><span class="gray">نوع الطلب</span><span class="bold">${o.orderType === 'delivery' ? 'توصيل' : 'صالة'}</span></div>
+    ${o.tableNumber ? `<div class="row"><span class="gray">الطاولة</span><span class="bold">${o.tableNumber}</span></div>` : ''}
+    <div class="row"><span class="gray">طريقة الدفع</span><span class="bold">${paymentLabels[o.paymentType] || o.paymentType}</span></div>
+    ${o.cashierName ? `<div class="row"><span class="gray">الكاشير</span><span class="bold">${o.cashierName}</span></div>` : ''}
+  </div>
+
+  ${deliveryHtml ? `<div style="border-bottom:1.5px dashed #ccc;padding-bottom:8px;margin-bottom:8px;font-size:12px">${deliveryHtml}</div>` : ''}
+
+  <div style="border-bottom:1.5px dashed #ccc;padding-bottom:8px;margin-bottom:8px">
+    ${itemsHtml}
+  </div>
+
+  <div style="margin-bottom:16px">
+    <div class="row gray"><span>المجموع الفرعي</span><span>${o.subtotal.toFixed(0)} ج.م</span></div>
+    <div class="row gray"><span>ضريبة (14%)</span><span>${o.tax.toFixed(0)} ج.م</span></div>
+    ${o.deliveryFee > 0 ? `<div class="row gray"><span>رسوم التوصيل</span><span>${o.deliveryFee} ج.م</span></div>` : ''}
+    <hr style="border:none;border-top:2px solid #000;margin:8px 0">
+    <div class="row" style="font-size:18px"><span class="bold">الإجمالي</span><span class="bold">${o.total.toFixed(0)} ج.م</span></div>
+  </div>
+
+  <div class="center" style="font-size:11px;color:#999;border-top:1.5px dashed #ccc;padding-top:10px">
+    <p>شكراً لزيارتكم ❤️</p>
+    <p style="margin-top:4px">فاست فود — نقطة بيع</p>
+  </div>
+</div>
+</body>
+</html>`
+}
+
 export function Cart() {
   const items = useCartStore((s) => s.items)
   const subtotal = useCartStore((s) => s.subtotal)
@@ -51,15 +135,13 @@ export function Cart() {
   const fetchAlerts = useInventoryStore((s) => s.fetchAlerts)
   const fetchOrders = useOrderStore((s) => s.fetch)
   const [lastOrder, setLastOrder] = useState<LastOrder | null>(null)
-  const [printing, setPrinting] = useState(false)
-  const receiptRef = useRef<HTMLDivElement>(null)
 
   const tax = subtotal() * 0.14
   const deliveryFee = orderType === 'delivery' ? 25 : 0
   const total = subtotal() + tax + deliveryFee
 
   const handleCheckout = async () => {
-    const cartItems = [...items] // snapshot before clear
+    const cartItems = [...items]
     const orderItems = cartItems.map((item) => ({
       productId: item.product.id,
       quantity: item.quantity,
@@ -87,7 +169,6 @@ export function Cart() {
     await fetchAlerts()
     await fetchOrders()
 
-    // Store receipt data
     setLastOrder({
       id: result,
       items: cartItems,
@@ -106,11 +187,17 @@ export function Cart() {
   }
 
   const handlePrint = () => {
-    setPrinting(true)
-    setTimeout(() => {
-      window.print()
-      setPrinting(false)
-    }, 100)
+    if (!lastOrder) return
+    const html = buildReceiptHtml(lastOrder)
+    const w = window.open('', '_blank', 'width=400,height=600')
+    if (w) {
+      w.document.write(html)
+      w.document.close()
+      w.onload = () => {
+        w.print()
+        w.onafterprint = () => w.close()
+      }
+    }
   }
 
   const handleNewOrder = () => {
@@ -122,7 +209,6 @@ export function Cart() {
   if (lastOrder) {
     return (
       <div className="flex flex-col h-full">
-        {/* Receipt header */}
         <div className="flex items-center justify-between px-5 pt-5 pb-3">
           <div className="flex items-center gap-2">
             <div className="w-8 h-8 rounded-xl bg-green-500/10 flex items-center justify-center">
@@ -147,7 +233,7 @@ export function Cart() {
 
         {/* Receipt preview */}
         <ScrollArea className="flex-1 p-4">
-          <div className="bg-white rounded-xl overflow-hidden shadow-lg" ref={receiptRef}>
+          <div className="bg-white rounded-xl overflow-hidden shadow-lg">
             <Receipt
               orderId={lastOrder.id}
               items={lastOrder.items}
@@ -166,33 +252,11 @@ export function Cart() {
           </div>
         </ScrollArea>
 
-        {/* Bottom action */}
         <div className="p-4">
           <Button className="w-full rounded-2xl h-11 font-black" onClick={handleNewOrder}>
             طلب جديد
           </Button>
         </div>
-
-        {/* Hidden receipt for printing */}
-        {printing && (
-          <div className="fixed inset-0 z-[9999] bg-white" style={{ overflow: 'auto' }}>
-            <Receipt
-              orderId={lastOrder.id}
-              items={lastOrder.items}
-              subtotal={lastOrder.subtotal}
-              tax={lastOrder.tax}
-              deliveryFee={lastOrder.deliveryFee}
-              total={lastOrder.total}
-              orderType={lastOrder.orderType}
-              tableNumber={lastOrder.tableNumber}
-              customerName={lastOrder.customerName}
-              customerPhone={lastOrder.customerPhone}
-              customerAddress={lastOrder.customerAddress}
-              paymentType={lastOrder.paymentType}
-              cashierName={lastOrder.cashierName}
-            />
-          </div>
-        )}
       </div>
     )
   }
@@ -260,7 +324,6 @@ export function Cart() {
               </div>
             </div>
 
-            {/* Payment type selector */}
             <div className="flex gap-1.5 bg-secondary/60 p-1 rounded-xl">
               {paymentTypes.map(({ id, label, icon: Icon }) => (
                 <button key={id} onClick={() => setPaymentType(id)}
