@@ -3,11 +3,12 @@ import { useOrderStore } from '@/services/order/order.store'
 import { useInventoryStore } from '@/services/inventory/inventory.store'
 import { useUserStore } from '@/services/user/user.store'
 import { CartItem } from './CartItem'
+import { Receipt } from './Receipt'
 import { OrderTypeSelector } from './OrderTypeSelector'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { ShoppingCart, Trash2, CheckCircle, Banknote, CreditCard, Wallet } from 'lucide-react'
-import { useState } from 'react'
+import { ShoppingCart, Trash2, CheckCircle, Banknote, CreditCard, Wallet, Printer, RotateCcw } from 'lucide-react'
+import { useState, useRef } from 'react'
 import { cn } from '@/lib/utils'
 
 const paymentTypes = [
@@ -15,6 +16,22 @@ const paymentTypes = [
   { id: 'card' as const, label: 'كارت', icon: CreditCard },
   { id: 'wallet' as const, label: 'محفظة', icon: Wallet },
 ]
+
+interface LastOrder {
+  id: string
+  items: any[]
+  subtotal: number
+  tax: number
+  deliveryFee: number
+  total: number
+  orderType: string
+  tableNumber?: string
+  customerName?: string
+  customerPhone?: string
+  customerAddress?: string
+  paymentType: string
+  cashierName?: string
+}
 
 export function Cart() {
   const items = useCartStore((s) => s.items)
@@ -33,14 +50,17 @@ export function Cart() {
   const deductForOrder = useInventoryStore((s) => s.deductForOrder)
   const fetchAlerts = useInventoryStore((s) => s.fetchAlerts)
   const fetchOrders = useOrderStore((s) => s.fetch)
-  const [submitted, setSubmitted] = useState(false)
+  const [lastOrder, setLastOrder] = useState<LastOrder | null>(null)
+  const [printing, setPrinting] = useState(false)
+  const receiptRef = useRef<HTMLDivElement>(null)
 
   const tax = subtotal() * 0.14
   const deliveryFee = orderType === 'delivery' ? 25 : 0
   const total = subtotal() + tax + deliveryFee
 
   const handleCheckout = async () => {
-    const orderItems = items.map((item) => ({
+    const cartItems = [...items] // snapshot before clear
+    const orderItems = cartItems.map((item) => ({
       productId: item.product.id,
       quantity: item.quantity,
       unitPrice: item.product.price + item.modifiers.reduce((s, m) => s + m.priceAdjustment, 0),
@@ -67,22 +87,117 @@ export function Cart() {
     await fetchAlerts()
     await fetchOrders()
 
-    setSubmitted(true)
-    setTimeout(() => { clearCart(); setSubmitted(false) }, 1200)
+    // Store receipt data
+    setLastOrder({
+      id: result,
+      items: cartItems,
+      subtotal: subtotal(),
+      tax,
+      deliveryFee,
+      total,
+      orderType,
+      tableNumber: tableNumber || undefined,
+      customerName: customerName || undefined,
+      customerPhone: deliveryPhone || undefined,
+      customerAddress: deliveryAddress || undefined,
+      paymentType,
+      cashierName: currentUser?.name,
+    })
   }
 
-  if (submitted) {
+  const handlePrint = () => {
+    setPrinting(true)
+    setTimeout(() => {
+      window.print()
+      setPrinting(false)
+    }, 100)
+  }
+
+  const handleNewOrder = () => {
+    setLastOrder(null)
+    clearCart()
+  }
+
+  // Receipt view after checkout
+  if (lastOrder) {
     return (
-      <div className="flex flex-col items-center justify-center h-full gap-4 animate-scale-in">
-        <div className="w-20 h-20 rounded-full bg-green-500/15 flex items-center justify-center">
-          <CheckCircle className="h-10 w-10 text-green-500" />
+      <div className="flex flex-col h-full">
+        {/* Receipt header */}
+        <div className="flex items-center justify-between px-5 pt-5 pb-3">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-xl bg-green-500/10 flex items-center justify-center">
+              <CheckCircle className="h-4 w-4 text-green-500" />
+            </div>
+            <div>
+              <h2 className="font-black text-sm">تم الطلب!</h2>
+              <p className="text-[10px] text-muted-foreground">{lastOrder.id}</p>
+            </div>
+          </div>
+          <div className="flex gap-1.5">
+            <Button variant="outline" size="sm" className="rounded-xl gap-1.5" onClick={handlePrint}>
+              <Printer className="h-3.5 w-3.5" /> طباعة
+            </Button>
+            <Button variant="ghost" size="sm" className="rounded-xl gap-1.5" onClick={handleNewOrder}>
+              <RotateCcw className="h-3.5 w-3.5" /> طلب جديد
+            </Button>
+          </div>
         </div>
-        <p className="text-lg font-black">تم الطلب!</p>
-        <p className="text-sm text-muted-foreground">جاري التحضير...</p>
+
+        <div className="h-px bg-border mx-4" />
+
+        {/* Receipt preview */}
+        <ScrollArea className="flex-1 p-4">
+          <div className="bg-white rounded-xl overflow-hidden shadow-lg" ref={receiptRef}>
+            <Receipt
+              orderId={lastOrder.id}
+              items={lastOrder.items}
+              subtotal={lastOrder.subtotal}
+              tax={lastOrder.tax}
+              deliveryFee={lastOrder.deliveryFee}
+              total={lastOrder.total}
+              orderType={lastOrder.orderType}
+              tableNumber={lastOrder.tableNumber}
+              customerName={lastOrder.customerName}
+              customerPhone={lastOrder.customerPhone}
+              customerAddress={lastOrder.customerAddress}
+              paymentType={lastOrder.paymentType}
+              cashierName={lastOrder.cashierName}
+            />
+          </div>
+        </ScrollArea>
+
+        {/* Bottom action */}
+        <div className="p-4">
+          <Button className="w-full rounded-2xl h-11 font-black" onClick={handleNewOrder}>
+            طلب جديد
+          </Button>
+        </div>
+
+        {/* Hidden receipt for printing */}
+        {printing && (
+          <div className="fixed inset-0 z-[9999] bg-white" style={{ overflow: 'auto' }}>
+            <Receipt
+              orderId={lastOrder.id}
+              items={lastOrder.items}
+              subtotal={lastOrder.subtotal}
+              tax={lastOrder.tax}
+              deliveryFee={lastOrder.deliveryFee}
+              total={lastOrder.total}
+              orderType={lastOrder.orderType}
+              tableNumber={lastOrder.tableNumber}
+              customerName={lastOrder.customerName}
+              customerPhone={lastOrder.customerPhone}
+              customerAddress={lastOrder.customerAddress}
+              paymentType={lastOrder.paymentType}
+              cashierName={lastOrder.cashierName}
+            />
+          </div>
+        )}
       </div>
     )
   }
 
+  // Cart view
   return (
     <div className="flex flex-col h-full">
       <div className="flex items-center justify-between px-5 pt-5 pb-3">

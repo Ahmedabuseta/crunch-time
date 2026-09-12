@@ -121,3 +121,43 @@ body {
 .stagger-6 { animation-delay: 0.18s; }
 .stagger-7 { animation-delay: 0.21s; }
 .stagger-8 { animation-delay: 0.24s; }
+
+/* Print styles for receipt */
+@media print {
+  body {
+    background: white !important;
+    color: black !important;
+    overflow: visible !important;
+  }
+
+  /* Hide everything except the receipt */
+  body > #root > *:not(.fixed) {
+    display: none !important;
+  }
+
+  .fixed {
+    position: static !important;
+    background: white !important;
+    backdrop-filter: none !important;
+  }
+
+  /* Receipt specific */
+  #receipt {
+    width: 80mm !important;
+    margin: 0 auto !important;
+    padding: 5mm !important;
+    font-size: 12px !important;
+    color: black !important;
+    background: white !important;
+  }
+
+  #receipt * {
+    color: black !important;
+    border-color: #333 !important;
+  }
+
+  @page {
+    margin: 0;
+    size: 80mm auto;
+  }
+}
