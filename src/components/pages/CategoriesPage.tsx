@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useCategoryStore } from '@/services/category/category.store'
 import { Button } from '@/components/ui/button'
 import { Plus, Pencil, Trash2, GripVertical, X } from 'lucide-react'
+import { EmojiPicker } from '@/components/ui/emoji-picker'
 
 export function CategoriesPage() {
   const categories = useCategoryStore((s) => s.categories)
@@ -47,7 +48,7 @@ export function CategoriesPage() {
         <div className="mx-5 mt-4 p-4 border-2 rounded-2xl bg-card space-y-3 animate-slide-up">
           <div className="grid grid-cols-3 gap-3">
             <input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="اسم القسم" className="px-3 py-2 rounded-xl bg-secondary text-sm border-0 focus:ring-1 focus:ring-primary focus:outline-none col-span-2" dir="rtl" />
-            <input value={form.emoji} onChange={e => setForm(f => ({ ...f, emoji: e.target.value }))} placeholder="🍔" className="px-3 py-2 rounded-xl bg-secondary text-sm border-0 focus:ring-1 focus:ring-primary focus:outline-none text-center" />
+            <EmojiPicker value={form.emoji} onChange={emoji => setForm(f => ({ ...f, emoji }))} />
           </div>
           <div className="flex gap-2">
             <input type="color" value={form.color} onChange={e => setForm(f => ({ ...f, color: e.target.value }))} className="w-10 h-10 rounded-lg border-0 cursor-pointer" />

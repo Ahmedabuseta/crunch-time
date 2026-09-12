@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Plus, Package, AlertTriangle, X, Pencil, Trash2, Link } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { EmojiPicker } from '@/components/ui/emoji-picker'
 
 export function InventoryPage() {
   const ingredients = useInventoryStore((s) => s.ingredients)
@@ -22,7 +23,7 @@ export function InventoryPage() {
 
   const [showIngForm, setShowIngForm] = useState(false)
   const [editIngId, setEditIngId] = useState<string | null>(null)
-  const [ingForm, setIngForm] = useState({ name: '', unit: 'g', stockQuantity: '', minStock: '', costPerUnit: '' })
+  const [ingForm, setIngForm] = useState({ name: '', emoji: '', unit: 'g', stockQuantity: '', minStock: '', costPerUnit: '' })
   const [restockId, setRestockId] = useState<string | null>(null)
   const [restockQty, setRestockQty] = useState('')
   const [showRecipeEditor, setShowRecipeEditor] = useState(false)
@@ -32,11 +33,11 @@ export function InventoryPage() {
   useEffect(() => { fetchIngredients(); fetchAlerts(); fetchProducts() }, [])
 
   const alertIds = new Set(alerts.map(a => a.id))
-  const resetIngForm = () => { setIngForm({ name: '', unit: 'g', stockQuantity: '', minStock: '', costPerUnit: '' }); setEditIngId(null); setShowIngForm(false) }
+  const resetIngForm = () => { setIngForm({ name: '', emoji: '', unit: 'g', stockQuantity: '', minStock: '', costPerUnit: '' }); setEditIngId(null); setShowIngForm(false) }
 
   const handleCreateIng = async () => {
     if (!ingForm.name || !ingForm.unit) return
-    await createIngredient({ name: ingForm.name, unit: ingForm.unit, stockQuantity: parseFloat(ingForm.stockQuantity) || 0, minStock: parseFloat(ingForm.minStock) || 0, costPerUnit: parseFloat(ingForm.costPerUnit) || 0 })
+    await createIngredient({ name: ingForm.name, emoji: ingForm.emoji || '📦', unit: ingForm.unit, stockQuantity: parseFloat(ingForm.stockQuantity) || 0, minStock: parseFloat(ingForm.minStock) || 0, costPerUnit: parseFloat(ingForm.costPerUnit) || 0 })
     resetIngForm()
   }
 
@@ -48,7 +49,7 @@ export function InventoryPage() {
 
   const startEditIng = (i: any) => {
     setEditIngId(i.id); setShowIngForm(false)
-    setIngForm({ name: i.name, unit: i.unit, stockQuantity: String(i.stockQuantity), minStock: String(i.minStock), costPerUnit: String(i.costPerUnit) })
+    setIngForm({ name: i.name, emoji: i.emoji || '', unit: i.unit, stockQuantity: String(i.stockQuantity), minStock: String(i.minStock), costPerUnit: String(i.costPerUnit) })
   }
 
   const handleRestock = async () => {
@@ -110,6 +111,7 @@ export function InventoryPage() {
         <div className="mx-5 mt-3 p-4 border-2 rounded-2xl bg-card space-y-3 animate-slide-up">
           <div className="grid grid-cols-2 gap-3">
             <input value={ingForm.name} onChange={e => setIngForm(f => ({ ...f, name: e.target.value }))} placeholder="اسم المادة" className="px-3 py-2 rounded-xl bg-secondary text-sm border-0 focus:ring-1 focus:ring-primary focus:outline-none" dir="rtl" />
+            <EmojiPicker value={ingForm.emoji} onChange={emoji => setIngForm(f => ({ ...f, emoji }))} />
             <select value={ingForm.unit} onChange={e => setIngForm(f => ({ ...f, unit: e.target.value }))} className="px-3 py-2 rounded-xl bg-secondary text-sm border-0 focus:ring-1 focus:ring-primary focus:outline-none">
               <option value="g">جرام (g)</option>
               <option value="kg">كيلو (kg)</option>

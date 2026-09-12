@@ -28,6 +28,7 @@ export interface InventoryTransaction {
 
 export interface CreateIngredientInput {
   name: string
+  emoji?: string
   unit: string
   stockQuantity?: number
   minStock?: number
@@ -36,6 +37,7 @@ export interface CreateIngredientInput {
 
 export interface UpdateIngredientInput {
   name?: string
+  emoji?: string
   unit?: string
   stockQuantity?: number
   minStock?: number

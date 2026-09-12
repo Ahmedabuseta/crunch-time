@@ -16,6 +16,7 @@ const T = {
   payments: new Table(), ingredients: new Table(), recipes: new Table(),
   inventoryTransactions: new Table(), cashMovements: new Table(),
   settings: new Table(), discountCodes: new Table(), expenses: new Table(),
+  addonRecipes: new Table(), modifierRecipes: new Table(),
 }
 
 const uuid = () => crypto.randomUUID()
@@ -24,27 +25,41 @@ const now = () => new Date().toISOString()
 // ─── Helpers ────────────────────────────────────────────────
 function getSettings() { return T.settings.get(r => r.id === 'settings') || { deliveryFee: 25, taxRate: 0.14 } }
 
-// Full rollback — CANCELLED: return ALL ingredients
+// Full rollback — CANCELLED: return ALL ingredients (products + addons)
 function rollbackInventory(orderId: string) {
   const items = T.orderItems.select(r => r.orderId === orderId)
   for (const item of items) {
+    // Product recipe rollback
     for (const r of T.recipes.select(r => r.productId === item.productId)) {
       const qty = r.quantityPerUnit * item.quantity
       const ing = T.ingredients.get(i => i.id === r.ingredientId)
       if (ing) ing.stockQuantity += qty
-      T.inventoryTransactions.insert({ id: uuid(), ingredientId: r.ingredientId, type: 'ADJUSTMENT', quantity: qty, referenceOrderId: orderId, note: `إرجاع كامل طلب ${orderId}`, createdAt: now() })
+      T.inventoryTransactions.insert({ id: uuid(), ingredientId: r.ingredientId, type: 'ADJUSTMENT', quantity: qty, referenceOrderId: orderId, note: `إرجاع منتج — طلب ${orderId}`, createdAt: now() })
+    }
+    // Addon recipe rollback
+    if (item.selectedAddonsJson) {
+      try {
+        const addonIds = JSON.parse(item.selectedAddonsJson) as string[]
+        for (const addonId of addonIds) {
+          for (const ar of T.addonRecipes.select(r => r.addonId === addonId)) {
+            const qty = ar.quantityPerUnit * item.quantity
+            const ing = T.ingredients.get(i => i.id === ar.ingredientId)
+            if (ing) ing.stockQuantity += qty
+            T.inventoryTransactions.insert({ id: uuid(), ingredientId: ar.ingredientId, type: 'ADJUSTMENT', quantity: qty, referenceOrderId: orderId, note: `إرجاع إضافة — طلب ${orderId}`, createdAt: now() })
+          }
+        }
+      } catch {}
     }
   }
 }
 
-// Partial rollback — REFUNDED: only return products+addons that support rollback
+// Partial rollback — REFUNDED: only products+addons that support rollback
 function rollbackInventoryPartial(orderId: string): number {
   const items = T.orderItems.select(r => r.orderId === orderId)
   let refundedAmount = 0
   for (const item of items) {
     const product = T.products.get(p => p.id === item.productId)
     if (!product) continue
-
     let itemRefund = 0
 
     // Product rollback
@@ -58,19 +73,24 @@ function rollbackInventoryPartial(orderId: string): number {
       itemRefund += product.price * item.quantity
     }
 
-    // Addon rollback — check each addon's supportsRollback
+    // Addon rollback
     if (item.selectedAddonsJson) {
       try {
         const addonIds = JSON.parse(item.selectedAddonsJson) as string[]
         for (const addonId of addonIds) {
           const addon = T.addons.get(a => a.id === addonId)
-          if (addon && addon.supportsRollback) {
-            itemRefund += addon.price * item.quantity
+          if (!addon || !addon.supportsRollback) continue
+          // Rollback addon recipe ingredients
+          for (const ar of T.addonRecipes.select(r => r.addonId === addonId)) {
+            const qty = ar.quantityPerUnit * item.quantity
+            const ing = T.ingredients.get(i => i.id === ar.ingredientId)
+            if (ing) ing.stockQuantity += qty
+            T.inventoryTransactions.insert({ id: uuid(), ingredientId: ar.ingredientId, type: 'ADJUSTMENT', quantity: qty, referenceOrderId: orderId, note: `إرجاع إضافة ${orderId} — ${addon.name}`, createdAt: now() })
           }
+          itemRefund += addon.price * item.quantity
         }
       } catch {}
     }
-
     refundedAmount += itemRefund
   }
   return refundedAmount
@@ -79,11 +99,26 @@ function rollbackInventoryPartial(orderId: string): number {
 function deductInventory(orderId: string) {
   const items = T.orderItems.select(r => r.orderId === orderId)
   for (const item of items) {
+    // Product recipe deduction
     for (const r of T.recipes.select(r => r.productId === item.productId)) {
       const qty = r.quantityPerUnit * item.quantity
       const ing = T.ingredients.get(i => i.id === r.ingredientId)
       if (ing) ing.stockQuantity -= qty
-      T.inventoryTransactions.insert({ id: uuid(), ingredientId: r.ingredientId, type: 'CONSUMPTION', quantity: -qty, referenceOrderId: orderId, note: `استهلاك طلب ${orderId}`, createdAt: now() })
+      T.inventoryTransactions.insert({ id: uuid(), ingredientId: r.ingredientId, type: 'CONSUMPTION', quantity: -qty, referenceOrderId: orderId, note: `استهلاك منتج — طلب ${orderId}`, createdAt: now() })
+    }
+    // Addon recipe deduction
+    if (item.selectedAddonsJson) {
+      try {
+        const addonIds = JSON.parse(item.selectedAddonsJson) as string[]
+        for (const addonId of addonIds) {
+          for (const ar of T.addonRecipes.select(r => r.addonId === addonId)) {
+            const qty = ar.quantityPerUnit * item.quantity
+            const ing = T.ingredients.get(i => i.id === ar.ingredientId)
+            if (ing) ing.stockQuantity -= qty
+            T.inventoryTransactions.insert({ id: uuid(), ingredientId: ar.ingredientId, type: 'CONSUMPTION', quantity: -qty, referenceOrderId: orderId, note: `استهلاك إضافة — طلب ${orderId}`, createdAt: now() })
+          }
+        }
+      } catch {}
     }
   }
 }
@@ -200,6 +235,13 @@ function seed() {
     { id: 'r7', productId: 'd1', ingredientId: 'ing-cola', quantityPerUnit: 330 },
   ]) T.recipes.insert(r)
 
+  // Addon recipes (what ingredients each addon consumes)
+  for (const ar of [
+    { id: 'ar1', addonId: 'addon-cheese', ingredientId: 'ing-cheese', quantityPerUnit: 20 },
+    { id: 'ar2', addonId: 'addon-fries', ingredientId: 'ing-potato', quantityPerUnit: 100 },
+    { id: 'ar3', addonId: 'addon-drink', ingredientId: 'ing-cola', quantityPerUnit: 200 },
+  ]) T.addonRecipes.insert(ar)
+
   // Users
   T.users.insert({ id: 'user-admin', name: 'مدير', pin: '0000', role: 'admin', active: true, createdAt: now() })
   T.users.insert({ id: 'user-cashier', name: 'كاشير', pin: '1234', role: 'cashier', active: true, createdAt: now() })
@@ -256,6 +298,12 @@ export const rendererApi = {
     delete: (id: string) => { T.addons.update(r => r.id === id, { active: false }); return { ok: true } },
     listByProduct: (productId: string) => T.productAddons.select(r => r.productId === productId).map(l => T.addons.get(a => a.id === l.addonId)).filter(Boolean),
     linkToProduct: (productId: string, addonId: string) => { T.productAddons.insert({ productId, addonId }); return { ok: true } },
+    listRecipes: (addonId: string) => T.addonRecipes.select(r => r.addonId === addonId),
+    upsertRecipe: (data: any) => {
+      if (data.id) { T.addonRecipes.update(r => r.id === data.id, { ingredientId: data.ingredientId, quantityPerUnit: data.quantityPerUnit }); return { id: data.id } }
+      const id = uuid(); T.addonRecipes.insert({ id, addonId: data.addonId, ingredientId: data.ingredientId, quantityPerUnit: data.quantityPerUnit }); return { id }
+    },
+    deleteRecipe: (id: string) => { T.addonRecipes.delete(r => r.id === id); return { ok: true } },
   },
   modifier: {
     listGroups: () => T.modifierGroups.select(r => r.active).sort((a, b) => a.sortOrder - b.sortOrder),
@@ -271,6 +319,12 @@ export const rendererApi = {
       return links.map(l => { const g = T.modifierGroups.get(g => g.id === l.modifierGroupId); if (!g) return null; return { ...g, modifiers: T.modifiers.select(r => r.active && r.modifierGroupId === g.id).sort((a, b) => a.sortOrder - b.sortOrder) } }).filter(Boolean)
     },
     linkToProduct: (productId: string, groupId: string) => { T.productModifierGroups.insert({ productId, modifierGroupId: groupId }); return { ok: true } },
+    listRecipes: (modifierId: string) => T.modifierRecipes.select(r => r.modifierId === modifierId),
+    upsertRecipe: (data: any) => {
+      if (data.id) { T.modifierRecipes.update(r => r.id === data.id, { ingredientId: data.ingredientId, quantityPerUnit: data.quantityPerUnit }); return { id: data.id } }
+      const id = uuid(); T.modifierRecipes.insert({ id, modifierId: data.modifierId, ingredientId: data.ingredientId, quantityPerUnit: data.quantityPerUnit }); return { id }
+    },
+    deleteRecipe: (id: string) => { T.modifierRecipes.delete(r => r.id === id); return { ok: true } },
   },
   order: {
     create: (data: any) => {
