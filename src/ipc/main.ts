@@ -805,43 +805,171 @@ export function registerIpcHandlers() {
         productId: item.productId,
         quantity: item.quantity,
         unitPrice: item.unitPrice,
+        itemDiscount: item.itemDiscount || 0,
+        note: (item.note || '').trim() || null,
         selectedModifiersJson: item.modifiers ? JSON.stringify(item.modifiers) : null,
         selectedAddonsJson: item.addons ? JSON.stringify(item.addons) : null,
       }).run()
+    }
+
+    // Payment record
+    const payMethod = data.paymentType === 'visa' ? 'card' : (data.paymentType || 'cash')
+    db.insert(payments).values({
+      id: uuid(), orderId: id, method: payMethod, amount: data.total, createdAt: ts,
+    }).run()
+
+    // SALE cash movement for cash payments on an open shift
+    if (shiftId && (data.paymentType || 'cash') === 'cash') {
+      db.insert(cashMovements).values({
+        id: uuid(), shiftId, type: 'SALE', amount: data.total, note: `طلب ${id}`, createdAt: ts,
+      }).run()
+    }
+
+    // Save/update delivery customer for phone autocomplete
+    if (data.orderType === 'delivery' && data.customerPhone) {
+      const phone = String(data.customerPhone).replace(/\D/g, '')
+      if (phone) {
+        const existing = db.select().from(customers).where(eq(customers.phone, phone)).get()
+        if (existing) {
+          db.update(customers).set({
+            name: data.customerName || existing.name,
+            address: data.customerAddress || existing.address,
+            orderCount: (existing.orderCount || 0) + 1,
+            lastOrderAt: ts,
+          }).where(eq(customers.phone, phone)).run()
+        } else {
+          db.insert(customers).values({
+            id: uuid(), phone,
+            name: data.customerName || null,
+            address: data.customerAddress || null,
+            orderCount: 1,
+            lastOrderAt: ts,
+            createdAt: ts,
+          }).run()
+        }
+      }
     }
 
     return { id }
   })
 
   ipcMain.handle('order:list', (_e, filters?: any) => {
-    const conditions = []
+    const conditions = [] as any[]
     if (filters?.status) conditions.push(eq(orders.status, filters.status))
-    if (filters?.orderType) conditions.push(eq(orders.orderType, filters.orderType))
+    if (filters?.search) {
+      const term = `%${filters.search.toLowerCase()}%`
+      conditions.push(or(
+        like(orders.id, term),
+        like(orders.customerName, term),
+        like(orders.customerPhone, term),
+      ))
+    }
     if (filters?.from) conditions.push(gte(orders.createdAt, filters.from))
-    if (filters?.to) conditions.push(lte(orders.createdAt, filters.to))
+    if (filters?.to) conditions.push(lte(orders.createdAt, filters.to + '\uffff'))
 
-    const query = conditions.length > 0
-      ? db.select().from(orders).where(and(...conditions)).orderBy(desc(orders.createdAt))
-      : db.select().from(orders).orderBy(desc(orders.createdAt))
+    const rows = (conditions.length > 0
+      ? db.select().from(orders).where(and(...conditions))
+      : db.select().from(orders)
+    ).orderBy(desc(orders.createdAt)).all() as any[]
 
-    return query.all()
+    const ids = rows.map(r => r.id)
+    const itemRows = ids.length
+      ? db.select().from(orderItems).where(inArray(orderItems.orderId, ids)).all() as any[]
+      : []
+    const byOrder = new Map<string, any[]>()
+    for (const it of itemRows) {
+      if (!byOrder.has(it.orderId)) byOrder.set(it.orderId, [])
+      byOrder.get(it.orderId)!.push(it)
+    }
+    const allProducts = db.select().from(products).all()
+    const allAddons = db.select().from(addons).all()
+    const pMap = new Map(allProducts.map(p => [p.id, p]))
+    const aMap = new Map(allAddons.map(a => [a.id, a]))
+
+    return rows.map(o => {
+      const items = (byOrder.get(o.id) || []).map((item: any) => {
+        const p = pMap.get(item.productId)
+        let addonRollbackInfo: { name: string; emoji: string; supportsRollback: boolean; price: number }[] = []
+        if (item.selectedAddonsJson) {
+          try {
+            addonRollbackInfo = (JSON.parse(item.selectedAddonsJson) as string[]).map((aid: string) => {
+              const a = aMap.get(aid)
+              return a
+                ? { name: a.name, emoji: a.emoji, supportsRollback: a.supportsRollback ?? true, price: a.price }
+                : { name: '?', emoji: '?', supportsRollback: false, price: 0 }
+            })
+          } catch {}
+        }
+        return { ...item, productName: p?.name, productEmoji: p?.emoji, supportsRollback: p?.supportsRollback ?? false, addonRollbackInfo }
+      })
+      return { ...o, items }
+    })
   })
 
   ipcMain.handle('order:getById', (_e, id: string) => {
-    const order = db.select().from(orders).where(eq(orders.id, id)).get()
+    const allOrders = db.select().from(orders).where(eq(orders.id, id)).all()
+    const order = allOrders[0]
     if (!order) return null
     const items = db.select().from(orderItems).where(eq(orderItems.orderId, id)).all()
     const pays = db.select().from(payments).where(eq(payments.orderId, id)).all()
-    return { ...order, items, payments: pays }
+    const allProducts = db.select().from(products).all()
+    const allAddons = db.select().from(addons).all()
+    const pMap = new Map(allProducts.map(p => [p.id, p]))
+    const aMap = new Map(allAddons.map(a => [a.id, a]))
+
+    const enriched = items.map((item: any) => {
+      const p = pMap.get(item.productId)
+      let addonRollbackInfo: { name: string; emoji: string; supportsRollback: boolean; price: number }[] = []
+      if (item.selectedAddonsJson) {
+        try {
+          const addonIds = JSON.parse(item.selectedAddonsJson) as string[]
+          addonRollbackInfo = addonIds.map((aid: string) => {
+            const a = aMap.get(aid)
+            return a
+              ? { name: a.name, emoji: a.emoji, supportsRollback: a.supportsRollback ?? true, price: a.price }
+              : { name: '?', emoji: '?', supportsRollback: false, price: 0 }
+          })
+        } catch {}
+      }
+      return { ...item, productName: p?.name, productEmoji: p?.emoji, supportsRollback: p?.supportsRollback ?? false, addonRollbackInfo }
+    })
+
+    return { ...order, items: enriched, payments: pays }
   })
 
-  ipcMain.handle('order:updateStatus', (_e, id: string, status: string) => {
-    db.update(orders).set({ status, updatedAt: now() }).where(eq(orders.id, id)).run()
-    return { ok: true }
-  })
+  ipcMain.handle('order:updateStatus', (_e, id: string, status: string, reason?: string) => {
+    const order = db.select().from(orders).where(eq(orders.id, id)).get()
+    if (!order) return { ok: false, error: 'الطلب غير موجود' }
+    if ((status === 'CANCELLED' || status === 'REFUNDED') && (!reason || !reason.trim())) {
+      return { ok: false, error: 'يجب إدخال سبب الإلغاء/الاسترداد' }
+    }
+    const ts = now()
 
-  ipcMain.handle('order:delete', (_e, id: string) => {
-    db.update(orders).set({ status: 'CANCELLED', updatedAt: now() }).where(eq(orders.id, id)).run()
+    if (status === 'CANCELLED' && order.status === 'COMPLETED') {
+      rollbackInventory(id)
+      if (order.paymentType === 'cash' && order.shiftId) {
+        db.insert(cashMovements).values({
+          id: uuid(), shiftId: order.shiftId, type: 'REFUND', amount: order.total,
+          note: `إلغاء طلب ${id} — ${reason || ''}`, createdAt: ts,
+        }).run()
+      }
+    }
+
+    if (status === 'REFUNDED' && order.status === 'COMPLETED') {
+      const refundedAmount = rollbackInventoryPartial(id)
+      if (order.paymentType === 'cash' && order.shiftId && refundedAmount > 0) {
+        db.insert(cashMovements).values({
+          id: uuid(), shiftId: order.shiftId, type: 'REFUND', amount: refundedAmount,
+          note: `استرداد طلب ${id} — ${reason || ''}`, createdAt: ts,
+        }).run()
+      }
+      db.update(orders).set({ status, statusReason: reason || null, refundedAmount, updatedAt: ts })
+        .where(eq(orders.id, id)).run()
+      return { ok: true, refundedAmount }
+    }
+
+    db.update(orders).set({ status, statusReason: reason || null, updatedAt: ts })
+      .where(eq(orders.id, id)).run()
     return { ok: true }
   })
 
@@ -875,20 +1003,22 @@ export function registerIpcHandlers() {
   // USERS
   // ═══════════════════════════════════════════════════════════
   ipcMain.handle('user:list', () =>
-    db.select({ id: users.id, name: users.name, role: users.role, active: users.active, createdAt: users.createdAt })
+    db.select({ id: users.id, name: users.name, role: users.role, active: users.active, createdAt: users.createdAt, hourlyRate: users.hourlyRate, commissionRate: users.commissionRate })
       .from(users).where(eq(users.active, true))
   )
 
   ipcMain.handle('user:create', async (_e, data: any) => {
     const id = uuid()
     const pinHash = await hashPin(data.pin)
-    db.insert(users).values({ id, name: data.name, pinHash, role: data.role || 'cashier', active: true, createdAt: now() }).run()
+    db.insert(users).values({ id, name: data.name, pinHash, role: data.role || 'cashier', active: true, createdAt: now(), hourlyRate: data.hourlyRate || 0, commissionRate: data.commissionRate || 0 }).run()
     return { id }
   })
 
   ipcMain.handle('user:update', async (_e, id: string, data: any) => {
     const update: any = { name: data.name, role: data.role }
     if (data.pin) update.pinHash = await hashPin(data.pin)
+    if (data.hourlyRate !== undefined) update.hourlyRate = Number(data.hourlyRate) || 0
+    if (data.commissionRate !== undefined) update.commissionRate = Number(data.commissionRate) || 0
     db.update(users).set(update).where(eq(users.id, id)).run()
     return { ok: true }
   })
@@ -900,23 +1030,66 @@ export function registerIpcHandlers() {
 
   ipcMain.handle('user:verifyPin', async (_e, id: string, pin: string) => {
     const user = db.select().from(users).where(eq(users.id, id)).get()
-    if (!user) return { ok: false, error: 'User not found' }
+    if (!user) return { ok: false, error: 'المستخدم غير موجود' }
     const valid = await verifyPin(user.pinHash, pin)
-    if (!valid) return { ok: false, error: 'Invalid PIN' }
+    if (!valid) return { ok: false, error: 'الرقم السري غلط' }
     return { ok: true, user: { id: user.id, name: user.name, role: user.role } }
+  })
+
+  // ═══════════════════════════════════════════════════════════
+  // CUSTOMERS (delivery autocomplete)
+  // ═══════════════════════════════════════════════════════════
+  ipcMain.handle('customer:search', (_e, prefix: string) => {
+    const digits = String(prefix || '').replace(/\D/g, '')
+    if (digits.length < 3) return []
+    return db.select().from(customers)
+      .where(like(customers.phone, `${digits}%`))
+      .orderBy(desc(customers.lastOrderAt))
+      .limit(8)
+      .all()
+  })
+
+  ipcMain.handle('customer:upsert', (_e, data: any) => {
+    const phone = String(data.phone || '').replace(/\D/g, '')
+    if (!phone) return { ok: false }
+    const existing = db.select().from(customers).where(eq(customers.phone, phone)).get()
+    if (existing) {
+      db.update(customers).set({
+        name: data.name || existing.name,
+        address: data.address || existing.address,
+        orderCount: (existing.orderCount || 0) + 1,
+        lastOrderAt: now(),
+      }).where(eq(customers.phone, phone)).run()
+      return { ok: true, id: existing.id }
+    }
+    const id = uuid()
+    db.insert(customers).values({
+      id, phone,
+      name: data.name || null,
+      address: data.address || null,
+      orderCount: 1,
+      lastOrderAt: now(),
+      createdAt: now(),
+    }).run()
+    return { ok: true, id }
   })
 
   // ═══════════════════════════════════════════════════════════
   // SHIFTS
   // ═══════════════════════════════════════════════════════════
   ipcMain.handle('shift:open', (_e, data: any) => {
+    const existing = db.select().from(shifts).where(eq(shifts.status, 'open')).get()
+    if (existing) {
+      return { error: 'يوجد وردية مفتوحة بالفعل' }
+    }
     const id = uuid()
+    const maxRow = db.select({ number: shifts.number }).from(shifts).orderBy(desc(shifts.number)).limit(1).get()
+    const number = (Number(maxRow?.number) || 0) + 1
     db.insert(shifts).values({
-      id, userId: data.userId, startedAt: now(), openingCash: data.openingCash, status: 'open',
+      id, number, userId: data.userId, startedAt: now(), openingCash: data.openingCash, status: 'open',
     }).run()
-    // Record opening cash movement
     db.insert(cashMovements).values({
-      id: uuid(), shiftId: id, type: 'OPENING', amount: data.openingCash, note: 'فتح الوردية', createdAt: now(),
+      id: uuid(), shiftId: id, type: 'OPENING', amount: data.openingCash, note: 'رصيد افتتاحي', createdAt: now(),
     }).run()
     return { id }
   })
@@ -934,10 +1107,14 @@ export function registerIpcHandlers() {
   )
 
   ipcMain.handle('shift:list', (_e, filters?: any) => {
-    if (filters?.userId) {
-      return db.select().from(shifts).where(eq(shifts.userId, filters.userId)).orderBy(desc(shifts.startedAt)).all()
-    }
-    return db.select().from(shifts).orderBy(desc(shifts.startedAt)).all()
+    const conditions: any[] = []
+    if (filters?.userId) conditions.push(eq(shifts.userId, filters.userId))
+    if (filters?.from) conditions.push(gte(shifts.startedAt, filters.from))
+    if (filters?.to) conditions.push(lte(shifts.startedAt, filters.to))
+    const query = conditions.length > 0
+      ? db.select().from(shifts).where(and(...conditions))
+      : db.select().from(shifts)
+    return query.orderBy(desc(shifts.startedAt)).all()
   })
 
   // ═══════════════════════════════════════════════════════════
@@ -981,6 +1158,41 @@ export function registerIpcHandlers() {
     }
   })
 
+  ipcMain.handle('cashDrawer:reconcileBatch', (_e, shiftIds: string[]) => {
+    const results: Record<string, any> = {}
+    for (const shiftId of shiftIds) {
+      const movs = db.select().from(cashMovements).where(eq(cashMovements.shiftId, shiftId)).all()
+      const shift = db.select().from(shifts).where(eq(shifts.id, shiftId)).get()
+      if (!shift) continue
+      let expected = shift.openingCash
+      const breakdown: Record<string, number> = {}
+      for (const m of movs) {
+        if (m.type === 'OPENING' || m.type === 'CLOSING') continue
+        const sign = ['SALE', 'CASH_IN'].includes(m.type) ? 1 : -1
+        expected += m.amount * sign
+        breakdown[m.type] = (breakdown[m.type] || 0) + m.amount * sign
+      }
+      const actual = shift.closingCash ?? 0
+      results[shiftId] = { openingCash: shift.openingCash, breakdown, expected, actual, difference: actual - expected }
+    }
+    return results
+  })
+
+  ipcMain.handle('cashDrawer:expectedCash', (_e, shiftId: string) => {
+    const movs = db.select().from(cashMovements).where(eq(cashMovements.shiftId, shiftId)).all()
+    const shift = db.select().from(shifts).where(eq(shifts.id, shiftId)).get()
+    if (!shift) return null
+    let expected = shift.openingCash
+    const breakdown: Record<string, number> = {}
+    for (const m of movs) {
+      if (m.type === 'OPENING' || m.type === 'CLOSING') continue
+      const sign = ['SALE', 'CASH_IN'].includes(m.type) ? 1 : -1
+      expected += m.amount * sign
+      breakdown[m.type] = (breakdown[m.type] || 0) + m.amount * sign
+    }
+    return { expected, breakdown }
+  })
+
   // ═══════════════════════════════════════════════════════════
   // INVENTORY
   // ═══════════════════════════════════════════════════════════
@@ -991,6 +1203,11 @@ export function registerIpcHandlers() {
   ipcMain.handle('inventory:createIngredient', (_e, data: any) => {
     const id = uuid()
     db.insert(ingredients).values({ id, ...data, active: true }).run()
+    if (Number(data?.stockQuantity) > 0) {
+      db.insert(inventoryTransactions).values({
+        id: uuid(), ingredientId: id, type: 'ADJUSTMENT', quantity: Number(data.stockQuantity), note: 'رصيد افتتاحي', createdAt: now(),
+      }).run()
+    }
     return { id }
   })
 
