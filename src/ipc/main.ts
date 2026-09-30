@@ -1683,6 +1683,15 @@ export function registerIpcHandlers() {
     const user = db.select().from(users).where(eq(users.id, shift.userId)).get()
     const shiftOrders = db.select().from(orders)
       .where(and(eq(orders.shiftId, shiftId), sql`${orders.status} != 'CANCELLED'`)).all()
+    const movs = db.select().from(cashMovements).where(eq(cashMovements.shiftId, shiftId)).all()
+
+    let expectedCash = shift.openingCash
+    for (const m of movs) {
+      if (m.type === 'OPENING' || m.type === 'CLOSING') continue
+      const sign = ['SALE', 'CASH_IN'].includes(m.type) ? 1 : -1
+      expectedCash += m.amount * sign
+    }
+
     return {
       shiftId,
       userName: user?.name || 'غير معروف',
