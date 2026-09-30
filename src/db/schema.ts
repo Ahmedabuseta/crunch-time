@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, real } from 'drizzle-orm/sqlite-core'
+import { sqliteTable, text, integer, real, index } from 'drizzle-orm/sqlite-core'
 import { relations } from 'drizzle-orm'
 
 // ─── Categories ────────────────────────────────────────────────
@@ -16,9 +16,11 @@ export const products = sqliteTable('products', {
   id: text('id').primaryKey(),
   name: text('name').notNull(),
   price: real('price').notNull(),
+  costPrice: real('cost_price').notNull().default(0),
   categoryId: text('category_id').notNull().references(() => categories.id),
   emoji: text('emoji').notNull(),
   description: text('description').notNull(),
+  supportsRollback: integer('supports_rollback', { mode: 'boolean' }).notNull().default(true),
   active: integer('active', { mode: 'boolean' }).notNull().default(true),
 })
 
@@ -28,6 +30,7 @@ export const addons = sqliteTable('addons', {
   name: text('name').notNull(),
   price: real('price').notNull(),
   emoji: text('emoji').notNull(),
+  supportsRollback: integer('supports_rollback', { mode: 'boolean' }).notNull().default(true),
   active: integer('active', { mode: 'boolean' }).notNull().default(true),
 })
 
@@ -67,11 +70,14 @@ export const users = sqliteTable('users', {
   role: text('role').notNull().default('cashier'), // 'admin' | 'cashier'
   active: integer('active', { mode: 'boolean' }).notNull().default(true),
   createdAt: text('created_at').notNull(),
+  hourlyRate: real('hourly_rate').notNull().default(0),
+  commissionRate: real('commission_rate').notNull().default(0),
 })
 
 // ─── Shifts ────────────────────────────────────────────────────
 export const shifts = sqliteTable('shifts', {
   id: text('id').primaryKey(),
+  number: integer('number').notNull().default(0),
   userId: text('user_id').notNull().references(() => users.id),
   startedAt: text('started_at').notNull(),
   endedAt: text('ended_at'),
@@ -83,16 +89,29 @@ export const shifts = sqliteTable('shifts', {
 // ─── Orders ────────────────────────────────────────────────────
 export const orders = sqliteTable('orders', {
   id: text('id').primaryKey(),
-  status: text('status').notNull().default('DRAFT'),
-  // DRAFT | PENDING_PAYMENT | PAID | PREPARING | READY | COMPLETED | CANCELLED | REFUNDED
+  status: text('status').notNull().default('COMPLETED'),
+  // COMPLETED | CANCELLED | REFUNDED
   orderType: text('order_type').notNull(), // 'delivery' | 'dine-in'
   tableNumber: text('table_number'),
+  customerName: text('customer_name'),
+  customerPhone: text('customer_phone'),
+  customerAddress: text('customer_address'),
   deliveryAddress: text('delivery_address'),
   deliveryPhone: text('delivery_phone'),
   subtotal: real('subtotal').notNull(),
   tax: real('tax').notNull(),
   deliveryFee: real('delivery_fee').notNull().default(0),
+  deliveryZoneId: text('delivery_zone_id').references(() => deliveryZones.id),
+  deliveryZoneName: text('delivery_zone_name'),
+  deliveryNote: text('delivery_note'),
+  discountCode: text('discount_code'),
+  discountAmount: real('discount_amount').notNull().default(0),
   total: real('total').notNull(),
+  paymentType: text('payment_type').notNull().default('cash'), // 'cash' | 'visa'
+  cashierName: text('cashier_name'),
+  note: text('note'),
+  statusReason: text('status_reason'),
+  refundedAmount: real('refunded_amount').notNull().default(0),
   userId: text('user_id').references(() => users.id),
   shiftId: text('shift_id').references(() => shifts.id),
   createdAt: text('created_at').notNull(),
@@ -106,6 +125,8 @@ export const orderItems = sqliteTable('order_items', {
   productId: text('product_id').notNull().references(() => products.id),
   quantity: integer('quantity').notNull(),
   unitPrice: real('unit_price').notNull(),
+  itemDiscount: real('item_discount').notNull().default(0),
+  note: text('note'),
   selectedModifiersJson: text('selected_modifiers_json'), // JSON: { modifierId: value }
   selectedAddonsJson: text('selected_addons_json'),       // JSON: addonId[]
 })
@@ -129,14 +150,35 @@ export const ingredients = sqliteTable('ingredients', {
   minStock: real('min_stock').notNull().default(0),
   costPerUnit: real('cost_per_unit').notNull().default(0),
   active: integer('active', { mode: 'boolean' }).notNull().default(true),
+  supplier: text('supplier'),
+  secondarySupplier: text('secondary_supplier'),
+  supplierRatio: real('supplier_ratio').notNull().default(0.7),
+  plannedCost: real('planned_cost').notNull().default(0),
+})
+
+// ─── Sub-recipes (reusable prepared components, e.g. صوص/عجينة) ──
+export const subRecipes = sqliteTable('sub_recipes', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  unit: text('unit').notNull().default('وحدة'),
+  active: integer('active', { mode: 'boolean' }).notNull().default(true),
+  createdAt: text('created_at').notNull(),
+})
+
+export const subRecipeIngredients = sqliteTable('sub_recipe_ingredients', {
+  id: text('id').primaryKey(),
+  subRecipeId: text('sub_recipe_id').notNull().references(() => subRecipes.id),
+  ingredientId: text('ingredient_id').notNull().references(() => ingredients.id),
+  quantityPerUnit: real('quantity_per_unit').notNull(),
 })
 
 // ─── Recipes (product → ingredient mappings) ──────────────────
 export const recipes = sqliteTable('recipes', {
   id: text('id').primaryKey(),
   productId: text('product_id').notNull().references(() => products.id),
-  ingredientId: text('ingredient_id').notNull().references(() => ingredients.id),
+  ingredientId: text('ingredient_id').references(() => ingredients.id),
   quantityPerUnit: real('quantity_per_unit').notNull(),
+  subRecipeId: text('sub_recipe_id').references(() => subRecipes.id),
 })
 
 // ─── Inventory Transactions ────────────────────────────────────
@@ -145,8 +187,21 @@ export const inventoryTransactions = sqliteTable('inventory_transactions', {
   ingredientId: text('ingredient_id').notNull().references(() => ingredients.id),
   type: text('type').notNull(), // 'PURCHASE' | 'CONSUMPTION' | 'ADJUSTMENT' | 'WASTE'
   quantity: real('quantity').notNull(),
+  unitCost: real('unit_cost'),
+  supplier: text('supplier'),
   referenceOrderId: text('reference_order_id').references(() => orders.id),
   note: text('note'),
+  createdAt: text('created_at').notNull(),
+})
+
+// ─── Purchase Price History (PPV + supplier analytics) ────────
+export const purchasePriceHistory = sqliteTable('purchase_price_history', {
+  id: text('id').primaryKey(),
+  ingredientId: text('ingredient_id').notNull().references(() => ingredients.id),
+  supplier: text('supplier'),
+  unitCost: real('unit_cost').notNull(),
+  quantity: real('quantity').notNull(),
+  purchasedAt: text('purchased_at').notNull(),
   createdAt: text('created_at').notNull(),
 })
 
@@ -159,6 +214,95 @@ export const cashMovements = sqliteTable('cash_movements', {
   note: text('note'),
   createdAt: text('created_at').notNull(),
 })
+
+// ─── Settings (single row, id = 'settings') ───────────────────
+export const settings = sqliteTable('settings', {
+  id: text('id').primaryKey(),
+  deliveryFee: real('delivery_fee').notNull().default(25),
+  taxRate: real('tax_rate').notNull().default(0.14),
+  restaurantName: text('restaurant_name').notNull().default('فاست فود'),
+  currency: text('currency').notNull().default('EGP'),
+  receiptPrinter: text('receipt_printer'),
+  receiptWidth: text('receipt_width').notNull().default('80mm'), // '80mm' | '58mm'
+  autoPrintReceipt: integer('auto_print_receipt', { mode: 'boolean' }).notNull().default(true),
+  autoPrintKitchen: integer('auto_print_kitchen', { mode: 'boolean' }).notNull().default(true),
+  kitchenCopies: integer('kitchen_copies').notNull().default(1),
+})
+
+// ─── Kitchen Stations (print routing: categories → printer) ────
+export const kitchenStations = sqliteTable('kitchen_stations', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  printerName: text('printer_name'),
+  paperWidth: text('paper_width').notNull().default('80mm'), // '80mm' | '58mm'
+  sortOrder: integer('sort_order').notNull().default(0),
+  active: integer('active', { mode: 'boolean' }).notNull().default(true),
+})
+
+export const stationCategories = sqliteTable('station_categories', {
+  stationId: text('station_id').notNull().references(() => kitchenStations.id),
+  categoryId: text('category_id').notNull().references(() => categories.id),
+})
+
+// ─── Delivery Zones (region → fee) ─────────────────────────────
+export const deliveryZones = sqliteTable('delivery_zones', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  fee: real('fee').notNull().default(0),
+  sortOrder: integer('sort_order').notNull().default(0),
+  active: integer('active', { mode: 'boolean' }).notNull().default(true),
+})
+
+// ─── Discount Codes ────────────────────────────────────────────
+export const discountCodes = sqliteTable('discount_codes', {
+  id: text('id').primaryKey(),
+  code: text('code').notNull(),
+  type: text('type').notNull(), // 'percentage' | 'fixed'
+  value: real('value').notNull(),
+  active: integer('active', { mode: 'boolean' }).notNull().default(true),
+  maxUses: integer('max_uses').notNull().default(0),
+  usedCount: integer('used_count').notNull().default(0),
+})
+
+// ─── Expenses ──────────────────────────────────────────────────
+export const expenses = sqliteTable('expenses', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  category: text('category').notNull(),
+  amount: real('amount').notNull(),
+  type: text('type').notNull().default('monthly'), // 'monthly' | 'one-time'
+  active: integer('active', { mode: 'boolean' }).notNull().default(true),
+})
+
+// ─── Addon / Modifier recipes (ingredient consumption) ────────
+export const addonRecipes = sqliteTable('addon_recipes', {
+  id: text('id').primaryKey(),
+  addonId: text('addon_id').notNull().references(() => addons.id),
+  ingredientId: text('ingredient_id').references(() => ingredients.id),
+  quantityPerUnit: real('quantity_per_unit').notNull(),
+  subRecipeId: text('sub_recipe_id').references(() => subRecipes.id),
+})
+
+export const modifierRecipes = sqliteTable('modifier_recipes', {
+  id: text('id').primaryKey(),
+  modifierId: text('modifier_id').notNull().references(() => modifiers.id),
+  ingredientId: text('ingredient_id').references(() => ingredients.id),
+  quantityPerUnit: real('quantity_per_unit').notNull(),
+  subRecipeId: text('sub_recipe_id').references(() => subRecipes.id),
+})
+
+// ─── Customers (delivery autocomplete) ─────────────────────────
+export const customers = sqliteTable('customers', {
+  id: text('id').primaryKey(),
+  phone: text('phone').notNull().unique(),
+  name: text('name'),
+  address: text('address'),
+  orderCount: integer('order_count').notNull().default(0),
+  lastOrderAt: text('last_order_at'),
+  createdAt: text('created_at').notNull(),
+}, (t) => [
+  index('customers_phone_idx').on(t.phone),
+])
 
 // ─── Relations ─────────────────────────────────────────────────
 export const categoriesRelations = relations(categories, ({ many }) => ({
@@ -238,6 +382,20 @@ export const inventoryTransactionsRelations = relations(inventoryTransactions, (
   order: one(orders, { fields: [inventoryTransactions.referenceOrderId], references: [orders.id] }),
 }))
 
+export const purchasePriceHistoryRelations = relations(purchasePriceHistory, ({ one }) => ({
+  ingredient: one(ingredients, { fields: [purchasePriceHistory.ingredientId], references: [ingredients.id] }),
+}))
+
 export const cashMovementsRelations = relations(cashMovements, ({ one }) => ({
   shift: one(shifts, { fields: [cashMovements.shiftId], references: [shifts.id] }),
+}))
+
+export const addonRecipesRelations = relations(addonRecipes, ({ one }) => ({
+  addon: one(addons, { fields: [addonRecipes.addonId], references: [addons.id] }),
+  ingredient: one(ingredients, { fields: [addonRecipes.ingredientId], references: [ingredients.id] }),
+}))
+
+export const modifierRecipesRelations = relations(modifierRecipes, ({ one }) => ({
+  modifier: one(modifiers, { fields: [modifierRecipes.modifierId], references: [modifiers.id] }),
+  ingredient: one(ingredients, { fields: [modifierRecipes.ingredientId], references: [ingredients.id] }),
 }))

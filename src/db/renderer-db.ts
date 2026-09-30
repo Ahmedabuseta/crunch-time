@@ -15,8 +15,9 @@ const T = {
   users: new Table(), shifts: new Table(), orders: new Table(), orderItems: new Table(),
   payments: new Table(), ingredients: new Table(), recipes: new Table(),
   inventoryTransactions: new Table(), cashMovements: new Table(),
-  settings: new Table(), discountCodes: new Table(), expenses: new Table(),
-  addonRecipes: new Table(), modifierRecipes: new Table(),
+  settings: new Table(), discountCodes: new Table(), deliveryZones: new Table(), expenses: new Table(),
+  kitchenStations: new Table(), stationCategories: new Table(),
+  addonRecipes: new Table(), modifierRecipes: new Table(), customers: new Table(),
 }
 
 const uuid = () => crypto.randomUUID()
@@ -70,7 +71,7 @@ function rollbackInventoryPartial(orderId: string): number {
         if (ing) ing.stockQuantity += qty
         T.inventoryTransactions.insert({ id: uuid(), ingredientId: r.ingredientId, type: 'ADJUSTMENT', quantity: qty, referenceOrderId: orderId, note: `إرجاع جزئي ${orderId} — ${product.name}`, createdAt: now() })
       }
-      itemRefund += product.price * item.quantity
+      itemRefund += (item.unitPrice ?? product.price) * item.quantity
     }
 
     // Addon rollback
@@ -127,6 +128,16 @@ function seed() {
   // Settings
   T.settings.insert({ id: 'settings', deliveryFee: 25, taxRate: 0.14, restaurantName: 'فاست فود', currency: 'EGP' })
 
+  // Delivery zones
+  T.deliveryZones.insert({ id: 'dz-near', name: 'قريب', fee: 25, sortOrder: 0, active: true })
+  T.deliveryZones.insert({ id: 'dz-mid', name: 'متوسط', fee: 35, sortOrder: 1, active: true })
+  T.deliveryZones.insert({ id: 'dz-far', name: 'بعيد', fee: 45, sortOrder: 2, active: true })
+
+  // Kitchen stations (print routing — printer picked later in Settings)
+  T.kitchenStations.insert({ id: 'st-receipt', name: 'الكاشير (إيصال)', printerName: null, paperWidth: '80mm', sortOrder: 0, active: true })
+  T.kitchenStations.insert({ id: 'st-kitchen-1', name: 'مطبخ 1', printerName: null, paperWidth: '80mm', sortOrder: 1, active: true })
+  T.kitchenStations.insert({ id: 'st-kitchen-2', name: 'مطبخ 2', printerName: null, paperWidth: '80mm', sortOrder: 2, active: true })
+
   // Discount codes
   T.discountCodes.insert({ id: 'disc-10', code: 'WELCOME10', type: 'percentage', value: 10, active: true, maxUses: 100, usedCount: 0 })
   T.discountCodes.insert({ id: 'disc-20', code: 'SAVE20', type: 'fixed', value: 20, active: true, maxUses: 50, usedCount: 0 })
@@ -141,110 +152,206 @@ function seed() {
   T.expenses.insert({ id: 'exp-internet', name: 'إنترنت', category: 'مرافق', amount: 400, type: 'monthly', active: true })
   T.expenses.insert({ id: 'exp-maint', name: 'صيانة', category: 'صيانة', amount: 1000, type: 'monthly', active: true })
 
-  // Categories
+  // Categories — crepe house
   for (const c of [
-    { id: 'cat-burgers', name: 'برجر', emoji: '🍔', color: 'var(--cat-burgers)', sortOrder: 1, active: true },
-    { id: 'cat-pizza', name: 'بيتزا', emoji: '🍕', color: 'var(--cat-pizza)', sortOrder: 2, active: true },
-    { id: 'cat-chicken', name: 'دجاج', emoji: '🍗', color: 'var(--cat-chicken)', sortOrder: 3, active: true },
-    { id: 'cat-sides', name: 'أطباق جانبية', emoji: '🍟', color: 'var(--cat-sides)', sortOrder: 4, active: true },
+    { id: 'cat-crepe-savory', name: 'كريب حادق', emoji: '🥙', color: 'var(--cat-crepe-savory)', sortOrder: 1, active: true },
+    { id: 'cat-crepe-sweet', name: 'كريب حلو', emoji: '🍫', color: 'var(--cat-crepe-sweet)', sortOrder: 2, active: true },
+    { id: 'cat-pizza', name: 'بيتزا', emoji: '🍕', color: 'var(--cat-pizza)', sortOrder: 3, active: true },
+    { id: 'cat-meals', name: 'وجبات', emoji: '🍱', color: 'var(--cat-meals)', sortOrder: 4, active: true },
     { id: 'cat-drinks', name: 'مشروبات', emoji: '🥤', color: 'var(--cat-drinks)', sortOrder: 5, active: true },
-    { id: 'cat-desserts', name: 'حلويات', emoji: '🍦', color: 'var(--cat-desserts)', sortOrder: 6, active: true },
   ]) T.categories.insert(c)
 
-  // Products (with costPrice for profit calc, supportsRollback for refund logic)
+  // Products
   for (const p of [
-    { id: 'b1', name: 'برجر كلاسيك', price: 85, costPrice: 35, categoryId: 'cat-burgers', emoji: '🍔', description: 'لحم، خس، طماطم', active: true, supportsRollback: true },
-    { id: 'b2', name: 'برجر جبنة', price: 95, costPrice: 40, categoryId: 'cat-burgers', emoji: '🧀', description: 'جبنة مزدوجة، مخلل، بصل', active: true, supportsRollback: true },
-    { id: 'b3', name: 'برجر بيكون', price: 110, costPrice: 48, categoryId: 'cat-burgers', emoji: '🥓', description: 'بيكون مقرمش، صوص باربكيو', active: true, supportsRollback: true },
-    { id: 'b4', name: 'برجر فطر', price: 105, costPrice: 45, categoryId: 'cat-burgers', emoji: '🍄', description: 'جبنة سويسري، فطر', active: true, supportsRollback: true },
+    { id: 'cr1', name: 'كريب فراخ بانيه', price: 70, costPrice: 30, categoryId: 'cat-crepe-savory', emoji: '🍗', description: 'فراخ بانيه، خضار، موزاريلا', active: true, supportsRollback: true },
+    { id: 'cr2', name: 'كريب شاورما دجاج', price: 70, costPrice: 30, categoryId: 'cat-crepe-savory', emoji: '🌯', description: 'شاورما دجاج، خضار، موزاريلا', active: true, supportsRollback: true },
+    { id: 'cr3', name: 'كريب زنجر', price: 75, costPrice: 32, categoryId: 'cat-crepe-savory', emoji: '🌶️', description: 'دجاج زنجر حار، خس، صوص رانش', active: true, supportsRollback: true },
+    { id: 'cr4', name: 'كريب ميكس جبن', price: 55, costPrice: 22, categoryId: 'cat-crepe-savory', emoji: '🧀', description: 'موزاريلا، رومي، شيدر، خضار', active: true, supportsRollback: true },
+    { id: 'cr5', name: 'كريب بطاطس', price: 40, costPrice: 14, categoryId: 'cat-crepe-savory', emoji: '🍟', description: 'بطاطس محمرة، موزاريلا، كاتشب', active: true, supportsRollback: true },
+    { id: 'cr6', name: 'كريب سوسيس', price: 55, costPrice: 22, categoryId: 'cat-crepe-savory', emoji: '🌭', description: 'سوسيس، خضار، موزاريلا', active: true, supportsRollback: true },
+    { id: 'cr7', name: 'كريب كفتة', price: 65, costPrice: 28, categoryId: 'cat-crepe-savory', emoji: '🥩', description: 'كفتة مشوية، موزاريلا، خضار', active: true, supportsRollback: true },
+    { id: 'cr8', name: 'كريب شيش طاووق', price: 70, costPrice: 30, categoryId: 'cat-crepe-savory', emoji: '🍢', description: 'شيش طاووق، موزاريلا، صوص شيدر', active: true, supportsRollback: true },
+    { id: 'cr9', name: 'كريب سوبر كرانشي', price: 78, costPrice: 34, categoryId: 'cat-crepe-savory', emoji: '🍗', description: 'قطع كرانشي، موزاريلا، خضار', active: true, supportsRollback: true },
+    { id: 'cr10', name: 'كريب الوحش', price: 100, costPrice: 45, categoryId: 'cat-crepe-savory', emoji: '👹', description: 'بانيه، كريسبي، كفتة، بطاطس', active: true, supportsRollback: true },
+    { id: 'sw1', name: 'كريب نوتيلا', price: 40, costPrice: 15, categoryId: 'cat-crepe-sweet', emoji: '🍫', description: 'نوتيلا', active: true, supportsRollback: false },
+    { id: 'sw2', name: 'كريب نوتيلا موز', price: 50, costPrice: 19, categoryId: 'cat-crepe-sweet', emoji: '🍌', description: 'نوتيلا، موز', active: true, supportsRollback: false },
+    { id: 'sw3', name: 'كريب ماستر سويت', price: 62, costPrice: 25, categoryId: 'cat-crepe-sweet', emoji: '🍩', description: 'نوتيلا، موز، مكسرات، أوريو', active: true, supportsRollback: false },
     { id: 'p1', name: 'مارغريتا', price: 120, costPrice: 45, categoryId: 'cat-pizza', emoji: '🍕', description: 'طماطم، موزاريلا، ريحان', active: true, supportsRollback: true },
-    { id: 'p2', name: 'بيبروني', price: 145, costPrice: 55, categoryId: 'cat-pizza', emoji: '🌶️', description: 'بيبروني مزدوج، موزاريلا', active: true, supportsRollback: true },
-    { id: 'p3', name: 'دجاج باربكيو', price: 155, costPrice: 60, categoryId: 'cat-pizza', emoji: '🍗', description: 'صوص باربكيو، دجاج، بصل أحمر', active: true, supportsRollback: true },
+    { id: 'p2', name: 'بيبروني', price: 145, costPrice: 55, categoryId: 'cat-pizza', emoji: '🌶️', description: 'بيبروني، موزاريلا', active: true, supportsRollback: true },
+    { id: 'p3', name: 'دجاج باربكيو', price: 155, costPrice: 60, categoryId: 'cat-pizza', emoji: '🍗', description: 'دجاج، صوص باربكيو، بصل', active: true, supportsRollback: true },
     { id: 'p4', name: 'خضار', price: 130, costPrice: 42, categoryId: 'cat-pizza', emoji: '🥬', description: 'خضار مشكلة، زيتون، فيتا', active: true, supportsRollback: true },
-    { id: 'c1', name: 'ناجت دجاج (6)', price: 65, costPrice: 25, categoryId: 'cat-chicken', emoji: '🍗', description: 'ناجت ذهبي مقرمش', active: true, supportsRollback: true },
-    { id: 'c2', name: 'أجنحة دجاج (8)', price: 105, costPrice: 42, categoryId: 'cat-chicken', emoji: '🍗', description: 'صوص بوفالو أو باربكيو', active: true, supportsRollback: true },
-    { id: 'c3', name: 'ساندويتش دجاج', price: 90, costPrice: 35, categoryId: 'cat-chicken', emoji: '🥪', description: 'دجاج مقرمش، كول سلو، مخلل', active: true, supportsRollback: true },
-    { id: 's1', name: 'بطاطس مقلية', price: 35, costPrice: 10, categoryId: 'cat-sides', emoji: '🍟', description: 'بطاطس ذهبية مقرمشة', active: true, supportsRollback: true },
-    { id: 's2', name: 'حلقات بصل', price: 45, costPrice: 15, categoryId: 'cat-sides', emoji: '🧅', description: 'حلقات بصل مقرمشة', active: true, supportsRollback: true },
-    { id: 's3', name: 'أصابع موزاريلا', price: 55, costPrice: 22, categoryId: 'cat-sides', emoji: '🧀', description: 'مع صوص مارينارا', active: true, supportsRollback: true },
-    { id: 's4', name: 'كول سلو', price: 25, costPrice: 8, categoryId: 'cat-sides', emoji: '🥗', description: 'كول سلو كريمي', active: true, supportsRollback: true },
+    { id: 'm1', name: 'وجبة كوردون بلو', price: 115, costPrice: 50, categoryId: 'cat-meals', emoji: '🍱', description: 'كوردون بلو، بطاطس، كول سلو، عيش', active: true, supportsRollback: true },
+    { id: 'm2', name: 'وجبة زنجر', price: 100, costPrice: 42, categoryId: 'cat-meals', emoji: '🍗', description: 'زنجر، بطاطس، كول سلو، عيش', active: true, supportsRollback: true },
+    { id: 'm3', name: 'وجبة شيش طاووق', price: 100, costPrice: 42, categoryId: 'cat-meals', emoji: '🍢', description: 'شيش طاووق، بطاطس، ثومية، عيش', active: true, supportsRollback: true },
+    { id: 'm4', name: 'وجبة ناجتس', price: 85, costPrice: 34, categoryId: 'cat-meals', emoji: '🧆', description: 'ناجتس 9 قطع، بطاطس، كول سلو', active: true, supportsRollback: true },
     { id: 'd1', name: 'كولا', price: 20, costPrice: 8, categoryId: 'cat-drinks', emoji: '🥤', description: 'كولا باردة', active: true, supportsRollback: false },
     { id: 'd2', name: 'ليمونادة', price: 25, costPrice: 10, categoryId: 'cat-drinks', emoji: '🍋', description: 'ليمون طازج', active: true, supportsRollback: false },
-    { id: 'd3', name: 'ميلك شيك', price: 50, costPrice: 20, categoryId: 'cat-drinks', emoji: '🥛', description: 'فانيليا، شوكولاتة، أو فراولة', active: true, supportsRollback: false },
+    { id: 'd3', name: 'ميلك شيك', price: 50, costPrice: 20, categoryId: 'cat-drinks', emoji: '🥛', description: 'فانيليا أو شوكولاتة', active: true, supportsRollback: false },
     { id: 'd4', name: 'شاي مثلج', price: 20, costPrice: 6, categoryId: 'cat-drinks', emoji: '🍵', description: 'محلى أو بدون سكر', active: true, supportsRollback: false },
-    { id: 'e1', name: 'آيس كريم صنداي', price: 45, costPrice: 18, categoryId: 'cat-desserts', emoji: '🍦', description: '3 سكوب، صوص شوكولاتة، كرز', active: true, supportsRollback: false },
-    { id: 'e2', name: 'تفاح محشو', price: 35, costPrice: 14, categoryId: 'cat-desserts', emoji: '🥧', description: 'دافئ بالقرفة', active: true, supportsRollback: false },
-    { id: 'e3', name: 'براوني', price: 30, costPrice: 12, categoryId: 'cat-desserts', emoji: '🍫', description: 'براوني شوكولاتة', active: true, supportsRollback: false },
+    { id: 'd5', name: 'عصير مانجو', price: 35, costPrice: 14, categoryId: 'cat-drinks', emoji: '🥭', description: 'مانجو طبيعي', active: true, supportsRollback: false },
+    { id: 'd6', name: 'عصير فراولة', price: 35, costPrice: 14, categoryId: 'cat-drinks', emoji: '🍓', description: 'فراولة طبيعية', active: true, supportsRollback: false },
   ]) T.products.insert(p)
 
-  // Addons (all support rollback)
+  // Addons
   for (const a of [
-    { id: 'addon-cheese', name: 'جبنة إضافية', price: 5, emoji: '🧀', active: true, supportsRollback: true },
-    { id: 'addon-bacon', name: 'بيكون', price: 10, emoji: '🥓', active: true, supportsRollback: true },
-    { id: 'addon-sauce', name: 'صلصة خاصة', price: 3, emoji: '🫙', active: true, supportsRollback: true },
-    { id: 'addon-fries', name: 'بطاطس زيادة', price: 8, emoji: '🍟', active: true, supportsRollback: true },
-    { id: 'addon-drink', name: 'مشروب كبير', price: 7, emoji: '🥤', active: true, supportsRollback: false },
-    { id: 'addon-onion', name: 'حلقات بصل', price: 8, emoji: '🧅', active: true, supportsRollback: true },
-    { id: 'addon-coleslaw', name: 'كول سلو', price: 5, emoji: '🥗', active: true, supportsRollback: true },
-    { id: 'addon-pickle', name: 'مخلل', price: 2, emoji: '🥒', active: true, supportsRollback: true },
+    { id: 'addon-cheese', name: 'جبنة إضافية', price: 7, emoji: '🧀', active: true, supportsRollback: true },
+    { id: 'addon-mozz', name: 'موزاريلا', price: 10, emoji: '🧀', active: true, supportsRollback: true },
+    { id: 'addon-sauce', name: 'صلصة خاصة', price: 5, emoji: '🫙', active: true, supportsRollback: true },
+    { id: 'addon-garlic', name: 'ثومية', price: 10, emoji: '🧄', active: true, supportsRollback: true },
+    { id: 'addon-ketchup', name: 'كاتشب', price: 5, emoji: '🍅', active: true, supportsRollback: true },
+    { id: 'addon-fries', name: 'بطاطس زيادة', price: 12, emoji: '🍟', active: true, supportsRollback: true },
+    { id: 'addon-drink', name: 'مشروب كبير', price: 10, emoji: '🥤', active: true, supportsRollback: false },
+    { id: 'addon-coleslaw', name: 'كول سلو', price: 8, emoji: '🥗', active: true, supportsRollback: true },
+    { id: 'addon-pickle', name: 'مخلل', price: 5, emoji: '🥒', active: true, supportsRollback: true },
   ]) T.addons.insert(a)
 
   // Modifier groups + modifiers
   T.modifierGroups.insert({ id: 'grp-size', name: 'الحجم', type: 'single-select', sortOrder: 1, active: true })
   T.modifierGroups.insert({ id: 'grp-sauce', name: 'الصوص', type: 'multi-select', sortOrder: 2, active: true })
-  T.modifierGroups.insert({ id: 'grp-cooking', name: 'السلق', type: 'single-select', sortOrder: 3, active: true })
-  T.modifierGroups.insert({ id: 'grp-extras', name: 'إضافات المشروبات', type: 'multi-select', sortOrder: 4, active: true })
   for (const m of [
-    { id: 'mod-regular', modifierGroupId: 'grp-size', name: 'عادي', priceAdjustment: 0, sortOrder: 1, active: true },
-    { id: 'mod-large', modifierGroupId: 'grp-size', name: 'كبير', priceAdjustment: 30, sortOrder: 2, active: true },
-    { id: 'mod-xl', modifierGroupId: 'grp-size', name: 'XL', priceAdjustment: 50, sortOrder: 3, active: true },
-    { id: 'mod-bbq', modifierGroupId: 'grp-sauce', name: 'باربكيو', priceAdjustment: 0, sortOrder: 1, active: true },
-    { id: 'mod-garlic', modifierGroupId: 'grp-sauce', name: 'ثوم', priceAdjustment: 0, sortOrder: 2, active: true },
-    { id: 'mod-spicy', modifierGroupId: 'grp-sauce', name: 'حار', priceAdjustment: 10, sortOrder: 3, active: true },
-    { id: 'mod-well-done', modifierGroupId: 'grp-cooking', name: 'مستوي', priceAdjustment: 0, sortOrder: 1, active: true },
-    { id: 'mod-medium', modifierGroupId: 'grp-cooking', name: 'متوسط', priceAdjustment: 0, sortOrder: 2, active: true },
-    { id: 'mod-rare', modifierGroupId: 'grp-cooking', name: 'نيء', priceAdjustment: 0, sortOrder: 3, active: true },
-    { id: 'mod-ice', modifierGroupId: 'grp-extras', name: 'ثلج', priceAdjustment: 0, sortOrder: 1, active: true },
-    { id: 'mod-lemon', modifierGroupId: 'grp-extras', name: 'ليمون', priceAdjustment: 5, sortOrder: 2, active: true },
-    { id: 'mod-mint', modifierGroupId: 'grp-extras', name: 'نعناع', priceAdjustment: 5, sortOrder: 3, active: true },
+    { id: 'mod-size-regular', modifierGroupId: 'grp-size', name: 'عادي', priceAdjustment: 0, sortOrder: 1, active: true },
+    { id: 'mod-size-large', modifierGroupId: 'grp-size', name: 'كبير', priceAdjustment: 20, sortOrder: 2, active: true },
+    { id: 'mod-size-xl', modifierGroupId: 'grp-size', name: 'دبل', priceAdjustment: 35, sortOrder: 3, active: true },
+    { id: 'mod-sauce-ketchup', modifierGroupId: 'grp-sauce', name: 'كاتشب', priceAdjustment: 0, sortOrder: 1, active: true },
+    { id: 'mod-sauce-mayo', modifierGroupId: 'grp-sauce', name: 'مايونيز', priceAdjustment: 0, sortOrder: 2, active: true },
+    { id: 'mod-sauce-garlic', modifierGroupId: 'grp-sauce', name: 'ثومية', priceAdjustment: 5, sortOrder: 3, active: true },
+    { id: 'mod-sauce-ranch', modifierGroupId: 'grp-sauce', name: 'رانش', priceAdjustment: 5, sortOrder: 4, active: true },
+    { id: 'mod-sauce-bbq', modifierGroupId: 'grp-sauce', name: 'باربكيو', priceAdjustment: 0, sortOrder: 5, active: true },
+    { id: 'mod-sauce-spicy', modifierGroupId: 'grp-sauce', name: 'حار', priceAdjustment: 5, sortOrder: 6, active: true },
   ]) T.modifiers.insert(m)
 
-  for (const pid of ['b1', 'b2', 'b3', 'b4', 'p1', 'p2', 'p3', 'p4']) T.productModifierGroups.insert({ productId: pid, modifierGroupId: 'grp-size' })
-  for (const pid of ['b1', 'b2', 'b3', 'b4']) T.productModifierGroups.insert({ productId: pid, modifierGroupId: 'grp-sauce' })
-  for (const pid of ['c1', 'c2', 'c3']) T.productModifierGroups.insert({ productId: pid, modifierGroupId: 'grp-cooking' })
-  for (const pid of ['d1', 'd2', 'd3', 'd4']) T.productModifierGroups.insert({ productId: pid, modifierGroupId: 'grp-extras' })
+  const savoryIds = ['cr1', 'cr2', 'cr3', 'cr4', 'cr5', 'cr6', 'cr7', 'cr8', 'cr9', 'cr10']
+  const pizzaIds = ['p1', 'p2', 'p3', 'p4']
+  const mealIds = ['m1', 'm2', 'm3', 'm4']
+  for (const pid of [...savoryIds, ...pizzaIds]) T.productModifierGroups.insert({ productId: pid, modifierGroupId: 'grp-size' })
+  for (const pid of [...savoryIds, ...mealIds]) T.productModifierGroups.insert({ productId: pid, modifierGroupId: 'grp-sauce' })
 
-  // Ingredients
+  // Ingredients — crepe house
   for (const i of [
-    { id: 'ing-bread', name: 'خبز', emoji: '🍞', unit: 'pcs', stockQuantity: 200, minStock: 20, costPerUnit: 3, active: true },
-    { id: 'ing-beef', name: 'لحم بقري', emoji: '🥩', unit: 'g', stockQuantity: 10000, minStock: 1000, costPerUnit: 0.2, active: true },
-    { id: 'ing-chicken', name: 'صدر دجاج', emoji: '🍗', unit: 'g', stockQuantity: 8000, minStock: 1000, costPerUnit: 0.15, active: true },
-    { id: 'ing-cheese', name: 'جبنة', emoji: '🧀', unit: 'g', stockQuantity: 5000, minStock: 500, costPerUnit: 0.1, active: true },
-    { id: 'ing-potato', name: 'بطاطس', emoji: '🥔', unit: 'g', stockQuantity: 15000, minStock: 2000, costPerUnit: 0.03, active: true },
-    { id: 'ing-cola', name: 'كولا', emoji: '🥤', unit: 'ml', stockQuantity: 20000, minStock: 2000, costPerUnit: 0.01, active: true },
+    { id: 'ing-flour', name: 'دقيق', emoji: '🌾', unit: 'g', stockQuantity: 50000, minStock: 5000, costPerUnit: 0.03, active: true },
+    { id: 'ing-eggs', name: 'بيض', emoji: '🥚', unit: 'pcs', stockQuantity: 600, minStock: 60, costPerUnit: 4, active: true },
+    { id: 'ing-milk', name: 'لبن', emoji: '🥛', unit: 'ml', stockQuantity: 20000, minStock: 2000, costPerUnit: 0.03, active: true },
+    { id: 'ing-bread', name: 'عيش', emoji: '🍞', unit: 'pcs', stockQuantity: 400, minStock: 40, costPerUnit: 3, active: true },
+    { id: 'ing-dough', name: 'عجينة بيتزا', emoji: '🍕', unit: 'pcs', stockQuantity: 200, minStock: 20, costPerUnit: 8, active: true },
+    { id: 'ing-chicken-breast', name: 'صدر دجاج', emoji: '🍗', unit: 'g', stockQuantity: 25000, minStock: 2500, costPerUnit: 0.15, active: true },
+    { id: 'ing-kofta', name: 'كفتة', emoji: '🥩', unit: 'g', stockQuantity: 8000, minStock: 800, costPerUnit: 0.18, active: true },
+    { id: 'ing-sausage', name: 'سوسيس', emoji: '🌭', unit: 'g', stockQuantity: 6000, minStock: 600, costPerUnit: 0.15, active: true },
+    { id: 'ing-cheese', name: 'جبنة', emoji: '🧀', unit: 'g', stockQuantity: 12000, minStock: 1200, costPerUnit: 0.1, active: true },
+    { id: 'ing-mozz', name: 'موزاريلا', emoji: '🧀', unit: 'g', stockQuantity: 15000, minStock: 1500, costPerUnit: 0.12, active: true },
+    { id: 'ing-lettuce', name: 'خس', emoji: '🥬', unit: 'g', stockQuantity: 6000, minStock: 600, costPerUnit: 0.05, active: true },
+    { id: 'ing-tomato', name: 'طماطم', emoji: '🍅', unit: 'g', stockQuantity: 8000, minStock: 800, costPerUnit: 0.04, active: true },
+    { id: 'ing-potato', name: 'بطاطس', emoji: '🥔', unit: 'g', stockQuantity: 30000, minStock: 3000, costPerUnit: 0.03, active: true },
+    { id: 'ing-onion', name: 'بصل', emoji: '🧅', unit: 'g', stockQuantity: 5000, minStock: 500, costPerUnit: 0.02, active: true },
+    { id: 'ing-pickle', name: 'مخلل', emoji: '🥒', unit: 'g', stockQuantity: 4000, minStock: 400, costPerUnit: 0.03, active: true },
+    { id: 'ing-cola', name: 'كولا', emoji: '🥤', unit: 'ml', stockQuantity: 30000, minStock: 3000, costPerUnit: 0.01, active: true },
+    { id: 'ing-nutella', name: 'نوتيلا', emoji: '🍫', unit: 'g', stockQuantity: 8000, minStock: 800, costPerUnit: 0.4, active: true },
+    { id: 'ing-banana', name: 'موز', emoji: '🍌', unit: 'g', stockQuantity: 5000, minStock: 500, costPerUnit: 0.05, active: true },
+    { id: 'ing-nuts', name: 'مكسرات', emoji: '🥜', unit: 'g', stockQuantity: 2000, minStock: 200, costPerUnit: 0.8, active: true },
+    { id: 'ing-sauce-ketchup', name: 'كاتشب', emoji: '🍅', unit: 'ml', stockQuantity: 8000, minStock: 800, costPerUnit: 0.04, active: true },
+    { id: 'ing-sauce-mayo', name: 'مايونيز', emoji: '🫙', unit: 'ml', stockQuantity: 8000, minStock: 800, costPerUnit: 0.05, active: true },
+    { id: 'ing-sauce-garlic', name: 'صوص ثومية', emoji: '🧄', unit: 'ml', stockQuantity: 8000, minStock: 800, costPerUnit: 0.05, active: true },
+    { id: 'ing-sauce-ranch', name: 'صوص رانش', emoji: '🥗', unit: 'ml', stockQuantity: 6000, minStock: 600, costPerUnit: 0.07, active: true },
+    { id: 'ing-sauce-bbq', name: 'صوص باربكيو', emoji: '🫙', unit: 'ml', stockQuantity: 8000, minStock: 800, costPerUnit: 0.05, active: true },
+    { id: 'ing-sauce-spicy', name: 'صوص حار', emoji: '🌶️', unit: 'ml', stockQuantity: 6000, minStock: 600, costPerUnit: 0.06, active: true },
+    { id: 'ing-lemon', name: 'ليمون', emoji: '🍋', unit: 'g', stockQuantity: 4000, minStock: 400, costPerUnit: 0.05, active: true },
+    { id: 'ing-mango', name: 'مانجو', emoji: '🥭', unit: 'g', stockQuantity: 6000, minStock: 600, costPerUnit: 0.12, active: true },
+    { id: 'ing-strawberry', name: 'فراولة', emoji: '🍓', unit: 'g', stockQuantity: 4000, minStock: 400, costPerUnit: 0.15, active: true },
+    { id: 'ing-tea', name: 'شاي', emoji: '🍵', unit: 'g', stockQuantity: 1000, minStock: 100, costPerUnit: 0.2, active: true },
+    { id: 'ing-pepperoni', name: 'بيبروني', emoji: '🍕', unit: 'g', stockQuantity: 3000, minStock: 300, costPerUnit: 0.3, active: true },
   ]) T.ingredients.insert(i)
 
-  // Recipes
-  for (const r of [
-    { id: 'r1', productId: 'b1', ingredientId: 'ing-bread', quantityPerUnit: 1 },
-    { id: 'r2', productId: 'b1', ingredientId: 'ing-beef', quantityPerUnit: 150 },
-    { id: 'r3', productId: 'b2', ingredientId: 'ing-bread', quantityPerUnit: 1 },
-    { id: 'r4', productId: 'b2', ingredientId: 'ing-beef', quantityPerUnit: 150 },
-    { id: 'r5', productId: 'b2', ingredientId: 'ing-cheese', quantityPerUnit: 40 },
-    { id: 'r6', productId: 's1', ingredientId: 'ing-potato', quantityPerUnit: 200 },
-    { id: 'r7', productId: 'd1', ingredientId: 'ing-cola', quantityPerUnit: 330 },
-  ]) T.recipes.insert(r)
+  // Recipes — crepe base + fillings
+  const CB: [string, string, string, number][] = []
+  let rn = 1
+  const AR = (pid: string, iid: string, q: number) => CB.push([`r${rn++}`, pid, iid, q])
+  const BASE: [string, number][] = [['ing-flour', 80], ['ing-milk', 80], ['ing-eggs', 1]]
+  const FILL: Record<string, [string, number][]> = {
+    cr1: [['ing-chicken-breast', 120], ['ing-mozz', 20], ['ing-lettuce', 20], ['ing-tomato', 30]],
+    cr2: [['ing-chicken-breast', 120], ['ing-mozz', 20], ['ing-lettuce', 20]],
+    cr3: [['ing-chicken-breast', 130], ['ing-lettuce', 20], ['ing-sauce-ranch', 15]],
+    cr4: [['ing-cheese', 60], ['ing-mozz', 30]],
+    cr5: [['ing-potato', 150], ['ing-mozz', 15], ['ing-sauce-ketchup', 15]],
+    cr6: [['ing-sausage', 80], ['ing-mozz', 15]],
+    cr7: [['ing-kofta', 120], ['ing-mozz', 15]],
+    cr8: [['ing-chicken-breast', 120], ['ing-mozz', 20], ['ing-sauce-bbq', 15]],
+    cr9: [['ing-chicken-breast', 150], ['ing-potato', 100], ['ing-mozz', 30]],
+    cr10: [['ing-chicken-breast', 150], ['ing-kofta', 60], ['ing-potato', 80], ['ing-mozz', 30]],
+    sw1: [['ing-nutella', 40]],
+    sw2: [['ing-nutella', 40], ['ing-banana', 60]],
+    sw3: [['ing-nutella', 50], ['ing-banana', 60], ['ing-nuts', 20]],
+    p1: [['ing-dough', 1], ['ing-mozz', 80], ['ing-tomato', 60]],
+    p2: [['ing-dough', 1], ['ing-mozz', 80], ['ing-tomato', 60], ['ing-pepperoni', 50]],
+    p3: [['ing-dough', 1], ['ing-mozz', 80], ['ing-chicken-breast', 100], ['ing-sauce-bbq', 20]],
+    p4: [['ing-dough', 1], ['ing-mozz', 60], ['ing-tomato', 40], ['ing-lettuce', 30], ['ing-onion', 30]],
+    m1: [['ing-chicken-breast', 150], ['ing-mozz', 30], ['ing-potato', 150], ['ing-bread', 1]],
+    m2: [['ing-chicken-breast', 150], ['ing-potato', 150], ['ing-lettuce', 30], ['ing-bread', 1]],
+    m3: [['ing-chicken-breast', 150], ['ing-potato', 150], ['ing-bread', 1], ['ing-sauce-garlic', 15]],
+    m4: [['ing-chicken-breast', 120], ['ing-potato', 150], ['ing-lettuce', 20]],
+  }
+  for (const pid of [...savoryIds, 'sw1', 'sw2', 'sw3', ...pizzaIds, ...mealIds]) {
+    if (['p1', 'p2', 'p3', 'p4', 'm1', 'm2', 'm3', 'm4'].includes(pid)) {
+      for (const [iid, q] of FILL[pid]) AR(pid, iid, q)
+    } else {
+      for (const [iid, q] of BASE) AR(pid, iid, q)
+      for (const [iid, q] of FILL[pid]) AR(pid, iid, q)
+    }
+  }
+  AR('d1', 'ing-cola', 330); AR('d2', 'ing-lemon', 80); AR('d3', 'ing-milk', 250)
+  AR('d4', 'ing-tea', 5); AR('d5', 'ing-mango', 150); AR('d6', 'ing-strawberry', 150)
+  for (const r of CB) T.recipes.insert({ id: r[0], productId: r[1], ingredientId: r[2], quantityPerUnit: r[3] })
 
-  // Addon recipes (what ingredients each addon consumes)
+  // Addon recipes
   for (const ar of [
     { id: 'ar1', addonId: 'addon-cheese', ingredientId: 'ing-cheese', quantityPerUnit: 20 },
-    { id: 'ar2', addonId: 'addon-fries', ingredientId: 'ing-potato', quantityPerUnit: 100 },
-    { id: 'ar3', addonId: 'addon-drink', ingredientId: 'ing-cola', quantityPerUnit: 200 },
+    { id: 'ar2', addonId: 'addon-mozz', ingredientId: 'ing-mozz', quantityPerUnit: 25 },
+    { id: 'ar3', addonId: 'addon-sauce', ingredientId: 'ing-sauce-bbq', quantityPerUnit: 15 },
+    { id: 'ar4', addonId: 'addon-garlic', ingredientId: 'ing-sauce-garlic', quantityPerUnit: 15 },
+    { id: 'ar5', addonId: 'addon-ketchup', ingredientId: 'ing-sauce-ketchup', quantityPerUnit: 15 },
+    { id: 'ar6', addonId: 'addon-fries', ingredientId: 'ing-potato', quantityPerUnit: 100 },
+    { id: 'ar7', addonId: 'addon-drink', ingredientId: 'ing-cola', quantityPerUnit: 200 },
+    { id: 'ar8', addonId: 'addon-coleslaw', ingredientId: 'ing-lettuce', quantityPerUnit: 50 },
+    { id: 'ar9', addonId: 'addon-pickle', ingredientId: 'ing-pickle', quantityPerUnit: 20 },
   ]) T.addonRecipes.insert(ar)
 
-  // Users
-  T.users.insert({ id: 'user-admin', name: 'مدير', pin: '0000', role: 'admin', active: true, createdAt: now() })
-  T.users.insert({ id: 'user-cashier', name: 'كاشير', pin: '1234', role: 'cashier', active: true, createdAt: now() })
+  // Modifier recipes
+  for (const mr of [
+    { id: 'mr1', modifierId: 'mod-size-large', ingredientId: 'ing-flour', quantityPerUnit: 40 },
+    { id: 'mr2', modifierId: 'mod-size-large', ingredientId: 'ing-milk', quantityPerUnit: 40 },
+    { id: 'mr3', modifierId: 'mod-size-large', ingredientId: 'ing-eggs', quantityPerUnit: 0.5 },
+    { id: 'mr4', modifierId: 'mod-size-xl', ingredientId: 'ing-flour', quantityPerUnit: 80 },
+    { id: 'mr5', modifierId: 'mod-size-xl', ingredientId: 'ing-milk', quantityPerUnit: 80 },
+    { id: 'mr6', modifierId: 'mod-size-xl', ingredientId: 'ing-eggs', quantityPerUnit: 1 },
+    { id: 'mr7', modifierId: 'mod-size-xl', ingredientId: 'ing-mozz', quantityPerUnit: 20 },
+    { id: 'mr8', modifierId: 'mod-sauce-ketchup', ingredientId: 'ing-sauce-ketchup', quantityPerUnit: 15 },
+    { id: 'mr9', modifierId: 'mod-sauce-mayo', ingredientId: 'ing-sauce-mayo', quantityPerUnit: 15 },
+    { id: 'mr10', modifierId: 'mod-sauce-garlic', ingredientId: 'ing-sauce-garlic', quantityPerUnit: 15 },
+    { id: 'mr11', modifierId: 'mod-sauce-ranch', ingredientId: 'ing-sauce-ranch', quantityPerUnit: 15 },
+    { id: 'mr12', modifierId: 'mod-sauce-bbq', ingredientId: 'ing-sauce-bbq', quantityPerUnit: 15 },
+    { id: 'mr13', modifierId: 'mod-sauce-spicy', ingredientId: 'ing-sauce-spicy', quantityPerUnit: 15 },
+  ]) T.modifierRecipes.insert(mr)
+
+  // Link addons to products
+  for (const pid of savoryIds) {
+    for (const aid of ['addon-cheese', 'addon-mozz', 'addon-sauce', 'addon-garlic', 'addon-ketchup', 'addon-fries', 'addon-drink', 'addon-coleslaw', 'addon-pickle']) {
+      T.productAddons.insert({ productId: pid, addonId: aid })
+    }
+  }
+  for (const pid of ['sw1', 'sw2', 'sw3']) T.productAddons.insert({ productId: pid, addonId: 'addon-drink' })
+  for (const pid of pizzaIds) {
+    for (const aid of ['addon-cheese', 'addon-mozz', 'addon-sauce', 'addon-garlic', 'addon-drink', 'addon-coleslaw']) {
+      T.productAddons.insert({ productId: pid, addonId: aid })
+    }
+  }
+  for (const pid of mealIds) {
+    for (const aid of ['addon-sauce', 'addon-garlic', 'addon-ketchup', 'addon-fries', 'addon-drink', 'addon-coleslaw', 'addon-pickle']) {
+      T.productAddons.insert({ productId: pid, addonId: aid })
+    }
+  }
+
+  // Users — crepe house staff
+  T.users.insert({ id: 'user-admin', name: 'أحمد السيد', pin: '0000', role: 'admin', active: true, createdAt: now() })
+  T.users.insert({ id: 'user-cashier-a', name: 'محمد علي', pin: '1234', role: 'cashier', active: true, createdAt: now() })
+  T.users.insert({ id: 'user-cashier-b', name: 'مصطفى كريم', pin: '5678', role: 'cashier', active: true, createdAt: now() })
 }
 
 seed()
@@ -269,6 +376,18 @@ export const rendererApi = {
       return { valid: true, discount: { id: dc.id, code: dc.code, type: dc.type, value: dc.value } }
     },
     use: (id: string) => { const dc = T.discountCodes.get(r => r.id === id); if (dc) dc.usedCount++; return { ok: true } },
+  },
+  deliveryZone: {
+    list: (includeInactive?: boolean) => T.deliveryZones.select(includeInactive ? undefined : (r => r.active)).sort((a, b) => a.sortOrder - b.sortOrder),
+    create: (data: any) => {
+      const id = uuid()
+      const maxSort = T.deliveryZones.select().reduce((m, z) => Math.max(m, Number(z.sortOrder) || 0), 0)
+      T.deliveryZones.insert({ id, name: String(data.name || '').trim(), fee: Number(data.fee) || 0, sortOrder: maxSort + 1, active: true })
+      return { id }
+    },
+    update: (id: string, data: any) => { T.deliveryZones.update(r => r.id === id, data); return { ok: true } },
+    delete: (id: string) => { T.deliveryZones.update(r => r.id === id, { active: false }); return { ok: true } },
+    reorder: (ids: string[]) => { ids.forEach((zid, i) => T.deliveryZones.update(r => r.id === zid, { sortOrder: i })); return { ok: true } },
   },
   expense: {
     list: () => T.expenses.select(r => r.active),
@@ -298,6 +417,7 @@ export const rendererApi = {
     delete: (id: string) => { T.addons.update(r => r.id === id, { active: false }); return { ok: true } },
     listByProduct: (productId: string) => T.productAddons.select(r => r.productId === productId).map(l => T.addons.get(a => a.id === l.addonId)).filter(Boolean),
     linkToProduct: (productId: string, addonId: string) => { T.productAddons.insert({ productId, addonId }); return { ok: true } },
+    setProductLinks: (productId: string, addonIds: string[]) => { T.productAddons.delete(r => r.productId === productId); addonIds.forEach(id => T.productAddons.insert({ productId, addonId: id })); return { ok: true } },
     listRecipes: (addonId: string) => T.addonRecipes.select(r => r.addonId === addonId),
     upsertRecipe: (data: any) => {
       if (data.id) { T.addonRecipes.update(r => r.id === data.id, { ingredientId: data.ingredientId, quantityPerUnit: data.quantityPerUnit }); return { id: data.id } }
@@ -319,6 +439,7 @@ export const rendererApi = {
       return links.map(l => { const g = T.modifierGroups.get(g => g.id === l.modifierGroupId); if (!g) return null; return { ...g, modifiers: T.modifiers.select(r => r.active && r.modifierGroupId === g.id).sort((a, b) => a.sortOrder - b.sortOrder) } }).filter(Boolean)
     },
     linkToProduct: (productId: string, groupId: string) => { T.productModifierGroups.insert({ productId, modifierGroupId: groupId }); return { ok: true } },
+    setProductLinks: (productId: string, groupIds: string[]) => { T.productModifierGroups.delete(r => r.productId === productId); groupIds.forEach(id => T.productModifierGroups.insert({ productId, modifierGroupId: id })); return { ok: true } },
     listRecipes: (modifierId: string) => T.modifierRecipes.select(r => r.modifierId === modifierId),
     upsertRecipe: (data: any) => {
       if (data.id) { T.modifierRecipes.update(r => r.id === data.id, { ingredientId: data.ingredientId, quantityPerUnit: data.quantityPerUnit }); return { id: data.id } }
@@ -329,46 +450,79 @@ export const rendererApi = {
   order: {
     create: (data: any) => {
       const settings = getSettings()
-      const id = `#${Date.now().toString().slice(-6)}`
       const ts = now()
       const deliveryFee = data.orderType === 'delivery' ? (data.deliveryFee ?? settings.deliveryFee) : 0
 
       // Find current open shift
       const currentShift = T.shifts.get(r => r.status === 'open')
       const shiftId = currentShift?.id || data.shiftId || null
+      const shiftNumber = Number(currentShift?.number) || 0
+      const seq = T.orders.select(r => r.shiftId === shiftId).length
+      const id = shiftNumber > 0
+        ? `${shiftNumber}-${String(seq + 1).padStart(3, '0')}`
+        : `#${Date.now().toString().slice(-6)}${Math.floor(Math.random() * 90 + 10)}`
 
       T.orders.insert({
         id, status: 'COMPLETED', orderType: data.orderType, tableNumber: data.tableNumber || null,
         customerName: data.customerName || null, customerPhone: data.customerPhone || null, customerAddress: data.customerAddress || null,
         subtotal: data.subtotal, tax: data.tax, deliveryFee,
+        deliveryZoneId: data.deliveryZoneId || null,
+        deliveryZoneName: data.deliveryZoneName
+          || T.deliveryZones.get(r => r.id === data.deliveryZoneId)?.name || null,
+        deliveryNote: (data.deliveryNote || '').trim() || null,
         discountCode: data.discountCode || null, discountAmount: data.discountAmount || 0,
         total: data.total, paymentType: data.paymentType || 'cash',
         userId: data.userId || null, shiftId,
-        cashierName: data.cashierName || null, statusReason: null,
+        cashierName: data.cashierName || null, note: (data.note || '').trim() || null, statusReason: null,
         createdAt: ts, updatedAt: ts,
       })
       for (const item of data.items) {
         T.orderItems.insert({
           id: uuid(), orderId: id, productId: item.productId, quantity: item.quantity,
           unitPrice: item.unitPrice, itemDiscount: item.itemDiscount || 0,
+          note: (item.note || '').trim() || null,
           selectedModifiersJson: item.modifiers ? JSON.stringify(item.modifiers) : null,
           selectedAddonsJson: item.addons ? JSON.stringify(item.addons) : null,
         })
       }
-      if (data.discountCodeId) { const dc = T.discountCodes.get(r => r.id === data.discountCodeId); if (dc) dc.usedCount++ }
+      // Note: usedCount is incremented by discountCode.use() in Cart.tsx
 
       // Record SALE cash movement only for cash payments with an open shift
       if (shiftId && (data.paymentType || 'cash') === 'cash') {
         T.cashMovements.insert({ id: uuid(), shiftId, type: 'SALE', amount: data.total, note: `طلب ${id}`, createdAt: ts })
       }
 
+      // Save/update delivery customer
+      if (data.orderType === 'delivery' && data.customerPhone) {
+        const phone = String(data.customerPhone).replace(/\D/g, '')
+        if (phone) {
+          const existing = T.customers.get(r => r.phone === phone)
+          if (existing) {
+            T.customers.update(r => r.phone === phone, {
+              name: data.customerName || existing.name,
+              address: data.customerAddress || existing.address,
+              orderCount: (existing.orderCount || 0) + 1,
+              lastOrderAt: ts,
+            })
+          } else {
+            T.customers.insert({ id: uuid(), phone, name: data.customerName || null, address: data.customerAddress || null, orderCount: 1, lastOrderAt: ts, createdAt: ts })
+          }
+        }
+      }
+
       return { id }
     },
     list: (filters?: any) => {
       let all = T.orders.select()
-      if (filters?.search) { const s = filters.search.toLowerCase(); all = all.filter(o => o.id.toLowerCase().includes(s) || (o.customerName && o.customerName.toLowerCase().includes(s))) }
+      const q = filters?.search ? filters.search.toLowerCase() : ''
+      if (q) all = all.filter(o => o.id.toLowerCase().includes(q) || (o.customerName || '').toLowerCase().includes(q) || (o.customerPhone || '').toLowerCase().includes(q))
       if (filters?.status) all = all.filter(o => o.status === filters.status)
-      return all.sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      if (filters?.from) all = all.filter(o => (o.createdAt || '') >= filters.from)
+      if (filters?.to) all = all.filter(o => (o.createdAt || '') <= filters.to + '\uffff')
+      return all
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+        .map(o => rendererApi.order.getById(o.id))
+        .filter(Boolean) as any[]
     },
     getById: (id: string) => {
       const order = T.orders.get(r => r.id === id)
@@ -393,6 +547,9 @@ export const rendererApi = {
     updateStatus: (id: string, status: string, reason?: string) => {
       const order = T.orders.get(r => r.id === id)
       if (!order) return { ok: false, error: 'الطلب غير موجود' }
+      if ((status === 'CANCELLED' || status === 'REFUNDED') && (!reason || !reason.trim())) {
+        return { ok: false, error: 'يجب إدخال سبب الإلغاء/الاسترداد' }
+      }
       const ts = now()
 
       if (status === 'CANCELLED' && order.status === 'COMPLETED') {
@@ -434,10 +591,37 @@ export const rendererApi = {
       return { ok: true, user: { id: user.id, name: user.name, role: user.role } }
     },
   },
+  customer: {
+    search: (prefix: string) => {
+      const digits = String(prefix || '').replace(/\D/g, '')
+      if (digits.length < 3) return []
+      return T.customers.select(r => (r.phone || '').startsWith(digits))
+        .sort((a, b) => (b.lastOrderAt || '').localeCompare(a.lastOrderAt || ''))
+        .slice(0, 8)
+    },
+    upsert: (data: any) => {
+      const phone = String(data.phone || '').replace(/\D/g, '')
+      if (!phone) return { ok: false }
+      const existing = T.customers.get(r => r.phone === phone)
+      if (existing) {
+        T.customers.update(r => r.phone === phone, {
+          name: data.name || existing.name,
+          address: data.address || existing.address,
+          orderCount: (existing.orderCount || 0) + 1,
+          lastOrderAt: now(),
+        })
+        return { ok: true, id: existing.id }
+      }
+      const id = uuid()
+      T.customers.insert({ id, phone, name: data.name || null, address: data.address || null, orderCount: 1, lastOrderAt: now(), createdAt: now() })
+      return { ok: true, id }
+    },
+  },
   shift: {
     open: (data: any) => {
       const id = uuid()
-      T.shifts.insert({ id, userId: data.userId, startedAt: now(), openingCash: data.openingCash, closingCash: null, status: 'open' })
+      const maxNumber = T.shifts.select().reduce((m, s) => Math.max(m, Number(s.number) || 0), 0)
+      T.shifts.insert({ id, number: maxNumber + 1, userId: data.userId, startedAt: now(), openingCash: data.openingCash, closingCash: null, status: 'open' })
       T.cashMovements.insert({ id: uuid(), shiftId: id, type: 'OPENING', amount: data.openingCash, note: 'رصيد افتتاحي', createdAt: now() })
       return { id }
     },
@@ -482,6 +666,42 @@ export const rendererApi = {
       T.inventoryTransactions.insert({ id: uuid(), ingredientId, type: 'PURCHASE', quantity: qty, note: note || 'إعادة تعبئة', createdAt: now() }); return { ok: true }
     },
     deductForOrder: (orderId: string) => { deductInventory(orderId); return { ok: true } },
+    listTransactions: (ingredientId: string, filters?: any) => {
+      const ingredient = T.ingredients.get(r => r.id === ingredientId)
+      if (!ingredient) return { ingredient: null, currentStock: 0, openingBalance: 0, movements: [], total: 0, page: 1, pageSize: 20, totalPages: 0 }
+      let rows = T.inventoryTransactions.select(r => r.ingredientId === ingredientId)
+      if (filters?.type) rows = rows.filter(r => r.type === filters.type)
+      if (filters?.from) rows = rows.filter(r => (r.createdAt || '') >= filters.from)
+      if (filters?.to) rows = rows.filter(r => (r.createdAt || '') <= filters.to + '\uffff')
+      rows = rows.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''))
+      const currentStock = Number(ingredient.stockQuantity) || 0
+      const grandTotal = rows.reduce((s, r) => s + (Number(r.quantity) || 0), 0)
+      const total = rows.length
+      const pageSize = Math.min(Math.max(filters?.pageSize || 20, 5), 100)
+      const totalPages = Math.max(1, Math.ceil(total / pageSize))
+      const page = Math.min(Math.max(filters?.page || 1, 1), totalPages)
+      const pageRows = rows.slice((page - 1) * pageSize, page * pageSize)
+      const newerSum = rows.slice(0, (page - 1) * pageSize).reduce((s, r) => s + (Number(r.quantity) || 0), 0)
+      let running = currentStock - newerSum
+      const withBal = [...pageRows].reverse().map(r => {
+        const bal = running
+        running = running - (Number(r.quantity) || 0)
+        return { ...r, quantity: Number(r.quantity) || 0, balance: bal }
+      })
+      return { ingredient, currentStock, openingBalance: currentStock - grandTotal, movements: withBal.reverse(), total, page, pageSize, totalPages }
+    },
+    recordWaste: (ingredientId: string, qty: number, note?: string) => {
+      const amount = -Math.abs(Number(qty) || 0)
+      const ing = T.ingredients.get(r => r.id === ingredientId); if (ing) ing.stockQuantity += amount
+      T.inventoryTransactions.insert({ id: uuid(), ingredientId, type: 'WASTE', quantity: amount, note: note || 'تالف', createdAt: now() })
+      return { ok: true }
+    },
+    adjust: (ingredientId: string, delta: number, note?: string) => {
+      const qty = Number(delta) || 0
+      const ing = T.ingredients.get(r => r.id === ingredientId); if (ing) ing.stockQuantity += qty
+      T.inventoryTransactions.insert({ id: uuid(), ingredientId, type: 'ADJUSTMENT', quantity: qty, note: note || 'تسوية يدوية', createdAt: now() })
+      return { ok: true }
+    },
   },
   report: {
     dailySummary: (date?: string) => {
@@ -497,6 +717,30 @@ export const rendererApi = {
         return s + items.reduce((is, item) => { const p = T.products.get(pr => pr.id === item.productId); return is + (p?.costPrice || 0) * item.quantity }, 0)
       }, 0)
       return { date: d, totalOrders: day.length, totalRevenue: revenue, avgOrderValue: day.length > 0 ? revenue / day.length : 0, cancelledOrders: cancelled.length, refundedOrders: refunded.length, totalRefunded, cancellationRate: 0, costOfGoods, grossProfit: revenue - costOfGoods }
+    },
+    periodSummary: (from?: string, to?: string) => {
+      const allOrders = T.orders.select()
+      const inRange = (o: any) => {
+        if (from && o.createdAt < from) return false
+if (to && o.createdAt > to + '\uffff') return false
+        return true
+      }
+      const active = allOrders.filter(o => o.status !== 'CANCELLED' && inRange(o))
+      const cancelled = allOrders.filter(o => o.status === 'CANCELLED' && inRange(o))
+      const refunded = active.filter(o => o.status === 'REFUNDED')
+      const totalRefunded = refunded.reduce((s, o) => s + (o.refundedAmount || 0), 0)
+      const totalRevenue = active.reduce((s, o) => s + o.total, 0) - totalRefunded
+      const costOfGoods = active.reduce((s, o) => {
+        const items = T.orderItems.select(r => r.orderId === o.id)
+        return s + items.reduce((is, item) => { const p = T.products.get(pr => pr.id === item.productId); return is + (p?.costPrice || 0) * item.quantity }, 0)
+      }, 0)
+      return {
+        from: from || null, to: to || null,
+        totalOrders: active.length, totalRevenue,
+        avgOrderValue: active.length > 0 ? totalRevenue / active.length : 0,
+        cancelledOrders: cancelled.length, refundedOrders: refunded.length, totalRefunded,
+        costOfGoods, grossProfit: totalRevenue - costOfGoods,
+      }
     },
     profitSummary: (from?: string, to?: string) => {
       const all = T.orders.select().filter(o => { if (o.status === 'CANCELLED') return false; if (from && o.createdAt < from) return false; if (to && o.createdAt > to) return false; return true })
@@ -555,8 +799,119 @@ export const rendererApi = {
       for (let d = days - 1; d >= 0; d--) { const date = new Date(Date.now() - d * 86400000).toISOString().slice(0, 10); const day = all.filter(o => o.createdAt?.startsWith(date)); result.push({ date, revenue: day.reduce((s, o) => s + o.total, 0), orderCount: day.length }) }
       return result
     },
+    laborSummary: (from?: string, to?: string) => {
+      const inRange = (ts: string) => { if (from && ts < from) return false; if (to && ts > to + '\uffff') return false; return true }
+      const allUsers = T.users.select(r => r.active)
+      const allShifts = T.shifts.select().filter(x => inRange(x.startedAt))
+      const allOrders = T.orders.select().filter(o => o.status !== 'CANCELLED' && inRange(o.createdAt))
+      const totalRevenue = allOrders.reduce((s, o) => s + o.total, 0)
+      let totalLaborCost = 0
+      const staff = allUsers.map(u => {
+        const uShifts = allShifts.filter(x => x.userId === u.id)
+        const hoursWorked = uShifts.reduce((s, x) => x.endedAt ? s + (new Date(x.endedAt).getTime() - new Date(x.startedAt).getTime()) / 3600000 : s, 0)
+        const uOrders = allOrders.filter(o => o.userId === u.id)
+        const sales = uOrders.reduce((s, o) => s + o.total, 0)
+        const wage = hoursWorked * (u.hourlyRate || 0)
+        const commission = sales * ((u.commissionRate || 0) / 100)
+        const laborCost = wage + commission
+        totalLaborCost += laborCost
+        return { id: u.id, name: u.name, role: u.role, hourlyRate: u.hourlyRate || 0, commissionRate: u.commissionRate || 0, shiftCount: uShifts.length, hoursWorked: Math.round(hoursWorked * 10) / 10, orderCount: uOrders.length, sales, wage: Math.round(wage), commission: Math.round(commission), laborCost: Math.round(laborCost) }
+      }).sort((a: any, b: any) => b.sales - a.sales)
+      return { totalRevenue, totalLaborCost: Math.round(totalLaborCost), laborCostPct: totalRevenue > 0 ? (totalLaborCost / totalRevenue) * 100 : 0, staff }
+    },
+    voidSummary: (from?: string, to?: string) => {
+      const inRange = (ts: string) => { if (from && ts < from) return false; if (to && ts > to + '\uffff') return false; return true }
+      const allOrders = T.orders.select().filter(o => inRange(o.createdAt))
+      const cancelled = allOrders.filter(o => o.status === 'CANCELLED')
+      const refunded = allOrders.filter(o => o.status === 'REFUNDED')
+      const allUsers = T.users.select()
+      const voidByUser: Record<string, any> = {}
+      const bump = (userId: string | null, cashierName: string | null, kind: string, amount: number) => {
+        const key = userId || cashierName || 'unknown'
+        if (!voidByUser[key]) { const u = allUsers.find(x => x.id === userId); voidByUser[key] = { name: u?.name || cashierName || 'غير معروف', cancels: 0, refunds: 0, cancelAmount: 0, refundAmount: 0 } }
+        if (kind === 'cancel') { voidByUser[key].cancels++; voidByUser[key].cancelAmount += amount } else { voidByUser[key].refunds++; voidByUser[key].refundAmount += amount }
+      }
+      for (const o of cancelled) bump(o.userId, o.cashierName, 'cancel', o.total)
+      for (const o of refunded) bump(o.userId, o.cashierName, 'refund', o.refundedAmount || o.total)
+      const discounted = allOrders.filter(o => o.status !== 'CANCELLED' && (o.discountAmount || 0) > 0)
+      const discountByUser: Record<string, any> = {}
+      for (const o of discounted) {
+        const key = o.userId || o.cashierName || 'unknown'
+        if (!discountByUser[key]) { const u = allUsers.find(x => x.id === o.userId); discountByUser[key] = { name: u?.name || o.cashierName || 'غير معروف', count: 0, total: 0 } }
+        discountByUser[key].count++; discountByUser[key].total += o.discountAmount || 0
+      }
+      return {
+        cancelCount: cancelled.length, cancelAmount: cancelled.reduce((s, o) => s + o.total, 0),
+        refundCount: refunded.length, refundAmount: refunded.reduce((s, o) => s + (o.refundedAmount || 0), 0),
+        discountCount: discounted.length, discountAmount: discounted.reduce((s, o) => s + (o.discountAmount || 0), 0),
+        cancels: cancelled.slice(0, 20).map(o => ({ id: o.id, total: o.total, reason: o.statusReason, cashierName: o.cashierName, createdAt: o.createdAt })),
+        refunds: refunded.slice(0, 20).map(o => ({ id: o.id, total: o.total, refundedAmount: o.refundedAmount, reason: o.statusReason, cashierName: o.cashierName, createdAt: o.createdAt })),
+        discounts: discounted.slice(0, 20).map(o => ({ id: o.id, total: o.total, discountAmount: o.discountAmount, discountCode: o.discountCode, cashierName: o.cashierName, createdAt: o.createdAt })),
+        voidByUser: Object.values(voidByUser).sort((a: any, b: any) => (b.cancelAmount + b.refundAmount) - (a.cancelAmount + a.refundAmount)),
+        discountByUser: Object.values(discountByUser).sort((a: any, b: any) => b.total - a.total),
+      }
+    },
     inventoryAlerts: () => T.ingredients.select(r => r.active && r.stockQuantity <= r.minStock),
     paymentMethodBreakdown: () => [],
+  },
+  printer: {
+    list: async () => [],
+    printHtml: async (html: string, _opts?: any) => {
+      const w = window.open('', '_blank', 'width=400,height=600')
+      if (!w) return { ok: false, error: 'تعذر فتح نافذة الطباعة' }
+      w.document.write(html)
+      w.document.close()
+      w.onload = () => { w.print() }
+      return { ok: true }
+    },
+    test: async () => ({ ok: true }),
+  },
+  station: {
+    list: (includeInactive?: boolean) => {
+      const rows = T.kitchenStations.select(includeInactive ? undefined : (r => r.active)).sort((a, b) => a.sortOrder - b.sortOrder)
+      const links = T.stationCategories.select()
+      return rows.map(s => ({ ...s, categoryIds: links.filter(l => l.stationId === s.id).map(l => l.categoryId) }))
+    },
+    create: (data: any) => {
+      const id = uuid()
+      const maxSort = T.kitchenStations.select().reduce((m, z) => Math.max(m, Number(z.sortOrder) || 0), 0)
+      T.kitchenStations.insert({ id, name: String(data.name || 'محطة'), printerName: data.printerName || null, paperWidth: data.paperWidth || '80mm', sortOrder: maxSort + 1, active: true })
+      if (Array.isArray(data.categoryIds)) for (const cid of data.categoryIds) T.stationCategories.insert({ stationId: id, categoryId: cid })
+      return { id }
+    },
+    update: (id: string, data: any) => {
+      const update: any = {}
+      if (data.name !== undefined) update.name = data.name
+      if (data.printerName !== undefined) update.printerName = data.printerName
+      if (data.paperWidth !== undefined) update.paperWidth = data.paperWidth
+      if (data.active !== undefined) update.active = data.active
+      if (Object.keys(update).length > 0) T.kitchenStations.update(r => r.id === id, update)
+      if (Array.isArray(data.categoryIds)) {
+        T.stationCategories.delete(r => r.stationId === id)
+        for (const cid of data.categoryIds) T.stationCategories.insert({ stationId: id, categoryId: cid })
+      }
+      return { ok: true }
+    },
+    delete: (id: string) => { T.kitchenStations.update(r => r.id === id, { active: false }); return { ok: true } },
+    routeOrder: (orderId: string) => {
+      const items = T.orderItems.select(r => r.orderId === orderId)
+      const pMap = new Map(T.products.select().map(p => [p.id, p]))
+      const links = T.stationCategories.select()
+      const catToStation = new Map<string, string>()
+      for (const l of links) if (!catToStation.has(l.categoryId)) catToStation.set(l.categoryId, l.stationId)
+      const stations = T.kitchenStations.select(r => r.active && r.id !== 'st-receipt').sort((a, b) => a.sortOrder - b.sortOrder)
+      const routes: { station: any; items: any[] }[] = stations.map(s => ({ station: { ...s, categoryIds: links.filter(l => l.stationId === (s as any).id).map(l => l.categoryId) }, items: [] as any[] }))
+      const unrouted: any[] = []
+      for (const item of items) {
+        const p = pMap.get(item.productId) as any
+        const sid = p?.categoryId ? catToStation.get(p.categoryId) : undefined
+        const route = routes.find(r => r.station.id === sid)
+        const enriched = { ...item, productName: p?.name, productEmoji: p?.emoji, categoryId: p?.categoryId }
+        if (route) route.items.push(enriched)
+        else unrouted.push(enriched)
+      }
+      return { routes: routes.filter(r => r.items.length > 0), unrouted }
+    },
   },
   backup: { trigger: () => ({ ok: true }), getStatus: () => ({ lastBackup: null, backupCount: 0 }) },
 }

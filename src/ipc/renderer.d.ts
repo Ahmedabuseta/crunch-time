@@ -1,3 +1,37 @@
+export interface Customer {
+  id: string
+  phone: string
+  name: string | null
+  address: string | null
+  orderCount: number
+  lastOrderAt: string | null
+  createdAt: string
+}
+
+export interface DeliveryZone {
+  id: string
+  name: string
+  fee: number
+  sortOrder: number
+  active: boolean
+}
+
+export interface OsPrinter {
+  name: string
+  displayName: string
+  isDefault: boolean
+}
+
+export interface KitchenStation {
+  id: string
+  name: string
+  printerName: string | null
+  paperWidth: string
+  sortOrder: number
+  active: boolean
+  categoryIds: string[]
+}
+
 export interface ApiBridge {
   settings: {
     get: () => Promise<any>
@@ -10,6 +44,25 @@ export interface ApiBridge {
     delete: (id: string) => Promise<{ ok: boolean }>
     validate: (code: string) => Promise<any>
     use: (id: string) => Promise<{ ok: boolean }>
+  }
+  deliveryZone: {
+    list: (includeInactive?: boolean) => Promise<DeliveryZone[]>
+    create: (data: { name: string; fee: number }) => Promise<{ id: string }>
+    update: (id: string, data: Partial<{ name: string; fee: number; active: boolean; sortOrder: number }>) => Promise<{ ok: boolean }>
+    delete: (id: string) => Promise<{ ok: boolean }>
+    reorder: (ids: string[]) => Promise<{ ok: boolean }>
+  }
+  printer: {
+    list: () => Promise<OsPrinter[]>
+    printHtml: (html: string, opts?: { deviceName?: string; copies?: number; paperWidth?: string }) => Promise<{ ok: boolean; error?: string }>
+    test: (deviceName?: string) => Promise<{ ok: boolean; error?: string }>
+  }
+  station: {
+    list: (includeInactive?: boolean) => Promise<KitchenStation[]>
+    create: (data: { name: string; printerName?: string; paperWidth?: string; categoryIds?: string[] }) => Promise<{ id: string }>
+    update: (id: string, data: Partial<{ name: string; printerName: string | null; paperWidth: string; active: boolean; categoryIds: string[] }>) => Promise<{ ok: boolean }>
+    delete: (id: string) => Promise<{ ok: boolean }>
+    routeOrder: (orderId: string) => Promise<{ routes: { station: KitchenStation; items: any[] }[]; unrouted: any[] }>
   }
   expense: {
     list: () => Promise<any[]>
@@ -39,6 +92,10 @@ export interface ApiBridge {
     delete: (id: string) => Promise<{ ok: boolean }>
     listByProduct: (productId: string) => Promise<any[]>
     linkToProduct: (productId: string, addonId: string) => Promise<{ ok: boolean }>
+    setProductLinks: (productId: string, addonIds: string[]) => Promise<{ ok: boolean }>
+    listRecipes: (addonId: string) => Promise<any[]>
+    upsertRecipe: (data: any) => Promise<{ id: string }>
+    deleteRecipe: (id: string) => Promise<{ ok: boolean }>
   }
   modifier: {
     listGroups: () => Promise<any[]>
@@ -51,6 +108,10 @@ export interface ApiBridge {
     deleteModifier: (id: string) => Promise<{ ok: boolean }>
     listByProduct: (productId: string) => Promise<any[]>
     linkToProduct: (productId: string, groupId: string) => Promise<{ ok: boolean }>
+    setProductLinks: (productId: string, groupIds: string[]) => Promise<{ ok: boolean }>
+    listRecipes: (modifierId: string) => Promise<any[]>
+    upsertRecipe: (data: any) => Promise<{ id: string }>
+    deleteRecipe: (id: string) => Promise<{ ok: boolean }>
   }
   order: {
     create: (data: any) => Promise<{ id: string }>
@@ -70,6 +131,10 @@ export interface ApiBridge {
     delete: (id: string) => Promise<{ ok: boolean }>
     verifyPin: (id: string, pin: string) => Promise<{ ok: boolean; user?: any; error?: string }>
   }
+  customer: {
+    search: (prefix: string) => Promise<Customer[]>
+    upsert: (data: any) => Promise<{ ok: boolean; id?: string }>
+  }
   shift: {
     open: (data: any) => Promise<{ id: string }>
     close: (id: string, closingCash: number) => Promise<{ ok: boolean }>
@@ -80,6 +145,16 @@ export interface ApiBridge {
     addMovement: (data: any) => Promise<{ id: string }>
     listByShift: (shiftId: string) => Promise<any[]>
     reconcile: (shiftId: string) => Promise<any>
+    reconcileBatch: (shiftIds: string[]) => Promise<Record<string, any>>
+    expectedCash: (shiftId: string) => Promise<{ expected: number; breakdown: Record<string, number> } | null>
+  }
+  subRecipe: {
+    listAll: () => Promise<{ id: string; name: string; unit: string; active: boolean; costPerUnit: number; ingredientCount: number }[]>
+    upsert: (data: { id?: string; name: string; unit: string; active?: boolean }) => Promise<{ id: string }>
+    delete: (id: string) => Promise<{ ok: boolean }>
+    listIngredients: (subRecipeId: string) => Promise<{ id: string; subRecipeId: string; ingredientId: string; quantityPerUnit: number; ingredientName: string; unit: string; costPerUnit: number; lineCost: number }[]>
+    upsertIngredient: (data: { id?: string; subRecipeId: string; ingredientId: string; quantityPerUnit: number }) => Promise<{ id: string }>
+    deleteIngredient: (id: string) => Promise<{ ok: boolean }>
   }
   inventory: {
     listIngredients: () => Promise<any[]>
@@ -90,11 +165,16 @@ export interface ApiBridge {
     upsertRecipe: (data: any) => Promise<{ id: string }>
     deleteRecipe: (id: string) => Promise<{ ok: boolean }>
     getAlerts: () => Promise<any[]>
-    restock: (ingredientId: string, qty: number, note?: string) => Promise<{ ok: boolean }>
+    getPurchaseSavings: () => Promise<Record<string, { name: string; standard: number; lastUnitCost: number | null; totalSaved: number }>>
+    restock: (ingredientId: string, qty: number, note?: string, opts?: { unitCost?: number; supplier?: string }) => Promise<{ ok: boolean; ppv?: number }>
     deductForOrder: (orderId: string) => Promise<{ ok: boolean }>
+    listTransactions: (ingredientId: string, filters?: { type?: string; from?: string; to?: string; page?: number; pageSize?: number }) => Promise<{ ingredient: any; currentStock: number; openingBalance: number; movements: any[]; total: number; page: number; pageSize: number; totalPages: number }>
+    recordWaste: (ingredientId: string, qty: number, note?: string) => Promise<{ ok: boolean }>
+    adjust: (ingredientId: string, delta: number, note?: string) => Promise<{ ok: boolean }>
   }
   report: {
     dailySummary: (date?: string) => Promise<any>
+    periodSummary: (from?: string, to?: string) => Promise<any>
     hourlyBreakdown: (date?: string) => Promise<any[]>
     topItems: (limit?: number, from?: string, to?: string) => Promise<any[]>
     categoryRevenue: (from?: string, to?: string) => Promise<any[]>
@@ -102,10 +182,18 @@ export interface ApiBridge {
     ticketDistribution: (from?: string, to?: string) => Promise<any[]>
     orderTypeSplit: (from?: string, to?: string) => Promise<any>
     shiftReport: (shiftId: string) => Promise<any>
+    shiftSummary: (from?: string, to?: string) => Promise<any>
+    laborSummary: (from?: string, to?: string) => Promise<any>
+    voidSummary: (from?: string, to?: string) => Promise<any>
     revenueTrend: (days?: number) => Promise<any[]>
     inventoryAlerts: () => Promise<any[]>
     paymentMethodBreakdown: (from?: string, to?: string) => Promise<any[]>
     profitSummary: (from?: string, to?: string) => Promise<any>
+    abcXyz: (from?: string, to?: string) => Promise<any>
+    inventoryTurnover: (from?: string, to?: string) => Promise<any>
+    purchasePriceVariance: (from?: string, to?: string) => Promise<any>
+    salesTrend: (opts?: { days?: number; forecastDays?: number }) => Promise<any>
+    daysOnHand: () => Promise<any>
   }
   backup: {
     trigger: () => Promise<any>
