@@ -722,25 +722,78 @@ export function registerIpcHandlers() {
     return { ok: true }
   })
 
+  ipcMain.handle('modifier:setProductLinks', (_e, productId: string, groupIds: string[]) => {
+    db.delete(productModifierGroups).where(eq(productModifierGroups.productId, productId)).run()
+    for (const groupId of groupIds) {
+      db.insert(productModifierGroups).values({ productId, modifierGroupId: groupId }).run()
+    }
+    return { ok: true }
+  })
+
+  ipcMain.handle('modifier:listRecipes', (_e, modifierId: string) => listRecipeRows('modifier_recipes', 'modifier_id', modifierId))
+
+  ipcMain.handle('modifier:upsertRecipe', (_e, data: any) => {
+    if (data.id) {
+      db.update(modifierRecipes).set({ ingredientId: data.ingredientId ?? null, subRecipeId: data.subRecipeId ?? null, quantityPerUnit: data.quantityPerUnit })
+        .where(eq(modifierRecipes.id, data.id)).run()
+      return { id: data.id }
+    }
+    const id = uuid()
+    db.insert(modifierRecipes).values({ id, modifierId: data.modifierId, ingredientId: data.ingredientId ?? null, subRecipeId: data.subRecipeId ?? null, quantityPerUnit: data.quantityPerUnit }).run()
+    return { id }
+  })
+
+  ipcMain.handle('modifier:deleteRecipe', (_e, id: string) => {
+    db.delete(modifierRecipes).where(eq(modifierRecipes.id, id)).run()
+    return { ok: true }
+  })
+
   // ═══════════════════════════════════════════════════════════
   // ORDERS
   // ═══════════════════════════════════════════════════════════
+  const resolveDeliveryZone = (zoneId?: string | null, zoneName?: string | null) => {
+    if (!zoneId) return { deliveryZoneId: null as string | null, deliveryZoneName: (zoneName || '').trim() || null as string | null }
+    const row = db.select({ name: deliveryZones.name }).from(deliveryZones).where(eq(deliveryZones.id, zoneId)).get()
+    return { deliveryZoneId: zoneId, deliveryZoneName: (zoneName || '').trim() || row?.name || null }
+  }
   ipcMain.handle('order:create', (_e, data: any) => {
-    const id = `#${Date.now().toString().slice(-6)}`
+    const shiftId = getOpenShiftId(data.shiftId) || data.shiftId || null
+    if (!shiftId) {
+      throw new Error('لا يمكن إنشاء طلب بدون وردية مفتوحة')
+    }
+    const shift = db.select({ number: shifts.number }).from(shifts).where(eq(shifts.id, shiftId)).get()
+    const shiftNumber = Number(shift?.number) || 0
+    const { c } = getSqlite().prepare('SELECT COUNT(*) AS c FROM orders WHERE shift_id = ?').get(shiftId) as { c: number }
+    const id = shiftNumber > 0
+      ? `${shiftNumber}-${String((c || 0) + 1).padStart(3, '0')}`
+      : `#${Date.now().toString().slice(-6)}${Math.floor(Math.random() * 90 + 10)}`
     const ts = now()
+
     db.insert(orders).values({
       id,
-      status: 'PAID',
+      status: 'COMPLETED',
       orderType: data.orderType,
       tableNumber: data.tableNumber || null,
+      customerName: data.customerName || null,
+      customerPhone: data.customerPhone || null,
+      customerAddress: data.customerAddress || null,
       deliveryAddress: data.deliveryAddress || null,
       deliveryPhone: data.deliveryPhone || null,
       subtotal: data.subtotal,
       tax: data.tax,
       deliveryFee: data.deliveryFee || 0,
+      ...resolveDeliveryZone(data.deliveryZoneId, data.deliveryZoneName),
+      deliveryNote: (data.deliveryNote || '').trim() || null,
+      discountCode: data.discountCode || null,
+      discountAmount: data.discountAmount || 0,
       total: data.total,
+      paymentType: data.paymentType || 'cash',
+      cashierName: data.cashierName || null,
+      note: (data.note || '').trim() || null,
+      statusReason: null,
+      refundedAmount: 0,
       userId: data.userId || null,
-      shiftId: data.shiftId || null,
+      shiftId,
       createdAt: ts,
       updatedAt: ts,
     }).run()
