@@ -1922,7 +1922,7 @@ export function registerIpcHandlers() {
     const allOrders = db.select().from(orders).all().filter(o => {
       if (o.status === 'CANCELLED') return false
       if (from && o.createdAt < from) return false
-      if (to && o.createdAt > to) return false
+      if (to && o.createdAt > to + '\uffff') return false
       return true
     })
     const validOrderIds = new Set(allOrders.map(o => o.id))
@@ -1936,15 +1936,412 @@ export function registerIpcHandlers() {
     return Object.values(methods)
   })
 
+  // ─── Market-resilience analytics (ABC/XYZ, turnover, PPV, trend, DIO) ──
+  const ABC_XYZ_POLICIES: Record<string, string> = {
+    AX: 'إعادة طلب يومية + مراقبة مستمرة',
+    AY: 'طلب أسبوعي + مراقبة مستمرة',
+    AZ: 'طلب أسبوعي + مخزون أمان مرتفع',
+    BX: 'طلب أسبوعي',
+    BY: 'طلب كل أسبوعين',
+    BZ: 'طلب كل أسبوعين + مخزون أمان',
+    CX: 'طلب شهري بكميات كبيرة',
+    CY: 'طلب شهري',
+    CZ: 'أولوية منخفضة — دفعة شهرية',
+  }
+
+  ipcMain.handle('report:abcXyz', (_e, from?: string, to?: string) => {
+    const allOrders = db.select().from(orders).all().filter(o => {
+      if (o.status === 'CANCELLED') return false
+      if (from && o.createdAt < from) return false
+      if (to && o.createdAt > to + '\uffff') return false
+      return true
+    })
+    const validOrderIds = new Set(allOrders.map(o => o.id))
+    const items = db.select().from(orderItems).all().filter(i => validOrderIds.has(i.orderId))
+    const productMap = new Map(db.select().from(products).all().map(p => [p.id, p]))
+
+    const agg: Record<string, { productId: string; name: string; emoji: string; revenue: number; qty: number }> = {}
+    let totalRevenue = 0
+    for (const item of items) {
+      const p = productMap.get(item.productId)
+      if (!p) continue
+      if (!agg[p.id]) agg[p.id] = { productId: p.id, name: p.name, emoji: p.emoji, revenue: 0, qty: 0 }
+      agg[p.id].revenue += item.unitPrice * item.quantity
+      agg[p.id].qty += item.quantity
+      totalRevenue += item.unitPrice * item.quantity
+    }
+    const ranked = Object.values(agg).sort((a, b) => b.revenue - a.revenue)
+    let cum = 0
+    const productRows = ranked.map(row => {
+      const share = totalRevenue > 0 ? row.revenue / totalRevenue : 0
+      cum += share
+      return { ...row, revenue: r2(row.revenue), share: r2(share), cumShare: r2(cum), abc: abcClass(cum) }
+    })
+
+    // XYZ: coefficient of variation of daily qty over the last 90 days
+    const lookback = 90
+    const cutoff = new Date(Date.now() - lookback * 86400000).toISOString().slice(0, 10)
+    const histOrders = db.select().from(orders).all()
+    const histValid = new Set(histOrders.filter(o => o.status !== 'CANCELLED' && o.createdAt >= cutoff).map(o => o.id))
+    const histOrderMap = new Map(histOrders.map(o => [o.id, o]))
+    const dailyQty: Record<string, Record<string, number>> = {}
+    for (const item of db.select().from(orderItems).all()) {
+      if (!histValid.has(item.orderId)) continue
+      const date = histOrderMap.get(item.orderId)?.createdAt.slice(0, 10)
+      if (!date) continue
+      if (!dailyQty[item.productId]) dailyQty[item.productId] = {}
+      dailyQty[item.productId][date] = (dailyQty[item.productId][date] || 0) + item.quantity
+    }
+    const dayList: string[] = []
+    for (let d = lookback - 1; d >= 0; d--) dayList.push(new Date(Date.now() - d * 86400000).toISOString().slice(0, 10))
+    const xyzMap: Record<string, { xyz: string; cv: number }> = {}
+    for (const pid of Object.keys(agg)) {
+      const values = dayList.map(dd => dailyQty[pid]?.[dd] || 0)
+      const mean = values.reduce((sum, v) => sum + v, 0) / lookback
+      const variance = values.reduce((sum, v) => sum + (v - mean) ** 2, 0) / lookback
+      const cv = mean > 0 ? Math.sqrt(variance) / mean : 999
+      xyzMap[pid] = { xyz: xyzClass(cv), cv: r2(cv > 999 ? 999 : cv) }
+    }
+
+    const classified = productRows.map(row => ({
+      ...row,
+      xyz: xyzMap[row.productId]?.xyz || 'Z',
+      cv: xyzMap[row.productId]?.cv ?? 0,
+    }))
+
+    const classes: string[] = []
+    for (const abc of ['A', 'B', 'C']) for (const xyz of ['X', 'Y', 'Z']) classes.push(abc + xyz)
+    const matrixCounts = Object.fromEntries(classes.map(c => [c, 0]))
+    for (const row of classified) matrixCounts[row.abc + row.xyz]++
+
+    return {
+      from: from || null,
+      to: to || null,
+      totalRevenue: r2(totalRevenue),
+      totalProducts: classified.length,
+      products: classified,
+      matrixCounts,
+      policies: ABC_XYZ_POLICIES,
+    }
+  })
+
+  ipcMain.handle('report:inventoryTurnover', (_e, from?: string, to?: string) => {
+    const s = getSqlite()
+    const allOrders = db.select().from(orders).all().filter(o => {
+      if (o.status === 'CANCELLED') return false
+      if (from && o.createdAt < from) return false
+      if (to && o.createdAt > to + '\uffff') return false
+      return true
+    })
+    const validOrderIds = new Set(allOrders.map(o => o.id))
+    const items = db.select().from(orderItems).all().filter(i => validOrderIds.has(i.orderId))
+    const consumption: Record<string, number> = {}
+    const bump = (ingredientId: string, qty: number) => {
+      consumption[ingredientId] = (consumption[ingredientId] || 0) + qty
+    }
+    for (const item of items) {
+      for (const c of expandRecipes(s.prepare('SELECT ingredient_id, sub_recipe_id, quantity_per_unit FROM recipes WHERE product_id = ?').all(item.productId) as any[]))
+        bump(c.ingredientId, c.qty * item.quantity)
+      if (item.selectedAddonsJson) {
+        try {
+          for (const addonId of JSON.parse(item.selectedAddonsJson) as string[])
+            for (const c of expandRecipes(s.prepare('SELECT ingredient_id, sub_recipe_id, quantity_per_unit FROM addon_recipes WHERE addon_id = ?').all(addonId) as any[]))
+              bump(c.ingredientId, c.qty * item.quantity)
+        } catch {}
+      }
+      if (item.selectedModifiersJson) {
+        try {
+          for (const mod of JSON.parse(item.selectedModifiersJson) as { modifierId: string }[])
+            for (const c of expandRecipes(s.prepare('SELECT ingredient_id, sub_recipe_id, quantity_per_unit FROM modifier_recipes WHERE modifier_id = ?').all(mod.modifierId) as any[]))
+              bump(c.ingredientId, c.qty * item.quantity)
+        } catch {}
+      }
+    }
+
+    // Reconstruct stock at period boundaries from the transaction ledger
+    const txRows = s.prepare('SELECT ingredient_id, quantity, created_at FROM inventory_transactions').all() as any[]
+    const totalTx: Record<string, number> = {}
+    const txBeforeStart: Record<string, number> = {}
+    const txUpToEnd: Record<string, number> = {}
+    for (const t of txRows) {
+      const q = Number(t.quantity) || 0
+      totalTx[t.ingredient_id] = (totalTx[t.ingredient_id] || 0) + q
+      if (from && t.created_at < from) txBeforeStart[t.ingredient_id] = (txBeforeStart[t.ingredient_id] || 0) + q
+      if (to && t.created_at <= to + '\uffff') txUpToEnd[t.ingredient_id] = (txUpToEnd[t.ingredient_id] || 0) + q
+    }
+
+    const active = db.select().from(ingredients).where(eq(ingredients.active, true)).all()
+    let totalCogs = 0
+    let totalAvgStockValue = 0
+    const rows = active.map(ing => {
+      const unitCost = Number(ing.costPerUnit) || 0
+      const base = Number(ing.stockQuantity || 0) - (totalTx[ing.id] || 0)
+      const stockStart = from ? base + (txBeforeStart[ing.id] || 0) : Number(ing.stockQuantity || 0)
+      const stockEnd = to ? base + (txUpToEnd[ing.id] || 0) : Number(ing.stockQuantity || 0)
+      const avgStockUnits = (stockStart + stockEnd) / 2
+      const avgStockValue = Math.max(0, avgStockUnits) * unitCost
+      const cogs = (consumption[ing.id] || 0) * unitCost
+      const turnover = avgStockValue > 0 && cogs > 0 ? cogs / avgStockValue : 0
+      totalCogs += cogs
+      totalAvgStockValue += avgStockValue
+      return {
+        ingredientId: ing.id,
+        name: ing.name,
+        unit: ing.unit,
+        supplier: ing.supplier,
+        unitCost: r2(unitCost),
+        consumptionUnits: r2(consumption[ing.id] || 0),
+        cogsPeriod: r2(cogs),
+        stockStart: r2(stockStart),
+        stockEnd: r2(stockEnd),
+        avgStockUnits: r2(avgStockUnits),
+        avgStockValue: r2(avgStockValue),
+        stockValueCurrent: r2(Number(ing.stockQuantity || 0) * unitCost),
+        turnover: turnover > 0 ? r2(turnover) : 0,
+      }
+    }).sort((a, b) => b.turnover - a.turnover)
+
+    return {
+      from: from || null,
+      to: to || null,
+      rows,
+      totalCogs: r2(totalCogs),
+      totalAvgStockValue: r2(totalAvgStockValue),
+      weightedTurnover: totalAvgStockValue > 0 ? r2(totalCogs / totalAvgStockValue) : 0,
+    }
+  })
+
+  ipcMain.handle('report:purchasePriceVariance', (_e, from?: string, to?: string) => {
+    const s = getSqlite()
+    let where = 'WHERE 1=1'
+    const params: any[] = []
+    if (from) { where += ' AND purchased_at >= ?'; params.push(from) }
+    if (to) { where += ' AND purchased_at <= ?'; params.push(to + '\uffff') }
+    const rows = s.prepare(
+      `SELECT ingredient_id AS ingredientId, supplier, unit_cost AS unitCost, quantity, purchased_at AS purchasedAt
+       FROM purchase_price_history ${where} ORDER BY purchased_at ASC`
+    ).all(...params) as any[]
+    const ingredientMap = new Map(db.select().from(ingredients).all().map(i => [i.id, i]))
+    const agg: Record<string, any> = {}
+    for (const r of rows) {
+      const ing = ingredientMap.get(r.ingredientId)
+      if (!ing) continue
+      if (!agg[ing.id]) {
+        agg[ing.id] = {
+          ingredientId: ing.id, name: ing.name, unit: ing.unit,
+          plannedCost: Number(ing.plannedCost) || 0,
+          currentCost: Number(ing.costPerUnit) || 0,
+          standardCost: (Number(ing.plannedCost) || 0) > 0 ? Number(ing.plannedCost) : (Number(ing.costPerUnit) || 0),
+          purchases: 0, qty: 0, spend: 0, lastCost: 0, lastDate: null as string | null, lastSupplier: null as string | null,
+        }
+      }
+      const a = agg[ing.id]
+      a.purchases++
+      const qty = Number(r.quantity) || 0
+      const cost = Number(r.unitCost) || 0
+      a.qty += qty
+      a.spend += cost * qty
+      a.lastCost = cost
+      a.lastDate = r.purchasedAt
+      if (r.supplier) a.lastSupplier = r.supplier
+    }
+    let totalSpend = 0
+    let totalPPV = 0
+    let highConcentrationCount = 0
+    const result = Object.values(agg).map((a: any) => {
+      const conc = supplierConcentration(a.ingredientId, from, to)
+      const ppv = a.spend - a.standardCost * a.qty
+      totalSpend += a.spend
+      totalPPV += ppv
+      if (conc.singleSupplierConcentration) highConcentrationCount++
+      return {
+        ...a,
+        qty: a.qty,
+        spend: r2(a.spend),
+        avgCost: a.qty > 0 ? r2(a.spend / a.qty) : 0,
+        ppv: r2(ppv),
+        ppvPct: a.standardCost > 0 && a.spend > 0 ? r2((ppv / a.spend) * 100) : 0,
+        concentration: conc.rows,
+        topSupplierPct: r2(conc.topSupplierPct),
+        singleSupplierConcentration: conc.singleSupplierConcentration,
+      }
+    }).sort((a, b) => Math.abs(b.ppv) - Math.abs(a.ppv))
+
+    return {
+      from: from || null,
+      to: to || null,
+      rows: result,
+      totalSpend: r2(totalSpend),
+      totalPPV: r2(totalPPV),
+      totalPurchases: result.reduce((s2, a) => s2 + a.purchases, 0),
+      highConcentrationCount,
+    }
+  })
+
+  ipcMain.handle('report:salesTrend', (_e, opts?: { days?: number; forecastDays?: number }) => {
+    const days = Math.max(7, Math.min(90, Number(opts?.days) || 60))
+    const forecastDays = Math.max(7, Math.min(90, Number(opts?.forecastDays) || 30))
+    const cutoff = new Date(Date.now() - days * 86400000).toISOString().slice(0, 10)
+    const allOrders = db.select().from(orders).all().filter(o => o.status !== 'CANCELLED' && o.createdAt >= cutoff)
+    const dayList: string[] = []
+    for (let d = days - 1; d >= 0; d--) dayList.push(new Date(Date.now() - d * 86400000).toISOString().slice(0, 10))
+    const daySet = new Set(dayList)
+
+    const daily = new Map<string, { revenue: number; orderCount: number; qty: number }>()
+    const orderMap = new Map(allOrders.map(o => [o.id, o]))
+    for (const o of allOrders) {
+      const d = o.createdAt.slice(0, 10)
+      if (!daySet.has(d)) continue
+      if (!daily.has(d)) daily.set(d, { revenue: 0, orderCount: 0, qty: 0 })
+      const rec = daily.get(d)!
+      rec.revenue += o.total
+      rec.orderCount++
+    }
+    const validIds = new Set(allOrders.map(o => o.id))
+    const perProductDaily: Record<string, Record<string, number>> = {}
+    for (const item of db.select().from(orderItems).all()) {
+      if (!validIds.has(item.orderId)) continue
+      const d = orderMap.get(item.orderId)?.createdAt.slice(0, 10)
+      if (!d || !daySet.has(d)) continue
+      const rec = daily.get(d)!
+      rec.qty += item.quantity
+      if (!perProductDaily[item.productId]) perProductDaily[item.productId] = {}
+      perProductDaily[item.productId][d] = (perProductDaily[item.productId][d] || 0) + item.quantity
+    }
+    const historical = dayList.map(d => {
+      const v = daily.get(d)
+      return { date: d, revenue: v?.revenue || 0, orderCount: v?.orderCount || 0, qty: v?.qty || 0 }
+    })
+
+    const hRevenue = historical.reduce((sum, r) => sum + r.revenue, 0)
+    const baseDailyRevenue = hRevenue / days
+    const sumLast = (n: number) => {
+      const slice = historical.slice(Math.max(0, historical.length - n))
+      return slice.reduce((acc, r) => acc + r.revenue, 0) / Math.max(1, slice.length)
+    }
+
+    const byWeekday: Record<number, { sum: number; count: number }> = {}
+    for (const r of historical) {
+      const wd = new Date(r.date + 'T12:00:00').getDay()
+      if (!byWeekday[wd]) byWeekday[wd] = { sum: 0, count: 0 }
+      byWeekday[wd].sum += r.revenue
+      byWeekday[wd].count++
+    }
+    const weekdayFactors = [0, 1, 2, 3, 4, 5, 6].map(wd => {
+      const b = byWeekday[wd]
+      const avg = b && b.count > 0 ? b.sum / b.count : 0
+      return {
+        weekday: wd,
+        avg: r2(avg),
+        factor: baseDailyRevenue > 0 ? r2(avg / baseDailyRevenue) : 0,
+      }
+    })
+
+    const forecast: { date: string; revenue: number; factor: number }[] = []
+    for (let f = 1; f <= forecastDays; f++) {
+      const d = new Date(Date.now() + f * 86400000)
+      const dateStr = d.toISOString().slice(0, 10)
+      const wd = d.getDay()
+      const factor = weekdayFactors[wd].factor
+      forecast.push({ date: dateStr, revenue: r2(baseDailyRevenue * factor), factor })
+    }
+
+    const productMap = new Map(db.select().from(products).all().map(p => [p.id, p]))
+    const itemRows = Object.entries(perProductDaily)
+      .map(([pid, dm]) => {
+        const p = productMap.get(pid)
+        if (!p) return null
+        const values = dayList.map(d => dm[d] || 0)
+        const total = values.reduce((acc, v) => acc + v, 0)
+        const baseDailyQty = total / values.length
+        const last7 = values.slice(-7).reduce((acc, v) => acc + v, 0)
+        const prior7 = values.slice(-14, -7).reduce((acc, v) => acc + v, 0)
+        const trend = prior7 > 0 ? r2(((last7 - prior7) / prior7) * 100) : last7 > 0 ? 100 : 0
+        return { productId: pid, name: p.name, emoji: p.emoji, baseDailyQty: r2(baseDailyQty), last7Qty: r2(last7 / 7), trend, forecast30d: r2(baseDailyQty * 30) }
+      })
+      .filter((x): x is NonNullable<typeof x> => x !== null)
+      .sort((a, b) => b.baseDailyQty - a.baseDailyQty)
+      .slice(0, 10)
+
+    return {
+      days,
+      forecastDays,
+      historical,
+      forecast,
+      baseDailyRevenue: r2(baseDailyRevenue),
+      avgDailyRevenue30: r2(sumLast(30)),
+      avgDailyRevenue60: r2(sumLast(60)),
+      avgDailyRevenue90: r2(sumLast(90)),
+      weekdayFactors,
+      items: itemRows,
+    }
+  })
+
+  ipcMain.handle('report:daysOnHand', () => {
+    const s = getSqlite()
+    const active = db.select().from(ingredients).where(eq(ingredients.active, true)).all()
+    const cutoff = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10)
+    const consumptionRows = s.prepare("SELECT ingredient_id, quantity FROM inventory_transactions WHERE type = 'CONSUMPTION' AND created_at >= ?").all(cutoff) as any[]
+    const used: Record<string, number> = {}
+    for (const r of consumptionRows) {
+      const q = Math.abs(Number(r.quantity) || 0)
+      used[r.ingredient_id] = (used[r.ingredient_id] || 0) + q
+    }
+    const rows = active.map(ing => {
+      const stock = Number(ing.stockQuantity) || 0
+      const unitCost = Number(ing.costPerUnit) || 0
+      const avgDailyUse = (used[ing.id] || 0) / 30
+      const dio = avgDailyUse > 0 ? stock / avgDailyUse : null
+      let status: 'ok' | 'low' | 'critical' = 'ok'
+      if (Number(ing.minStock || 0) > 0 && stock <= Number(ing.minStock)) status = 'critical'
+      else if (dio != null && dio <= 3) status = 'low'
+      return {
+        ingredientId: ing.id,
+        name: ing.name,
+        unit: ing.unit,
+        supplier: ing.supplier,
+        secondarySupplier: ing.secondarySupplier,
+        supplierRatio: Number(ing.supplierRatio) || 0.7,
+        plannedCost: Number(ing.plannedCost) || 0,
+        stock: r2(stock),
+        minStock: Number(ing.minStock) || 0,
+        unitCost: r2(unitCost),
+        stockValue: r2(stock * unitCost),
+        avgDailyUse: r2(avgDailyUse),
+        dio: dio != null ? r2(dio) : null,
+        status,
+      }
+    }).sort((a, b) => (a.dio ?? Infinity) - (b.dio ?? Infinity))
+
+    const conc = rows.map(r => ({ ingredientId: r.ingredientId, ...supplierConcentration(r.ingredientId, undefined, undefined) }))
+    return { rows, concentrations: conc }
+  })
+
   // ═══════════════════════════════════════════════════════════
   // BACKUP
   // ═══════════════════════════════════════════════════════════
-  ipcMain.handle('backup:trigger', () => {
-    // Placeholder — will be implemented in Phase 9
-    return { ok: true, message: 'Backup not yet implemented' }
+  ipcMain.handle('backup:trigger', async () => {
+    try {
+      const backupsDir = path.join(app.getPath('userData'), 'backups')
+      mkdirSync(backupsDir, { recursive: true })
+      const stamp = new Date().toISOString().replace(/[^0-9]/g, '').slice(0, 14)
+      const dest = path.join(backupsDir, `fastfood-${stamp}.db`)
+      await getSqlite().backup(dest)
+      return { ok: true, path: dest, message: 'تم إنشاء النسخة الاحتياطية بنجاح' }
+    } catch (err: any) {
+      return { ok: false, error: err?.message || 'فشل النسخ الاحتياطي' }
+    }
   })
 
   ipcMain.handle('backup:getStatus', () => {
-    return { lastBackup: null, backupCount: 0 }
+    try {
+      const backupsDir = path.join(app.getPath('userData'), 'backups')
+      const files = readdirSync(backupsDir)
+        .filter(f => f.startsWith('fastfood-') && f.endsWith('.db'))
+        .sort()
+      return { lastBackup: files.length ? files[files.length - 1] : null, backupCount: files.length }
+    } catch {
+      return { lastBackup: null, backupCount: 0 }
+    }
   })
 }
