@@ -1,11 +1,18 @@
 import type { CartItem } from '@/services/cart/cart.types'
+import { fmtMoney } from '@/lib/format'
 
 interface ReceiptProps {
   orderId: string
   items: CartItem[]
   subtotal: number
   tax: number
+  taxRate?: number
   deliveryFee: number
+  deliveryZoneName?: string
+  deliveryNote?: string
+  discountAmount?: number
+  discountCode?: string
+  orderNote?: string
   total: number
   orderType: string
   tableNumber?: string
@@ -17,10 +24,10 @@ interface ReceiptProps {
 }
 
 const paymentLabels: Record<string, string> = {
-  cash: 'كاش', card: 'كارت', wallet: 'محفظة',
+  cash: 'كاش', visa: 'فيزا', card: 'كارت', wallet: 'محفظة',
 }
 
-export function Receipt({ orderId, items, subtotal, tax, deliveryFee, total, orderType, tableNumber, customerName, customerPhone, customerAddress, paymentType, cashierName }: ReceiptProps) {
+export function Receipt({ orderId, items, subtotal, tax, taxRate = 0.14, deliveryFee, deliveryZoneName, deliveryNote, discountAmount = 0, discountCode, orderNote, total, orderType, tableNumber, customerName, customerPhone, customerAddress, paymentType, cashierName }: ReceiptProps) {
   const now = new Date()
   const dateStr = now.toLocaleDateString('ar-EG', { year: 'numeric', month: 'long', day: 'numeric' })
   const timeStr = now.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })
@@ -63,44 +70,59 @@ export function Receipt({ orderId, items, subtotal, tax, deliveryFee, total, ord
       </div>
 
       {/* Delivery info */}
-      {orderType === 'delivery' && (customerName || customerPhone || customerAddress) && (
+      {orderType === 'delivery' && (customerName || customerPhone || customerAddress || deliveryZoneName || deliveryNote) && (
         <div className="border-b border-dashed border-gray-300 pb-3 mb-3 space-y-1 text-xs">
           {customerName && <div className="flex justify-between"><span className="text-gray-500">العميل</span><span className="font-bold">{customerName}</span></div>}
           {customerPhone && <div className="flex justify-between"><span className="text-gray-500">التليفون</span><span className="font-bold">{customerPhone}</span></div>}
           {customerAddress && <div className="flex justify-between"><span className="text-gray-500">العنوان</span><span className="font-bold">{customerAddress}</span></div>}
+          {deliveryZoneName && <div className="flex justify-between"><span className="text-gray-500">المنطقة</span><span className="font-bold">{deliveryZoneName}</span></div>}
+          {deliveryNote && <div className="flex justify-between gap-2"><span className="text-gray-500 shrink-0">ملاحظة التوصيل</span><span className="font-bold break-words text-left">{deliveryNote}</span></div>}
         </div>
       )}
 
       {/* Items */}
       <div className="border-b border-dashed border-gray-300 pb-3 mb-3 space-y-2">
         {items.map((item, i) => {
-          const addonTotal = item.addons.reduce((s, a) => s + a.price, 0)
+          const addonTotal = item.addons.reduce((s, a: any) => s + a.price * (a.qty || 1), 0)
           const modifierTotal = item.modifiers.reduce((s, m) => s + m.priceAdjustment, 0)
-          const lineTotal = (item.product.price + addonTotal + modifierTotal) * item.quantity
+          const unitTotal = item.product.price + addonTotal + modifierTotal
+          const lineTotal = unitTotal * item.quantity
           return (
             <div key={i}>
-              <div className="flex justify-between text-sm">
-                <span className="font-bold">{item.product.emoji} {item.product.name} ×{item.quantity}</span>
-                <span className="font-bold">{lineTotal} ج.م</span>
+              <div className="flex justify-between gap-2 text-sm">
+                <span className="font-bold flex-1 break-words min-w-0">
+                  {item.product.emoji} {item.product.name}
+                  {item.modifiers.length > 0 && (
+                    <span className="text-gray-700"> ({item.modifiers.map((m: any) => m.modifierName).join('، ')})</span>
+                  )} ×{item.quantity}
+                  {(item as any).note && (
+                    <span className="block text-[11px] font-medium text-amber-700">📝 {(item as any).note}</span>
+                  )}
+                </span>
+                <span className="font-bold shrink-0 whitespace-nowrap">{fmtMoney(lineTotal)} ج.م</span>
               </div>
-              {/* Modifiers */}
-              {item.modifiers.map((m, mi) => (
-                <div key={mi} className="flex justify-between text-xs text-gray-500 mr-4">
-                  <span>↳ {m.modifierName}</span>
-                  {m.priceAdjustment > 0 && <span>+{m.priceAdjustment * item.quantity} ج.م</span>}
+              {item.addons.length > 0 && (
+                <div className="mr-4 text-xs text-gray-500">
+                  {item.addons.map((a: any, ai: number) => (
+                    <div key={ai} className="flex justify-between gap-2">
+                      <span className="flex-1 break-words min-w-0">↳ {a.emoji} {a.name}{(a.qty || 1) > 1 ? ` ×${a.qty}` : ''}{item.quantity > 1 ? ` ×${item.quantity}` : ''}</span>
+                      <span className="text-gray-700 shrink-0 whitespace-nowrap">{fmtMoney(a.price * (a.qty || 1) * item.quantity)} ج.م</span>
+                    </div>
+                  ))}
                 </div>
-              ))}
-              {/* Addons */}
-              {item.addons.map((a, ai) => (
-                <div key={ai} className="flex justify-between text-xs text-gray-500 mr-4">
-                  <span>↳ {a.emoji} {a.name}</span>
-                  <span>+{a.price * item.quantity} ج.م</span>
-                </div>
-              ))}
+              )}
             </div>
           )
         })}
       </div>
+
+      {/* Order note */}
+      {orderNote && (
+        <div className="border border-amber-400 bg-amber-50 rounded-lg px-3 py-2 mb-3 text-xs">
+          <span className="font-black">📝 ملاحظة الطلب: </span>
+          <span className="font-medium break-words">{orderNote}</span>
+        </div>
+      )}
 
       {/* Totals */}
       <div className="space-y-1 text-sm mb-4">
@@ -109,13 +131,19 @@ export function Receipt({ orderId, items, subtotal, tax, deliveryFee, total, ord
           <span>{subtotal.toFixed(0)} ج.م</span>
         </div>
         <div className="flex justify-between text-gray-500">
-          <span>ضريبة (14%)</span>
+          <span>ضريبة ({Math.round(taxRate * 100)}%)</span>
           <span>{tax.toFixed(0)} ج.م</span>
         </div>
         {deliveryFee > 0 && (
           <div className="flex justify-between text-gray-500">
-            <span>رسوم التوصيل</span>
-            <span>{deliveryFee} ج.م</span>
+            <span>رسوم التوصيل{deliveryZoneName ? ` (${deliveryZoneName})` : ''}</span>
+            <span>{fmtMoney(deliveryFee)} ج.م</span>
+          </div>
+        )}
+        {discountAmount > 0 && (
+          <div className="flex justify-between text-green-600">
+            <span>خصم{discountCode ? ` (${discountCode})` : ''}</span>
+            <span>-{discountAmount.toFixed(0)} ج.م</span>
           </div>
         )}
         <div className="border-t-2 border-black pt-2 mt-2">

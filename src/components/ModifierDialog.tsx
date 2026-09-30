@@ -5,6 +5,7 @@ import { useCartStore } from '@/services/cart/cart.store'
 import { Button } from '@/components/ui/button'
 import { X } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { fmtMoney } from '@/lib/format'
 
 interface ModifierGroup {
   id: string
@@ -21,7 +22,6 @@ interface ModifierDialogProps {
 
 export function ModifierDialog({ product, groups, onClose }: ModifierDialogProps) {
   const addItem = useCartStore((s) => s.addItem)
-  const setModifiers = useCartStore((s) => s.setModifiers)
   const [selected, setSelected] = useState<Record<string, string>>({})
 
   // Auto-select first option for single-select groups
@@ -50,7 +50,6 @@ export function ModifierDialog({ product, groups, onClose }: ModifierDialogProps
   }
 
   const handleAdd = () => {
-    addItem(product)
     const modifiers: CartItemModifier[] = []
     for (const g of groups) {
       const sel = selected[g.id]
@@ -69,14 +68,7 @@ export function ModifierDialog({ product, groups, onClose }: ModifierDialogProps
         }
       }
     }
-    if (modifiers.length > 0) {
-      // Get the item we just added and set its modifiers
-      const items = useCartStore.getState().items
-      const lastItem = items[items.length - 1]
-      if (lastItem) {
-        setModifiers(lastItem.product.id, modifiers)
-      }
-    }
+    addItem(product, modifiers)
     onClose()
   }
 
@@ -91,7 +83,7 @@ export function ModifierDialog({ product, groups, onClose }: ModifierDialogProps
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
-      <div className="bg-card border-2 rounded-3xl shadow-2xl w-[400px] max-h-[80vh] flex flex-col overflow-hidden" dir="rtl" onClick={e => e.stopPropagation()}>
+      <div className="bg-card border-2 rounded-3xl shadow-2xl w-[480px] max-w-[92vw] max-h-[85vh] flex flex-col overflow-hidden" dir="rtl" onClick={e => e.stopPropagation()}>
         {/* Header */}
         <div className="flex items-center justify-between p-5 pb-3">
           <div className="flex items-center gap-3">
@@ -101,22 +93,22 @@ export function ModifierDialog({ product, groups, onClose }: ModifierDialogProps
               <p className="text-xs text-muted-foreground">{product.description}</p>
             </div>
           </div>
-          <Button variant="ghost" size="icon" className="h-8 w-8 rounded-xl" onClick={onClose}>
-            <X className="h-4 w-4" />
+          <Button variant="ghost" size="icon" className="h-11 w-11 rounded-xl shrink-0" onClick={onClose}>
+            <X className="h-5 w-5" />
           </Button>
         </div>
 
         {/* Modifier groups */}
         <div className="flex-1 overflow-y-auto px-5 space-y-4 pb-4">
-          {groups.map(group => (
+          {groups.filter(g => g.modifiers.length > 0).map(group => (
             <div key={group.id} className="space-y-2">
               <div className="flex items-center gap-2">
                 <h4 className="text-sm font-bold">{group.name}</h4>
-                <span className="text-[10px] text-muted-foreground bg-secondary rounded-full px-2 py-0.5">
+                <span className="text-xs text-muted-foreground bg-secondary rounded-full px-2.5 py-1">
                   {group.type === 'single-select' ? 'اختار واحد' : 'اختار أكثر من واحد'}
                 </span>
               </div>
-              <div className="space-y-1.5">
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                 {group.modifiers.map(mod => {
                   const sel = selected[group.id] || ''
                   const isSelected = sel.split(',').includes(mod.id)
@@ -125,18 +117,18 @@ export function ModifierDialog({ product, groups, onClose }: ModifierDialogProps
                       key={mod.id}
                       onClick={() => handleToggle(group.id, mod.id, group.type)}
                       className={cn(
-                        "w-full flex items-center justify-between px-4 py-3 rounded-xl border-2 transition-all cursor-pointer",
+                        "aspect-square flex flex-col items-center justify-center gap-1 rounded-2xl border-2 transition-all cursor-pointer p-2",
                         isSelected
-                          ? "bg-primary/10 border-primary"
-                          : "bg-card border-transparent hover:border-border"
+                          ? "bg-primary/10 border-primary shadow-md shadow-primary/10"
+                          : "bg-card border-border/60 hover:border-border"
                       )}
                     >
-                      <span className="text-sm font-bold">{mod.name}</span>
-                      {mod.priceAdjustment > 0 && (
-                        <span className="text-xs font-bold text-primary">+{mod.priceAdjustment} ج.م</span>
-                      )}
-                      {mod.priceAdjustment === 0 && (
-                        <span className="text-xs text-muted-foreground">بدون زيادة</span>
+                      <span className="text-sm font-black text-center leading-tight">{mod.name}</span>
+                      <span className="text-sm font-black text-primary">
+                        {fmtMoney(product.price + mod.priceAdjustment)} ج.م
+                      </span>
+                      {isSelected && (
+                        <span className="w-5 h-5 rounded-full bg-primary text-primary-foreground text-[10px] font-black flex items-center justify-center">✓</span>
                       )}
                     </button>
                   )
@@ -151,7 +143,7 @@ export function ModifierDialog({ product, groups, onClose }: ModifierDialogProps
           <div className="flex items-center justify-between mb-3">
             <span className="text-sm font-bold">السعر</span>
             <div className="flex items-baseline gap-1">
-              <span className="font-black text-xl text-primary">{totalPrice}</span>
+              <span className="font-black text-xl text-primary">{fmtMoney(totalPrice)}</span>
               <span className="text-xs text-muted-foreground">ج.م</span>
             </div>
           </div>

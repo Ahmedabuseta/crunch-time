@@ -1,7 +1,9 @@
 import type { CartItem as CartItemType } from '@/services/cart/cart.types'
 import { useCartStore } from '@/services/cart/cart.store'
-import { Button } from '@/components/ui/button'
-import { Minus, Plus, Trash2, X } from 'lucide-react'
+import { Minus, Plus, Trash2, StickyNote, X } from 'lucide-react'
+import { useState } from 'react'
+import { cn } from '@/lib/utils'
+import { fmtMoney } from '@/lib/format'
 
 interface CartItemProps {
   item: CartItemType
@@ -10,63 +12,106 @@ interface CartItemProps {
 export function CartItem({ item }: CartItemProps) {
   const updateQuantity = useCartStore((s) => s.updateQuantity)
   const removeItem = useCartStore((s) => s.removeItem)
-  const removeAddon = useCartStore((s) => s.removeAddon)
+  const updateAddonQty = useCartStore((s) => s.updateAddonQty)
+  const setItemNote = useCartStore((s) => s.setItemNote)
+  const [noteOpen, setNoteOpen] = useState(!!item.note)
 
-  const addonTotal = item.addons.reduce((s, a) => s + a.price, 0)
+  const addonTotal = item.addons.reduce((s, a) => s + a.price * (a.qty || 1), 0)
   const modifierTotal = item.modifiers.reduce((s, m) => s + m.priceAdjustment, 0)
-  const lineTotal = (item.product.price + addonTotal + modifierTotal) * item.quantity
+  const unitTotal = item.product.price + addonTotal + modifierTotal
+  const lineTotal = unitTotal * item.quantity
+  const hasExtras = item.addons.length > 0 || item.modifiers.length > 0
 
   return (
-    <div className="py-3 border-b border-border/40 last:border-0 animate-fade-in">
-      <div className="flex items-center gap-3">
-        <div className="w-10 h-10 rounded-xl bg-secondary/80 flex items-center justify-center shrink-0">
-          <span className="text-xl">{item.product.emoji}</span>
-        </div>
+    <div className="py-2 border-b border-border/40 last:border-0 animate-fade-in">
+      <div className="flex items-center gap-2">
+        <span className="text-2xl leading-none shrink-0 w-8 text-center">{item.product.emoji}</span>
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-bold">{item.product.name}</p>
-          <p className="text-[10px] text-muted-foreground">{item.product.price} ج.م/وحدة</p>
+          <p className="text-sm font-black leading-snug break-words">
+            {item.product.name}
+            {item.modifiers.length > 0 && (
+              <span className="text-primary"> ({item.modifiers.map((m) => m.modifierName).join('، ')})</span>
+            )}
+          </p>
+          <p className="text-sm font-black text-primary leading-tight">{lineTotal} <span className="text-[10px] font-medium text-muted-foreground">ج.م</span></p>
         </div>
-        <div className="flex items-center bg-secondary rounded-full">
-          <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full" onClick={() => updateQuantity(item.product.id, item.quantity - 1)}>
-            <Minus className="h-3.5 w-3.5" />
-          </Button>
-          <span className="w-7 text-center text-sm font-black">{item.quantity}</span>
-          <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full" onClick={() => updateQuantity(item.product.id, item.quantity + 1)}>
-            <Plus className="h-3.5 w-3.5" />
-          </Button>
+        <div className="flex items-center bg-secondary rounded-full p-0.5 shrink-0">
+          <button onClick={() => updateQuantity(item.lineId, item.quantity - 1)} className="flex items-center justify-center h-9 w-9 rounded-full hover:bg-accent cursor-pointer transition-colors">
+            <Minus className="h-4 w-4" />
+          </button>
+          <span className="w-6 text-center text-sm font-black">{item.quantity}</span>
+          <button onClick={() => updateQuantity(item.lineId, item.quantity + 1)} className="flex items-center justify-center h-9 w-9 rounded-full hover:bg-accent cursor-pointer transition-colors">
+            <Plus className="h-4 w-4" />
+          </button>
         </div>
-        <div className="text-left w-16">
-          <p className="text-sm font-black">{lineTotal} <span className="text-[9px] text-muted-foreground font-medium">ج.م</span></p>
-        </div>
-        <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive rounded-lg shrink-0" onClick={() => removeItem(item.product.id)}>
-          <Trash2 className="h-3.5 w-3.5" />
-        </Button>
+        <button onClick={() => setNoteOpen((v) => !v)} title="ملاحظة للصنف"
+          className={cn("flex items-center justify-center h-9 w-9 rounded-lg cursor-pointer transition-colors shrink-0",
+            item.note || noteOpen ? "text-amber-400 bg-amber-500/10" : "text-muted-foreground hover:text-foreground hover:bg-accent")}>
+          <StickyNote className="h-4 w-4" />
+        </button>
+        <button onClick={() => removeItem(item.lineId)} className="flex items-center justify-center h-9 w-9 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 cursor-pointer transition-colors shrink-0">
+          <Trash2 className="h-4 w-4" />
+        </button>
       </div>
 
-      {/* Modifiers */}
-      {item.modifiers.length > 0 && (
-        <div className="mr-13 mt-2 flex flex-wrap gap-1.5">
-          {item.modifiers.map((m, i) => (
-            <span key={i} className="text-[10px] bg-blue-500/10 text-blue-400 rounded-full px-2 py-0.5 font-bold">
-              {m.modifierName} {m.priceAdjustment > 0 && `+${m.priceAdjustment}`}
-            </span>
-          ))}
+      {(noteOpen || item.note) && (
+        <div className="mt-1.5 mr-10 animate-slide-up">
+          <div className="relative">
+            <StickyNote className="absolute right-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-amber-400/70 pointer-events-none" />
+            <input type="text" placeholder="ملاحظة للصنف… (بدون شطة، مستوي زيادة…)" value={item.note || ''}
+              onChange={(e) => setItemNote(item.lineId, e.target.value)}
+              className="w-full pr-9 pl-8 py-2 rounded-lg bg-amber-500/5 border border-amber-500/20 text-xs font-medium focus:ring-1 focus:ring-amber-500/40 focus:outline-none placeholder:text-muted-foreground" dir="rtl" />
+            {item.note && (
+              <button onClick={() => { setItemNote(item.lineId, ''); setNoteOpen(false) }}
+                className="absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-destructive cursor-pointer">
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
         </div>
       )}
 
-      {/* Addons */}
-      {item.addons.length > 0 && (
-        <div className="mr-13 mt-2 grid grid-cols-2 gap-1.5">
-          {item.addons.map((addon: any) => (
-            <div key={addon._uid || addon.id} className="flex items-center gap-1.5 text-[11px] bg-secondary/70 rounded-xl px-2.5 py-1.5 font-medium group">
-              <span className="text-sm">{addon.emoji}</span>
-              <span className="flex-1 truncate">{addon.name}</span>
-              <span className="text-primary font-bold text-[10px]">+{addon.price}</span>
-              <button onClick={() => removeAddon(item.product.id, addon._uid || addon.id)} className="hover:text-destructive cursor-pointer opacity-0 group-hover:opacity-100 transition-opacity">
-                <X className="h-3 w-3" />
-              </button>
+      {hasExtras && (
+        <div className="mt-1.5 mr-10 space-y-1.5 text-xs rounded-xl bg-secondary/40 p-2">
+
+          {item.addons.map((addon) => (
+            <div key={addon.id} className="flex items-center gap-1.5 text-xs">
+              <span className="text-muted-foreground">↳</span>
+              <span className="text-sm leading-none">{addon.emoji}</span>
+              <span className="flex-1 font-medium break-words">{addon.name}</span>
+              <div className="flex items-center bg-secondary/70 rounded-full p-0.5 shrink-0">
+                <button onClick={() => updateAddonQty(item.lineId, addon.id, (addon.qty || 1) - 1)} className="flex items-center justify-center h-6 w-6 rounded-full hover:bg-accent cursor-pointer transition-colors">
+                  <Minus className="h-3 w-3" />
+                </button>
+                <span className="w-5 text-center text-[11px] font-black">×{addon.qty || 1}</span>
+                <button onClick={() => updateAddonQty(item.lineId, addon.id, (addon.qty || 1) + 1)} className="flex items-center justify-center h-6 w-6 rounded-full hover:bg-accent cursor-pointer transition-colors">
+                  <Plus className="h-3 w-3" />
+                </button>
+              </div>
+              <span className="text-primary font-bold text-[11px] shrink-0">
+                {fmtMoney(addon.price * (addon.qty || 1))} ج.م
+                {item.quantity > 1 && <span className="text-muted-foreground font-medium"> ×{item.quantity}</span>}
+              </span>
             </div>
           ))}
+
+          {item.quantity > 1 ? (
+            <>
+              <div className="flex items-center justify-between border-t border-border/40 pt-1">
+                <span className="text-[11px] font-bold text-muted-foreground">المجموع (لكل قطعة)</span>
+                <span className="font-black">{fmtMoney(unitTotal)} ج.م</span>
+              </div>
+              <div className="flex items-center justify-between pb-1">
+                <span className="text-[11px] font-black">الإجمالي ×{item.quantity}</span>
+                <span className="font-black text-primary">{fmtMoney(lineTotal)} ج.م</span>
+              </div>
+            </>
+          ) : (
+            <div className="flex items-center justify-between border-t border-border/40 pt-1 pb-1">
+              <span className="text-[11px] font-black">الإجمالي</span>
+              <span className="font-black text-primary">{fmtMoney(lineTotal)} ج.م</span>
+            </div>
+          )}
         </div>
       )}
     </div>
