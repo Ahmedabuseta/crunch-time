@@ -3,6 +3,7 @@ import { useCategoryStore } from '@/services/category/category.store'
 import { useProductStore } from '@/services/product/product.store'
 import { useAddonStore } from '@/services/addon/addon.store'
 import { useOrderStore } from '@/services/order/order.store'
+import { useCartStore } from '@/services/cart/cart.store'
 import { useInventoryStore } from '@/services/inventory/inventory.store'
 import { useUserStore } from '@/services/user/user.store'
 import { LoginPage } from '@/components/LoginPage'
@@ -22,7 +23,9 @@ import { ShiftsPage } from '@/components/pages/ShiftsPage'
 import { MyShiftPage } from '@/components/pages/MyShiftPage'
 import { CashDrawerPage } from '@/components/pages/CashDrawerPage'
 import { SettingsPage } from '@/components/pages/SettingsPage'
-import { LayoutGrid, Clock, Calendar, LogOut } from 'lucide-react'
+import { ShiftStatusChip } from '@/components/ShiftStatusChip'
+import { Toaster } from '@/components/ui/toast'
+import { LayoutGrid, Clock, Calendar, LogOut, ShoppingCart, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 function App() {
@@ -30,6 +33,8 @@ function App() {
   const logout = useUserStore((s) => s.logout)
   const [page, setPage] = useState<Page>('menu')
   const [category, setCategory] = useState<string | null>(null)
+  const [cartOpen, setCartOpen] = useState(false)
+  const cartCount = useCartStore((s) => s.itemCount)()
 
   const fetchCategories = useCategoryStore((s) => s.fetch)
   const fetchProducts = useProductStore((s) => s.fetch)
@@ -63,9 +68,9 @@ function App() {
     switch (page) {
       case 'menu':
         return (
-          <div className="flex h-full">
+          <div className="flex flex-col md:flex-row h-full">
             <CategorySidebar selected={category} onSelect={setCategory} />
-            <div className="flex-1 min-w-0"><ProductGrid category={category} /></div>
+            <div className="flex-1 min-w-0 min-h-0"><ProductGrid category={category} /></div>
           </div>
         )
       case 'orders': return <OrderHistory />
@@ -86,62 +91,130 @@ function App() {
 
   return (
     <div className="flex flex-col h-screen w-screen bg-background" dir="rtl">
+      <Toaster />
       {/* Top Bar */}
-      <div className="flex items-center justify-between px-5 py-2.5 border-b bg-card shrink-0">
-        <div className="flex items-center gap-3">
+      <div className="flex items-center justify-between gap-2 px-3 sm:px-5 py-2.5 border-b bg-card shrink-0">
+        <div className="flex items-center gap-2 sm:gap-3 shrink-0">
           <div className="w-8 h-8 rounded-xl bg-primary/10 flex items-center justify-center">
             <span className="text-base">🍔</span>
           </div>
-          <span className="text-sm font-black">فاست فود</span>
+          <span className="text-sm font-black hidden min-[420px]:block">فاست فود</span>
         </div>
 
         {/* Cashier nav tabs */}
-        <div className="flex items-center gap-1 bg-secondary/60 rounded-full p-1">
+        <div className="flex items-center gap-1 bg-secondary/60 rounded-full p-1 min-w-0 overflow-x-auto">
           {topTabs.map(({ id, label, icon: Icon }) => (
             <button
               key={id}
               onClick={() => setPage(id)}
               className={cn(
-                "flex items-center gap-1.5 px-4 py-1.5 rounded-full text-sm font-bold transition-all cursor-pointer",
+                "flex items-center gap-1.5 px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-bold transition-all cursor-pointer whitespace-nowrap",
                 page === id
                   ? "bg-primary text-primary-foreground shadow-md shadow-primary/20"
                   : "text-muted-foreground hover:text-foreground"
               )}
             >
               <Icon className="h-4 w-4" />
-              {label}
+              <span className="max-sm:hidden">{label}</span>
             </button>
           ))}
         </div>
 
-        <div className="flex items-center gap-2">
-          <span className="text-xs font-bold text-muted-foreground">{currentUser.name}</span>
-          <span className={cn("text-[10px] font-bold rounded-full px-2 py-0.5", isAdmin ? "bg-primary/10 text-primary" : "bg-secondary text-muted-foreground")}>
+        <div className="hidden sm:block">
+          <ShiftStatusChip onOpenShift={() => setPage('my-shift')} />
+        </div>
+
+        <div className="flex items-center gap-2 shrink-0">
+          <span className="text-xs font-bold text-muted-foreground hidden lg:block">{currentUser.name}</span>
+          <span className={cn("text-[10px] font-bold rounded-full px-2 py-0.5 hidden sm:block", isAdmin ? "bg-primary/10 text-primary" : "bg-secondary text-muted-foreground")}>
             {isAdmin ? 'مدير' : 'كاشير'}
           </span>
+          {page === 'menu' && (
+            <button
+              onClick={() => setCartOpen(true)}
+              className="lg:hidden relative flex items-center justify-center h-10 w-10 rounded-xl bg-primary text-primary-foreground cursor-pointer"
+              title="السلة"
+            >
+              <ShoppingCart className="h-5 w-5" />
+              {cartCount > 0 && (
+                <span className="absolute -top-1 -left-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-destructive text-[10px] font-black text-white px-1">
+                  {cartCount}
+                </span>
+              )}
+            </button>
+          )}
           <button onClick={logout} className="text-muted-foreground hover:text-destructive transition-colors cursor-pointer p-1">
             <LogOut className="h-4 w-4" />
           </button>
         </div>
       </div>
 
+      {/* Mobile shift chip row */}
+      <div className="sm:hidden flex justify-center py-1.5 border-b bg-card/60 shrink-0">
+        <ShiftStatusChip onOpenShift={() => setPage('my-shift')} />
+      </div>
+
+      {/* Mobile admin nav strip — only on admin pages */}
+      {isAdmin && !(['menu', 'orders', 'my-shift'] as Page[]).includes(page) && (
+        <div className="lg:hidden shrink-0">
+          <Sidebar current={page} onNavigate={setPage} />
+        </div>
+      )}
+
       {/* Main content */}
       <div className="flex flex-1 min-h-0">
-        {/* Admin sidebar — only for admin */}
-        {isAdmin && <Sidebar current={page} onNavigate={setPage} />}
+        {/* Admin sidebar — only for admin, hidden on small screens behind pages */}
+        {isAdmin && (
+          <div className="hidden lg:block shrink-0">
+            <Sidebar current={page} onNavigate={setPage} />
+          </div>
+        )}
 
         {/* Page content */}
         <div className="flex-1 min-w-0 overflow-hidden">
           {renderPage()}
         </div>
 
-        {/* Cart — only on menu page */}
+        {/* Cart — side panel on desktop */}
         {page === 'menu' && (
-          <div className="w-[360px] shrink-0 bg-card border-r">
+          <div className="hidden lg:block w-[360px] shrink-0 bg-card border-r">
             <Cart />
           </div>
         )}
       </div>
+
+      {/* Cart — bottom drawer on mobile/tablet */}
+      {page === 'menu' && cartOpen && (
+        <div className="lg:hidden fixed inset-0 z-50 flex flex-col justify-end">
+          <div className="absolute inset-0 bg-black/60 animate-fade-in" onClick={() => setCartOpen(false)} />
+          <div className="relative bg-card rounded-t-3xl max-h-[85vh] h-[85vh] flex flex-col animate-slide-up">
+            <div className="flex items-center justify-center pt-2 pb-1 shrink-0">
+              <div className="w-10 h-1 rounded-full bg-border" />
+            </div>
+            <button
+              onClick={() => setCartOpen(false)}
+              className="absolute top-3 left-3 flex items-center justify-center h-9 w-9 rounded-full bg-secondary text-muted-foreground cursor-pointer"
+              title="إغلاق"
+            >
+              <X className="h-4 w-4" />
+            </button>
+            <div className="flex-1 min-h-0">
+              <Cart />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Floating cart button on mobile when drawer closed */}
+      {page === 'menu' && !cartOpen && cartCount > 0 && (
+        <button
+          onClick={() => setCartOpen(true)}
+          className="lg:hidden fixed bottom-4 inset-x-4 z-40 flex items-center justify-center gap-2 h-13 py-3.5 rounded-2xl bg-primary text-primary-foreground font-black text-sm shadow-xl shadow-primary/30 cursor-pointer active:scale-[0.98] transition-transform"
+        >
+          <ShoppingCart className="h-5 w-5" />
+          عرض السلة · {cartCount}
+        </button>
+      )}
     </div>
   )
 }

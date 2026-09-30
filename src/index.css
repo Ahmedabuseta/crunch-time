@@ -56,6 +56,9 @@
   --cat-sides: oklch(0.7 0.2 150);
   --cat-drinks: oklch(0.65 0.2 230);
   --cat-desserts: oklch(0.7 0.18 320);
+  --cat-crepe-savory: oklch(0.7 0.2 50);
+  --cat-crepe-sweet: oklch(0.7 0.18 320);
+  --cat-meals: oklch(0.7 0.18 80);
 }
 
 @theme inline {
@@ -89,6 +92,9 @@
   --color-cat-sides: var(--cat-sides);
   --color-cat-drinks: var(--cat-drinks);
   --color-cat-desserts: var(--cat-desserts);
+  --color-cat-crepe-savory: var(--cat-crepe-savory);
+  --color-cat-crepe-sweet: var(--cat-crepe-sweet);
+  --color-cat-meals: var(--cat-meals);
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
@@ -106,6 +112,24 @@ body {
   overflow: hidden;
   -webkit-font-smoothing: antialiased;
 }
+
+/* Theme-aware scrollbars */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--primary); }
+
+/* Touch-safe tap targets (12-16" tablets, POS checkout) */
+.touch-target { min-height: 44px; min-width: 44px; }
+.touch-input { min-height: 48px; font-size: 1rem; }
+
+/* Native date inputs: dark calendar + clickable */
+input[type="date"] { color-scheme: dark; cursor: pointer; }
+input[type="date"]::-webkit-calendar-picker-indicator { cursor: pointer; opacity: 0.7; }
 
 .animate-slide-up { animation: slideUp 0.3s ease-out both; }
 .animate-fade-in { animation: fadeIn 0.2s ease-out both; }
