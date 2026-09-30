@@ -9,11 +9,17 @@ export interface CartItemModifier {
   priceAdjustment: number
 }
 
+export interface CartItemAddon extends Addon {
+  qty: number
+}
+
 export interface CartItem {
+  lineId: string
   product: Product
   quantity: number
-  addons: Addon[]
+  addons: CartItemAddon[]
   modifiers: CartItemModifier[]
+  note: string
 }
 
 export interface OrderType {

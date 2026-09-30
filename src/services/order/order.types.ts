@@ -1,4 +1,4 @@
-export type OrderStatus = 'DRAFT' | 'PENDING_PAYMENT' | 'PAID' | 'PREPARING' | 'READY' | 'COMPLETED' | 'CANCELLED' | 'REFUNDED'
+export type OrderStatus = 'COMPLETED' | 'CANCELLED' | 'REFUNDED'
 
 export interface Order {
   id: string
@@ -7,6 +7,10 @@ export interface Order {
   tableNumber: string | null
   deliveryAddress: string | null
   deliveryPhone: string | null
+  deliveryZoneId: string | null
+  deliveryZoneName: string | null
+  deliveryNote: string | null
+  note: string | null
   subtotal: number
   tax: number
   deliveryFee: number
@@ -23,6 +27,7 @@ export interface OrderItem {
   productId: string
   quantity: number
   unitPrice: number
+  note: string | null
   selectedModifiersJson: string | null
   selectedAddonsJson: string | null
 }
@@ -40,6 +45,9 @@ export interface CreateOrderInput {
   customerAddress?: string
   deliveryAddress?: string
   deliveryPhone?: string
+  deliveryZoneId?: string
+  deliveryZoneName?: string
+  deliveryNote?: string
   subtotal: number
   tax: number
   deliveryFee: number
@@ -51,11 +59,13 @@ export interface CreateOrderInput {
   discountCodeId?: string
   userId?: string
   shiftId?: string
+  note?: string
   items: {
     productId: string
     quantity: number
     unitPrice: number
     itemDiscount?: number
+    note?: string
     modifiers?: any
     addons?: string[]
   }[]

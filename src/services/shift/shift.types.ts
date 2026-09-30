@@ -1,5 +1,6 @@
 export interface Shift {
   id: string
+  number: number
   userId: string
   startedAt: string
   endedAt: string | null

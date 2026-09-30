@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { Ingredient, CreateIngredientInput, UpdateIngredientInput, Recipe, InventoryAlert } from './inventory.types'
+import type { Ingredient, CreateIngredientInput, UpdateIngredientInput, Recipe, InventoryAlert, InventoryLedger } from './inventory.types'
 
 interface InventoryStore {
   ingredients: Ingredient[]
@@ -10,7 +10,10 @@ interface InventoryStore {
   createIngredient: (data: CreateIngredientInput) => Promise<string>
   updateIngredient: (id: string, data: UpdateIngredientInput) => Promise<void>
   removeIngredient: (id: string) => Promise<void>
-  restock: (ingredientId: string, qty: number, note?: string) => Promise<void>
+  restock: (ingredientId: string, qty: number, note?: string, opts?: { unitCost?: number; supplier?: string }) => Promise<{ ok: boolean; ppv?: number }>
+  recordWaste: (ingredientId: string, qty: number, note?: string) => Promise<void>
+  adjust: (ingredientId: string, delta: number, note?: string) => Promise<void>
+  fetchLedger: (ingredientId: string, filters?: { type?: string; from?: string; to?: string; page?: number; pageSize?: number }) => Promise<InventoryLedger & { total: number; page: number; pageSize: number; totalPages: number }>
   fetchRecipes: (productId: string) => Promise<Recipe[]>
   upsertRecipe: (data: any) => Promise<string>
   deleteRecipe: (id: string) => Promise<void>
@@ -58,10 +61,26 @@ export const useInventoryStore = create<InventoryStore>((set, get) => ({
     await get().fetchIngredients()
   },
 
-  restock: async (ingredientId, qty, note?) => {
-    await window.api.inventory.restock(ingredientId, qty, note)
+restock: async (ingredientId, qty, note?, opts?) => {
+    const result = await window.api.inventory.restock(ingredientId, qty, note, opts) as { ok: boolean; ppv?: number }
+    await get().fetchIngredients()
+    return result
+  },
+
+  recordWaste: async (ingredientId, qty, note?) => {
+    await window.api.inventory.recordWaste(ingredientId, qty, note)
     await get().fetchIngredients()
     await get().fetchAlerts()
+  },
+
+  adjust: async (ingredientId, delta, note?) => {
+    await window.api.inventory.adjust(ingredientId, delta, note)
+    await get().fetchIngredients()
+    await get().fetchAlerts()
+  },
+
+  fetchLedger: async (ingredientId, filters?) => {
+    return await window.api.inventory.listTransactions(ingredientId, filters) as InventoryLedger & { total: number; page: number; pageSize: number; totalPages: number }
   },
 
   fetchRecipes: async (productId) => {

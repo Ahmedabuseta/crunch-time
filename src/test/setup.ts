@@ -5,7 +5,7 @@ import * as schema from '../db/schema'
 const {
   categories, products, addons,
   modifierGroups, modifiers, productModifierGroups,
-  users,
+  users, deliveryZones,
   ingredients, recipes,
 } = schema
 
@@ -17,20 +17,27 @@ export function createTestDb() {
   // Run migrations inline
   sqlite.exec(`
     CREATE TABLE categories (id TEXT PRIMARY KEY, name TEXT NOT NULL, emoji TEXT NOT NULL, color TEXT NOT NULL, sort_order INTEGER NOT NULL DEFAULT 0, active INTEGER NOT NULL DEFAULT 1);
-    CREATE TABLE products (id TEXT PRIMARY KEY, name TEXT NOT NULL, price REAL NOT NULL, category_id TEXT NOT NULL REFERENCES categories(id), emoji TEXT NOT NULL, description TEXT NOT NULL, active INTEGER NOT NULL DEFAULT 1);
-    CREATE TABLE addons (id TEXT PRIMARY KEY, name TEXT NOT NULL, price REAL NOT NULL, emoji TEXT NOT NULL, active INTEGER NOT NULL DEFAULT 1);
+    CREATE TABLE products (id TEXT PRIMARY KEY, name TEXT NOT NULL, price REAL NOT NULL, category_id TEXT NOT NULL REFERENCES categories(id), emoji TEXT NOT NULL, description TEXT NOT NULL, active INTEGER NOT NULL DEFAULT 1, cost_price REAL NOT NULL DEFAULT 0, supports_rollback INTEGER NOT NULL DEFAULT 1);
+    CREATE TABLE addons (id TEXT PRIMARY KEY, name TEXT NOT NULL, price REAL NOT NULL, emoji TEXT NOT NULL, active INTEGER NOT NULL DEFAULT 1, supports_rollback INTEGER NOT NULL DEFAULT 1);
     CREATE TABLE product_addons (product_id TEXT NOT NULL REFERENCES products(id), addon_id TEXT NOT NULL REFERENCES addons(id), PRIMARY KEY (product_id, addon_id));
     CREATE TABLE modifier_groups (id TEXT PRIMARY KEY, name TEXT NOT NULL, type TEXT NOT NULL, sort_order INTEGER NOT NULL DEFAULT 0, active INTEGER NOT NULL DEFAULT 1);
     CREATE TABLE modifiers (id TEXT PRIMARY KEY, modifier_group_id TEXT NOT NULL REFERENCES modifier_groups(id), name TEXT NOT NULL, price_adjustment REAL NOT NULL DEFAULT 0, sort_order INTEGER NOT NULL DEFAULT 0, active INTEGER NOT NULL DEFAULT 1);
     CREATE TABLE product_modifier_groups (product_id TEXT NOT NULL REFERENCES products(id), modifier_group_id TEXT NOT NULL REFERENCES modifier_groups(id), PRIMARY KEY (product_id, modifier_group_id));
-    CREATE TABLE users (id TEXT PRIMARY KEY, name TEXT NOT NULL, pin_hash TEXT NOT NULL, role TEXT NOT NULL DEFAULT 'cashier', active INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL);
-    CREATE TABLE shifts (id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id), started_at TEXT NOT NULL, ended_at TEXT, opening_cash REAL NOT NULL, closing_cash REAL, status TEXT NOT NULL DEFAULT 'open');
-    CREATE TABLE orders (id TEXT PRIMARY KEY, status TEXT NOT NULL DEFAULT 'DRAFT', order_type TEXT NOT NULL, table_number TEXT, delivery_address TEXT, delivery_phone TEXT, subtotal REAL NOT NULL, tax REAL NOT NULL, delivery_fee REAL NOT NULL DEFAULT 0, total REAL NOT NULL, user_id TEXT REFERENCES users(id), shift_id TEXT REFERENCES shifts(id), created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
-    CREATE TABLE order_items (id TEXT PRIMARY KEY, order_id TEXT NOT NULL REFERENCES orders(id), product_id TEXT NOT NULL REFERENCES products(id), quantity INTEGER NOT NULL, unit_price REAL NOT NULL, selected_modifiers_json TEXT, selected_addons_json TEXT);
+    CREATE TABLE users (id TEXT PRIMARY KEY, name TEXT NOT NULL, pin_hash TEXT NOT NULL, role TEXT NOT NULL DEFAULT 'cashier', active INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL, hourly_rate REAL NOT NULL DEFAULT 0, commission_rate REAL NOT NULL DEFAULT 0);
+    CREATE TABLE shifts (id TEXT PRIMARY KEY, number INTEGER NOT NULL DEFAULT 0, user_id TEXT NOT NULL REFERENCES users(id), started_at TEXT NOT NULL, ended_at TEXT, opening_cash REAL NOT NULL, closing_cash REAL, status TEXT NOT NULL DEFAULT 'open');
+    CREATE TABLE orders (id TEXT PRIMARY KEY, status TEXT NOT NULL DEFAULT 'DRAFT', order_type TEXT NOT NULL, table_number TEXT, customer_name TEXT, customer_phone TEXT, customer_address TEXT, delivery_address TEXT, delivery_phone TEXT, subtotal REAL NOT NULL, tax REAL NOT NULL, delivery_fee REAL NOT NULL DEFAULT 0, delivery_zone_id TEXT, delivery_zone_name TEXT, delivery_note TEXT, discount_code TEXT, discount_amount REAL NOT NULL DEFAULT 0, total REAL NOT NULL, payment_type TEXT NOT NULL DEFAULT 'cash', cashier_name TEXT, note TEXT, status_reason TEXT, refunded_amount REAL NOT NULL DEFAULT 0, user_id TEXT REFERENCES users(id), shift_id TEXT REFERENCES shifts(id), created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+    CREATE TABLE delivery_zones (id TEXT PRIMARY KEY, name TEXT NOT NULL, fee REAL NOT NULL DEFAULT 0, sort_order INTEGER NOT NULL DEFAULT 0, active INTEGER NOT NULL DEFAULT 1);
+    CREATE TABLE kitchen_stations (id TEXT PRIMARY KEY, name TEXT NOT NULL, printer_name TEXT, paper_width TEXT NOT NULL DEFAULT '80mm', sort_order INTEGER NOT NULL DEFAULT 0, active INTEGER NOT NULL DEFAULT 1);
+    CREATE TABLE station_categories (station_id TEXT NOT NULL, category_id TEXT NOT NULL, PRIMARY KEY (station_id, category_id));
+    CREATE TABLE order_items (id TEXT PRIMARY KEY, order_id TEXT NOT NULL REFERENCES orders(id), product_id TEXT NOT NULL REFERENCES products(id), quantity INTEGER NOT NULL, unit_price REAL NOT NULL, item_discount REAL NOT NULL DEFAULT 0, note TEXT, selected_modifiers_json TEXT, selected_addons_json TEXT);
     CREATE TABLE payments (id TEXT PRIMARY KEY, order_id TEXT NOT NULL REFERENCES orders(id), method TEXT NOT NULL, amount REAL NOT NULL, reference TEXT, created_at TEXT NOT NULL);
-    CREATE TABLE ingredients (id TEXT PRIMARY KEY, name TEXT NOT NULL, unit TEXT NOT NULL, stock_quantity REAL NOT NULL DEFAULT 0, min_stock REAL NOT NULL DEFAULT 0, cost_per_unit REAL NOT NULL DEFAULT 0, active INTEGER NOT NULL DEFAULT 1);
-    CREATE TABLE recipes (id TEXT PRIMARY KEY, product_id TEXT NOT NULL REFERENCES products(id), ingredient_id TEXT NOT NULL REFERENCES ingredients(id), quantity_per_unit REAL NOT NULL);
-    CREATE TABLE inventory_transactions (id TEXT PRIMARY KEY, ingredient_id TEXT NOT NULL REFERENCES ingredients(id), type TEXT NOT NULL, quantity REAL NOT NULL, reference_order_id TEXT REFERENCES orders(id), note TEXT, created_at TEXT NOT NULL);
+    CREATE TABLE ingredients (id TEXT PRIMARY KEY, name TEXT NOT NULL, unit TEXT NOT NULL, stock_quantity REAL NOT NULL DEFAULT 0, min_stock REAL NOT NULL DEFAULT 0, cost_per_unit REAL NOT NULL DEFAULT 0, active INTEGER NOT NULL DEFAULT 1, supplier TEXT, secondary_supplier TEXT, supplier_ratio REAL NOT NULL DEFAULT 0.7, planned_cost REAL NOT NULL DEFAULT 0);
+    CREATE TABLE recipes (id TEXT PRIMARY KEY, product_id TEXT NOT NULL REFERENCES products(id), ingredient_id TEXT REFERENCES ingredients(id), quantity_per_unit REAL NOT NULL, sub_recipe_id TEXT);
+    CREATE TABLE addon_recipes (id TEXT PRIMARY KEY, addon_id TEXT NOT NULL, ingredient_id TEXT, quantity_per_unit REAL NOT NULL, sub_recipe_id TEXT);
+    CREATE TABLE modifier_recipes (id TEXT PRIMARY KEY, modifier_id TEXT NOT NULL, ingredient_id TEXT, quantity_per_unit REAL NOT NULL, sub_recipe_id TEXT);
+    CREATE TABLE sub_recipes (id TEXT PRIMARY KEY, name TEXT NOT NULL, unit TEXT NOT NULL DEFAULT 'وحدة', active INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL);
+    CREATE TABLE sub_recipe_ingredients (id TEXT PRIMARY KEY, sub_recipe_id TEXT NOT NULL, ingredient_id TEXT NOT NULL, quantity_per_unit REAL NOT NULL);
+    CREATE TABLE inventory_transactions (id TEXT PRIMARY KEY, ingredient_id TEXT NOT NULL REFERENCES ingredients(id), type TEXT NOT NULL, quantity REAL NOT NULL, unit_cost REAL, supplier TEXT, reference_order_id TEXT REFERENCES orders(id), note TEXT, created_at TEXT NOT NULL);
     CREATE TABLE cash_movements (id TEXT PRIMARY KEY, shift_id TEXT NOT NULL REFERENCES shifts(id), type TEXT NOT NULL, amount REAL NOT NULL, note TEXT, created_at TEXT NOT NULL);
   `)
 
@@ -100,6 +107,11 @@ export function seedTestData(db: ReturnType<typeof drizzle>) {
     active: true,
     createdAt: now,
   }).run()
+
+  // Delivery zones
+  db.insert(deliveryZones).values({ id: 'dz-near', name: 'قريب', fee: 25, sortOrder: 0 }).run()
+  db.insert(deliveryZones).values({ id: 'dz-mid', name: 'متوسط', fee: 35, sortOrder: 1 }).run()
+  db.insert(deliveryZones).values({ id: 'dz-far', name: 'بعيد', fee: 45, sortOrder: 2 }).run()
 
   return { cats, prods, addonData }
 }

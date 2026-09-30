@@ -35,7 +35,8 @@ export const useOrderStore = create<OrderStore>((set) => ({
   },
 
   updateStatus: async (id, status, reason?) => {
-    await window.api.order.updateStatus(id, status, reason)
+    const result = await window.api.order.updateStatus(id, status, reason) as { ok: boolean; error?: string; refundedAmount?: number }
+    if (!result.ok) throw new Error(result.error || 'فشل تحديث حالة الطلب')
     await useOrderStore.getState().fetch()
   },
 }))

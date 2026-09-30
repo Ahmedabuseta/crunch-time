@@ -162,10 +162,10 @@ describe('FastFood POS — Use Case Tests', () => {
         expect(recipeItems.length).toBeGreaterThan(0) // verify recipes exist
         for (const r of recipeItems) {
           const deduction = r.quantityPerUnit * item.quantity
-          const updateResult = sqlite.prepare('UPDATE ingredients SET stock_quantity = stock_quantity - ? WHERE id = ?').run(deduction, r.ingredientId)
+          const updateResult = sqlite.prepare('UPDATE ingredients SET stock_quantity = stock_quantity - ? WHERE id = ?').run(deduction, r.ingredientId!)
           expect(updateResult.changes).toBe(1) // verify update happened
           db.insert(inventoryTransactions).values({
-            id: uuid(), ingredientId: r.ingredientId, type: 'CONSUMPTION',
+            id: uuid(), ingredientId: r.ingredientId!, type: 'CONSUMPTION',
             quantity: -deduction, referenceOrderId: orderId, note: `consumption for ${orderId}`, createdAt: now(),
           }).run()
         }

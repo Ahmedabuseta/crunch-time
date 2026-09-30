@@ -7,6 +7,10 @@ export interface Ingredient {
   minStock: number
   costPerUnit: number
   active: boolean
+  supplier: string | null
+  secondarySupplier: string | null
+  supplierRatio: number
+  plannedCost: number
 }
 
 export interface Recipe {
@@ -24,6 +28,17 @@ export interface InventoryTransaction {
   referenceOrderId: string | null
   note: string | null
   createdAt: string
+}
+
+export interface InventoryMovement extends InventoryTransaction {
+  balance: number
+}
+
+export interface InventoryLedger {
+  ingredient: Ingredient | null
+  currentStock: number
+  openingBalance: number
+  movements: InventoryMovement[]
 }
 
 export interface CreateIngredientInput {
