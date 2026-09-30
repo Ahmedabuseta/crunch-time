@@ -1437,18 +1437,108 @@ export function registerIpcHandlers() {
   // ═══════════════════════════════════════════════════════════
   ipcMain.handle('report:dailySummary', (_e, date?: string) => {
     const targetDate = date || new Date().toISOString().slice(0, 10)
-    const all = db.select().from(orders).all()
-    const dayOrders = all.filter(o => o.createdAt.startsWith(targetDate) && o.status !== 'CANCELLED')
-    const cancelled = all.filter(o => o.createdAt.startsWith(targetDate) && o.status === 'CANCELLED')
-    const revenue = dayOrders.reduce((s, o) => s + o.total, 0)
+    const s = getSqlite()
+    const all = s.prepare('SELECT * FROM orders').all() as any[]
+    const dayOrders = all.filter(o => o.created_at?.startsWith(targetDate) && o.status !== 'CANCELLED')
+    const cancelled = all.filter(o => o.created_at?.startsWith(targetDate) && o.status === 'CANCELLED')
+    const refunded = all.filter(o => o.created_at?.startsWith(targetDate) && o.status === 'REFUNDED')
+    const totalRefunded = refunded.reduce((sum, o) => sum + (o.refunded_amount || 0), 0)
+    const revenue = dayOrders.reduce((sum, o) => sum + o.total, 0) - totalRefunded
+
+    const costOfGoods = dayOrders.reduce((sum, o) => {
+      const items = s.prepare('SELECT * FROM order_items WHERE order_id = ?').all(o.id) as any[]
+      return sum + items.reduce((is, item) => {
+        const p = s.prepare('SELECT cost_price FROM products WHERE id = ?').get(item.product_id) as { cost_price: number } | undefined
+        return is + (p?.cost_price || 0) * item.quantity
+      }, 0)
+    }, 0)
+
     return {
       date: targetDate,
       totalOrders: dayOrders.length,
       totalRevenue: revenue,
       avgOrderValue: dayOrders.length > 0 ? revenue / dayOrders.length : 0,
       cancelledOrders: cancelled.length,
-      cancellationRate: all.filter(o => o.createdAt.startsWith(targetDate)).length > 0
-        ? cancelled.length / all.filter(o => o.createdAt.startsWith(targetDate)).length * 100 : 0,
+      refundedOrders: refunded.length,
+      totalRefunded,
+      cancellationRate: 0,
+      costOfGoods,
+      grossProfit: revenue - costOfGoods,
+    }
+  })
+
+  ipcMain.handle('report:periodSummary', (_e, from?: string, to?: string) => {
+    const s = getSqlite()
+    const allOrders = s.prepare('SELECT * FROM orders').all() as any[]
+    const inRange = (o: any) => {
+      if (from && o.created_at < from) return false
+      if (to && o.created_at > to + '\uffff') return false
+      return true
+    }
+    const active = allOrders.filter(o => o.status !== 'CANCELLED' && inRange(o))
+    const cancelled = allOrders.filter(o => o.status === 'CANCELLED' && inRange(o))
+    const refunded = active.filter(o => o.status === 'REFUNDED')
+    const totalRefunded = refunded.reduce((sum, o) => sum + (o.refunded_amount || 0), 0)
+    const totalRevenue = active.reduce((sum, o) => sum + o.total, 0) - totalRefunded
+
+    const costOfGoods = active.reduce((sum, o) => {
+      const items = s.prepare('SELECT * FROM order_items WHERE order_id = ?').all(o.id) as any[]
+      return sum + items.reduce((is, item) => {
+        const p = s.prepare('SELECT cost_price FROM products WHERE id = ?').get(item.product_id) as { cost_price: number } | undefined
+        return is + (p?.cost_price || 0) * item.quantity
+      }, 0)
+    }, 0)
+
+    return {
+      from: from || null,
+      to: to || null,
+      totalOrders: active.length,
+      totalRevenue,
+      avgOrderValue: active.length > 0 ? totalRevenue / active.length : 0,
+      cancelledOrders: cancelled.length,
+      refundedOrders: refunded.length,
+      totalRefunded,
+      costOfGoods,
+      grossProfit: totalRevenue - costOfGoods,
+    }
+  })
+
+  ipcMain.handle('report:profitSummary', (_e, from?: string, to?: string) => {
+    const s = getSqlite()
+    const all = (s.prepare('SELECT * FROM orders').all() as any[]).filter(o => {
+      if (o.status === 'CANCELLED') return false
+      if (from && o.created_at < from) return false
+      if (to && o.created_at > to + '\uffff') return false
+      return true
+    })
+    const refunded = all.filter(o => o.status === 'REFUNDED')
+    const totalRefunded = refunded.reduce((sum, o) => sum + (o.refunded_amount || 0), 0)
+    const revenue = all.reduce((sum, o) => sum + o.total, 0) - totalRefunded
+
+    const costOfGoods = all.reduce((sum, o) => {
+      const items = s.prepare('SELECT * FROM order_items WHERE order_id = ?').all(o.id) as any[]
+      return sum + items.reduce((is, item) => {
+        const p = s.prepare('SELECT cost_price FROM products WHERE id = ?').get(item.product_id) as { cost_price: number } | undefined
+        return is + (p?.cost_price || 0) * item.quantity
+      }, 0)
+    }, 0)
+
+    const totalExpenses = (s.prepare('SELECT amount FROM expenses WHERE active = 1').all() as any[])
+      .reduce((sum, e) => sum + e.amount, 0)
+    const deliveryFees = all.filter(o => o.order_type === 'delivery').reduce((sum, o) => sum + (o.delivery_fee || 0), 0)
+    const discounts = all.reduce((sum, o) => sum + (o.discount_amount || 0), 0)
+    const taxCollected = all.reduce((sum, o) => sum + o.tax, 0)
+
+    return {
+      revenue,
+      costOfGoods,
+      grossProfit: revenue - costOfGoods,
+      totalExpenses,
+      deliveryFees,
+      discounts,
+      taxCollected,
+      totalRefunded,
+      netProfit: revenue - costOfGoods - totalExpenses,
     }
   })
 
