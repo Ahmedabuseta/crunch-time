@@ -1,8 +1,18 @@
 import { useEffect, useState } from 'react'
 import { useAddonStore } from '@/services/addon/addon.store'
+import { useInventoryStore } from '@/services/inventory/inventory.store'
+import { RecipePanel } from './RecipePanel'
 import { Button } from '@/components/ui/button'
-import { Plus, Pencil, Trash2, X } from 'lucide-react'
+import { Plus, Pencil, Trash2, X, Link } from 'lucide-react'
 import { EmojiPicker } from '@/components/ui/emoji-picker'
+import { toast } from '@/components/ui/toast'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
+import { fmtMoney } from '@/lib/format'
+import { ListToolbar } from '@/components/ui/list-toolbar'
+import { DataTable, type DataColumn } from '@/components/ui/data-table'
+import { Pagination } from '@/components/ui/pagination'
+import { useListControls } from '@/components/ui/list-controls'
+import type { ViewMode } from '@/components/ui/view-toggle'
 
 export function AddonsPage() {
   const addons = useAddonStore((s) => s.addons)
@@ -10,30 +20,61 @@ export function AddonsPage() {
   const create = useAddonStore((s) => s.create)
   const update = useAddonStore((s) => s.update)
   const remove = useAddonStore((s) => s.remove)
+  const ingredients = useInventoryStore((s) => s.ingredients)
+  const fetchIngredients = useInventoryStore((s) => s.fetchIngredients)
   const [showForm, setShowForm] = useState(false)
   const [editId, setEditId] = useState<string | null>(null)
   const [form, setForm] = useState({ name: '', emoji: '', price: '' })
+  const [recipeFor, setRecipeFor] = useState<string | null>(null)
+  const [view, setView] = useState<ViewMode>('table')
+  const [pendingDelete, setPendingDelete] = useState<any>(null)
 
-  useEffect(() => { fetch() }, [])
+  useEffect(() => { fetch(); fetchIngredients() }, [])
+
+  const list = useListControls({
+    items: addons,
+    searchText: (a) => `${a.name} ${a.emoji}`,
+  })
 
   const resetForm = () => { setForm({ name: '', emoji: '', price: '' }); setEditId(null); setShowForm(false) }
 
   const handleCreate = async () => {
     if (!form.name || !form.price) return
     await create({ name: form.name, emoji: form.emoji || '➕', price: parseFloat(form.price) })
+    toast({ title: 'تم إنشاء الإضافة', description: form.name, variant: 'success' })
     resetForm()
   }
 
   const handleUpdate = async () => {
     if (!editId || !form.name) return
     await update(editId, { name: form.name, emoji: form.emoji, price: parseFloat(form.price) })
+    toast({ title: 'تم تحديث الإضافة', description: form.name, variant: 'success' })
     resetForm()
+  }
+
+  const handleDelete = async (a: any) => {
+    await remove(a.id)
+    toast({ title: 'تم حذف الإضافة', description: a.name, variant: 'success' })
   }
 
   const startEdit = (a: any) => {
     setEditId(a.id); setShowForm(false)
     setForm({ name: a.name, emoji: a.emoji, price: String(a.price) })
   }
+
+  const columns: DataColumn<any>[] = [
+    { key: 'name', label: 'الإضافة', render: (a) => <div className="flex items-center gap-2"><span className="text-xl">{a.emoji}</span><span className="font-bold">{a.name}</span></div> },
+    { key: 'price', label: 'السعر', render: (a) => <span className="font-black text-primary">{fmtMoney(a.price)} ج.م</span> },
+    {
+      key: 'actions', label: 'إجراءات', className: 'text-left', render: (a) => (
+        <div className="flex items-center gap-1">
+          <Button variant="ghost" size="icon" className="h-7 w-7 rounded-lg" onClick={() => setRecipeFor(recipeFor === a.id ? null : a.id)}><Link className="h-3.5 w-3.5" /></Button>
+          <Button variant="ghost" size="icon" className="h-7 w-7 rounded-lg" onClick={() => startEdit(a)}><Pencil className="h-3.5 w-3.5" /></Button>
+          <Button variant="ghost" size="icon" className="h-7 w-7 rounded-lg text-destructive" onClick={() => setPendingDelete(a)}><Trash2 className="h-3.5 w-3.5" /></Button>
+        </div>
+      ),
+    },
+  ]
 
   return (
     <div className="flex flex-col h-full">
@@ -58,19 +99,63 @@ export function AddonsPage() {
         </div>
       )}
 
-      <div className="flex-1 p-5 grid grid-cols-2 lg:grid-cols-4 gap-3">
-        {addons.map(a => (
-          <div key={a.id} className="border-2 rounded-2xl bg-card p-4 flex flex-col items-center gap-2">
-            <span className="text-3xl">{a.emoji}</span>
-            <p className="font-bold text-sm">{a.name}</p>
-            <p className="font-black text-primary text-sm">{a.price} ج.م</p>
-            <div className="flex gap-1">
-              <Button variant="ghost" size="icon" className="h-7 w-7 rounded-lg" onClick={() => startEdit(a)}><Pencil className="h-3.5 w-3.5" /></Button>
-              <Button variant="ghost" size="icon" className="h-7 w-7 rounded-lg text-destructive" onClick={() => remove(a.id)}><Trash2 className="h-3.5 w-3.5" /></Button>
+      <ListToolbar
+        search={list.search}
+        onSearchChange={(v) => { list.setSearch(v); list.setPage(1) }}
+        searchPlaceholder="بحث عن إضافة..."
+        view={view}
+        onViewChange={setView}
+      />
+
+      {view === 'table' ? (
+        <div className="flex-1 p-5 overflow-auto">
+          <DataTable columns={columns} data={list.items} keyExtractor={(a) => a.id} />
+        </div>
+      ) : (
+        <div className="flex-1 p-5 grid grid-cols-2 lg:grid-cols-4 gap-3 overflow-y-auto content-start">
+          {list.items.map(a => (
+            <div key={a.id} className="border-2 rounded-2xl bg-card p-4 flex flex-col items-center gap-2">
+              <span className="text-3xl">{a.emoji}</span>
+              <p className="font-bold text-sm">{a.name}</p>
+              <p className="font-black text-primary text-sm">{fmtMoney(a.price)} ج.م</p>
+              <div className="flex gap-1">
+                <Button variant="ghost" size="icon" className="h-7 w-7 rounded-lg" onClick={() => setRecipeFor(recipeFor === a.id ? null : a.id)}><Link className="h-3.5 w-3.5" /></Button>
+                <Button variant="ghost" size="icon" className="h-7 w-7 rounded-lg" onClick={() => startEdit(a)}><Pencil className="h-3.5 w-3.5" /></Button>
+                <Button variant="ghost" size="icon" className="h-7 w-7 rounded-lg text-destructive" onClick={() => setPendingDelete(a)}><Trash2 className="h-3.5 w-3.5" /></Button>
+              </div>
             </div>
+          ))}
+          {list.items.length === 0 && (
+            <p className="col-span-full text-center text-xs text-muted-foreground py-10">لا توجد إضافات مطابقة</p>
+          )}
+        </div>
+      )}
+
+      {recipeFor && (
+        <div className="px-5 pb-5">
+          <div className="border-2 rounded-2xl bg-card p-4 animate-slide-up">
+            <RecipePanel
+              title={`وصفة الإضافة — ${addons.find(a => a.id === recipeFor)?.name}`}
+              targetId={recipeFor}
+              entityField="addonId"
+              ingredients={ingredients}
+              fetchRecipes={(id) => window.api.addon.listRecipes(id)}
+              upsertRecipe={async (data) => (await window.api.addon.upsertRecipe(data) as { id: string }).id}
+              deleteRecipe={(id) => window.api.addon.deleteRecipe(id)}
+            />
           </div>
-        ))}
-      </div>
+        </div>
+      )}
+
+      <Pagination page={list.page} totalPages={list.totalPages} total={list.total} start={list.start} end={list.end} onPageChange={(p) => list.setPage(p)} />
+
+      <ConfirmDialog
+        open={!!pendingDelete}
+        title="حذف الإضافة"
+        description={pendingDelete ? `سيتم حذف «${pendingDelete.name}» نهائياً.` : undefined}
+        onConfirm={() => { if (pendingDelete) { handleDelete(pendingDelete); setPendingDelete(null) } }}
+        onCancel={() => setPendingDelete(null)}
+      />
     </div>
   )
 }
