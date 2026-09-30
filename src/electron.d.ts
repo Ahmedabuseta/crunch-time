@@ -11,4 +11,15 @@ declare module 'electron' {
   export const contextBridge: {
     exposeInMainWorld(apiKey: string, api: Record<string, any>): void
   }
+  export class BrowserWindow {
+    constructor(opts?: any)
+    static getAllWindows(): BrowserWindow[]
+    loadURL(url: string): Promise<void>
+    isDestroyed(): boolean
+    close(): void
+    webContents: {
+      print(opts: any, cb?: (success: boolean, reason: string) => void): void
+      getPrintersAsync(): Promise<{ name: string; displayName?: string; isDefault?: boolean }[]>
+    }
+  }
 }

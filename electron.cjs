@@ -1,7 +1,9 @@
 const { app, BrowserWindow } = require('electron')
 const path = require('path')
 
-const PORT = process.env.VITE_PORT || '5173'
+const isDev = process.env.NODE_ENV === 'development'
+const MAIN_JS = path.join(__dirname, 'dist-electron', 'main.cjs')
+const PRELOAD_JS = path.join(__dirname, 'dist-electron', 'preload.cjs')
 
 function createWindow() {
   const win = new BrowserWindow({
@@ -9,26 +11,43 @@ function createWindow() {
     height: 800,
     minWidth: 1024,
     minHeight: 700,
+    show: false,
     webPreferences: {
-      preload: path.join(__dirname, 'src', 'ipc', 'preload.ts'),
+      preload: PRELOAD_JS,
       contextIsolation: true,
       nodeIntegration: false,
     },
     backgroundColor: '#0a0a0a',
     autoHideMenuBar: true,
   })
+  win.once('ready-to-show', () => win.show())
 
-  win.loadURL(`http://localhost:${PORT}`)
-  win.webContents.openDevTools()
+  if (isDev) {
+    const PORT = process.env.VITE_PORT || '5173'
+    win.loadURL(`http://localhost:${PORT}`)
+    win.webContents.openDevTools()
+  } else {
+    win.loadFile(path.join(__dirname, 'dist', 'index.html'))
+  }
+
+  // Surface renderer failures instead of leaving a silent black screen.
+  win.webContents.on('did-fail-load', (_event, errorCode, errorDescription) => {
+    console.error('[electron] did-fail-load', errorCode, errorDescription)
+  })
+  win.webContents.on('console-message', (_event, _level, message) => {
+    console.log('[renderer]', message)
+  })
+
+  return win
 }
 
-app.whenReady().then(() => {
-  // Register IPC handlers (compiled TS will be used in production)
+app.whenReady().then(async () => {
+  // Migrate + seed the SQLite DB, then register all IPC handlers, then open the window.
   try {
-    const { registerIpcHandlers } = require('./src/ipc/main')
-    registerIpcHandlers()
+    const { initBackend } = require(MAIN_JS)
+    await initBackend()
   } catch (e) {
-    console.log('IPC handlers will be registered from compiled TS')
+    console.error('[electron] backend init failed:', e)
   }
   createWindow()
 })
