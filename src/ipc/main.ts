@@ -1563,7 +1563,7 @@ export function registerIpcHandlers() {
       allOrders.filter(o => {
         if (o.status === 'CANCELLED') return false
         if (from && o.createdAt < from) return false
-        if (to && o.createdAt > to) return false
+        if (to && o.createdAt > to + '\uffff') return false
         return true
       }).map(o => o.id)
     )
@@ -1588,7 +1588,7 @@ export function registerIpcHandlers() {
       allOrders.filter(o => {
         if (o.status === 'CANCELLED') return false
         if (from && o.createdAt < from) return false
-        if (to && o.createdAt > to) return false
+        if (to && o.createdAt > to + '\uffff') return false
         return true
       }).map(o => o.id)
     )
@@ -1617,7 +1617,7 @@ export function registerIpcHandlers() {
       allOrders.filter(o => {
         if (o.status === 'CANCELLED') return false
         if (from && o.createdAt < from) return false
-        if (to && o.createdAt > to) return false
+        if (to && o.createdAt > to + '\uffff') return false
         return true
       }).map(o => o.id)
     )
@@ -1644,7 +1644,7 @@ export function registerIpcHandlers() {
     const allOrders = db.select().from(orders).all().filter(o => {
       if (o.status === 'CANCELLED') return false
       if (from && o.createdAt < from) return false
-      if (to && o.createdAt > to) return false
+      if (to && o.createdAt > to + '\uffff') return false
       return true
     })
     const ranges = [
@@ -1665,7 +1665,7 @@ export function registerIpcHandlers() {
     const allOrders = db.select().from(orders).all().filter(o => {
       if (o.status === 'CANCELLED') return false
       if (from && o.createdAt < from) return false
-      if (to && o.createdAt > to) return false
+      if (to && o.createdAt > to + '\uffff') return false
       return true
     })
     const delivery = allOrders.filter(o => o.orderType === 'delivery')
@@ -1685,14 +1685,210 @@ export function registerIpcHandlers() {
       .where(and(eq(orders.shiftId, shiftId), sql`${orders.status} != 'CANCELLED'`)).all()
     return {
       shiftId,
-      userName: user?.name || 'unknown',
+      userName: user?.name || 'غير معروف',
       startedAt: shift.startedAt,
       endedAt: shift.endedAt,
       orderCount: shiftOrders.length,
       totalRevenue: shiftOrders.reduce((s, o) => s + o.total, 0),
       openingCash: shift.openingCash,
       closingCash: shift.closingCash,
-      cashDifference: shift.closingCash != null ? shift.closingCash - shift.openingCash : null,
+      expectedCash,
+      cashDifference: shift.closingCash != null ? shift.closingCash - expectedCash : null,
+    }
+  })
+
+  ipcMain.handle('report:shiftSummary', (_e, from?: string, to?: string) => {
+    const conditions: any[] = []
+    if (from) conditions.push(gte(shifts.startedAt, from))
+    if (to) {
+      const toDate = new Date(to)
+      toDate.setHours(23, 59, 59, 999)
+      conditions.push(lte(shifts.startedAt, toDate.toISOString()))
+    }
+    const query = conditions.length > 0
+      ? db.select().from(shifts).where(and(...conditions))
+      : db.select().from(shifts)
+    const allShifts = query.orderBy(desc(shifts.startedAt)).all()
+
+    let totalRevenue = 0
+    let totalOrders = 0
+    let totalExpectedCash = 0
+    let totalActualCash = 0
+    let totalShorts = 0
+    let totalOverages = 0
+    let closedCount = 0
+    const shiftDetails: any[] = []
+
+    for (const s of allShifts) {
+      const shiftOrders = db.select().from(orders)
+        .where(and(eq(orders.shiftId, s.id), sql`${orders.status} != 'CANCELLED'`)).all()
+      const movs = db.select().from(cashMovements).where(eq(cashMovements.shiftId, s.id)).all()
+      const user = db.select().from(users).where(eq(users.id, s.userId)).get()
+
+      let expected = s.openingCash
+      const breakdown: Record<string, number> = {}
+      for (const m of movs) {
+        if (m.type === 'OPENING' || m.type === 'CLOSING') continue
+        const sign = ['SALE', 'CASH_IN'].includes(m.type) ? 1 : -1
+        expected += m.amount * sign
+        breakdown[m.type] = (breakdown[m.type] || 0) + m.amount * sign
+      }
+
+      const revenue = shiftOrders.reduce((sum, o) => sum + o.total, 0)
+      totalRevenue += revenue
+      totalOrders += shiftOrders.length
+      totalExpectedCash += expected
+
+      const diff = s.closingCash != null ? s.closingCash - expected : null
+      if (diff != null) {
+        totalActualCash += s.closingCash!
+        if (diff < 0) totalShorts += Math.abs(diff)
+        else if (diff > 0) totalOverages += diff
+        closedCount++
+      }
+
+      const duration = s.endedAt
+        ? Math.round((new Date(s.endedAt).getTime() - new Date(s.startedAt).getTime()) / 3600000)
+        : null
+
+      shiftDetails.push({
+        id: s.id,
+        userName: user?.name || 'غير معروف',
+        startedAt: s.startedAt,
+        endedAt: s.endedAt,
+        status: s.status,
+        duration,
+        orderCount: shiftOrders.length,
+        revenue,
+        openingCash: s.openingCash,
+        closingCash: s.closingCash,
+        expectedCash: expected,
+        difference: diff,
+        breakdown,
+      })
+    }
+
+    return {
+      totalShifts: allShifts.length,
+      closedCount,
+      openCount: allShifts.filter(s => s.status === 'open').length,
+      totalRevenue,
+      totalOrders,
+      avgRevenuePerShift: closedCount > 0 ? totalRevenue / closedCount : 0,
+      avgOrdersPerShift: closedCount > 0 ? totalOrders / closedCount : 0,
+      totalExpectedCash,
+      totalActualCash,
+      totalShorts,
+      totalOverages,
+      shifts: shiftDetails,
+    }
+  })
+
+  ipcMain.handle('report:laborSummary', (_e, from?: string, to?: string) => {
+    const inRange = (ts: string) => {
+      if (from && ts < from) return false
+      if (to && ts > to + '\uffff') return false
+      return true
+    }
+    const allUsers = db.select().from(users).where(eq(users.active, true)).all()
+    const allShifts = db.select().from(shifts).all().filter(x => inRange(x.startedAt))
+    const allOrders = db.select().from(orders).all().filter(o => o.status !== 'CANCELLED' && inRange(o.createdAt))
+
+    const totalRevenue = allOrders.reduce((sum, o) => sum + o.total, 0)
+    let totalLaborCost = 0
+    const staff: any[] = []
+
+    for (const u of allUsers) {
+      const uShifts = allShifts.filter(x => x.userId === u.id)
+      const hoursWorked = uShifts.reduce((sum, x) => {
+        if (!x.endedAt) return sum
+        return sum + (new Date(x.endedAt).getTime() - new Date(x.startedAt).getTime()) / 3600000
+      }, 0)
+      const uOrders = allOrders.filter(o => o.userId === u.id)
+      const sales = uOrders.reduce((sum, o) => sum + o.total, 0)
+      const wage = hoursWorked * (u.hourlyRate || 0)
+      const commission = sales * ((u.commissionRate || 0) / 100)
+      const laborCost = wage + commission
+      totalLaborCost += laborCost
+      staff.push({
+        id: u.id,
+        name: u.name,
+        role: u.role,
+        hourlyRate: u.hourlyRate || 0,
+        commissionRate: u.commissionRate || 0,
+        shiftCount: uShifts.length,
+        hoursWorked: Math.round(hoursWorked * 10) / 10,
+        orderCount: uOrders.length,
+        sales,
+        wage: Math.round(wage),
+        commission: Math.round(commission),
+        laborCost: Math.round(laborCost),
+      })
+    }
+
+    staff.sort((a, b) => b.sales - a.sales)
+    return {
+      totalRevenue,
+      totalLaborCost: Math.round(totalLaborCost),
+      laborCostPct: totalRevenue > 0 ? (totalLaborCost / totalRevenue) * 100 : 0,
+      staff,
+    }
+  })
+
+  ipcMain.handle('report:voidSummary', (_e, from?: string, to?: string) => {
+    const inRange = (ts: string) => {
+      if (from && ts < from) return false
+      if (to && ts > to + '\uffff') return false
+      return true
+    }
+    const allOrders = db.select().from(orders).all().filter(o => inRange(o.createdAt))
+    const cancelled = allOrders.filter(o => o.status === 'CANCELLED')
+    const refunded = allOrders.filter(o => o.status === 'REFUNDED')
+    const allUsers = db.select().from(users).all()
+
+    const voidByUser: Record<string, any> = {}
+    const bump = (userId: string | null, cashierName: string | null, kind: 'cancel' | 'refund', amount: number) => {
+      const key = userId || cashierName || 'unknown'
+      if (!voidByUser[key]) {
+        const u = allUsers.find(x => x.id === userId)
+        voidByUser[key] = { name: u?.name || cashierName || 'غير معروف', cancels: 0, refunds: 0, cancelAmount: 0, refundAmount: 0 }
+      }
+      if (kind === 'cancel') { voidByUser[key].cancels++; voidByUser[key].cancelAmount += amount }
+      else { voidByUser[key].refunds++; voidByUser[key].refundAmount += amount }
+    }
+    for (const o of cancelled) bump(o.userId, o.cashierName, 'cancel', o.total)
+    for (const o of refunded) bump(o.userId, o.cashierName, 'refund', o.refundedAmount || o.total)
+
+    const discounted = allOrders.filter(o => o.status !== 'CANCELLED' && (o.discountAmount || 0) > 0)
+    const discountByUser: Record<string, any> = {}
+    for (const o of discounted) {
+      const key = o.userId || o.cashierName || 'unknown'
+      if (!discountByUser[key]) {
+        const u = allUsers.find(x => x.id === o.userId)
+        discountByUser[key] = { name: u?.name || o.cashierName || 'غير معروف', count: 0, total: 0 }
+      }
+      discountByUser[key].count++
+      discountByUser[key].total += o.discountAmount || 0
+    }
+
+    return {
+      cancelCount: cancelled.length,
+      cancelAmount: cancelled.reduce((sum, o) => sum + o.total, 0),
+      refundCount: refunded.length,
+      refundAmount: refunded.reduce((sum, o) => sum + (o.refundedAmount || 0), 0),
+      discountCount: discounted.length,
+      discountAmount: discounted.reduce((sum, o) => sum + (o.discountAmount || 0), 0),
+      cancels: cancelled.slice(0, 20).map(o => ({
+        id: o.id, total: o.total, reason: o.statusReason, cashierName: o.cashierName, createdAt: o.createdAt,
+      })),
+      refunds: refunded.slice(0, 20).map(o => ({
+        id: o.id, total: o.total, refundedAmount: o.refundedAmount, reason: o.statusReason, cashierName: o.cashierName, createdAt: o.createdAt,
+      })),
+      discounts: discounted.slice(0, 20).map(o => ({
+        id: o.id, total: o.total, discountAmount: o.discountAmount, discountCode: o.discountCode, cashierName: o.cashierName, createdAt: o.createdAt,
+      })),
+      voidByUser: Object.values(voidByUser).sort((a: any, b: any) => (b.cancelAmount + b.refundAmount) - (a.cancelAmount + a.refundAmount)),
+      discountByUser: Object.values(discountByUser).sort((a: any, b: any) => b.total - a.total),
     }
   })
 
