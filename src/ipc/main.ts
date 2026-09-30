@@ -1221,22 +1221,26 @@ export function registerIpcHandlers() {
     return { ok: true }
   })
 
-  ipcMain.handle('inventory:listRecipes', (_e, productId: string) =>
-    db.select().from(recipes).where(eq(recipes.productId, productId)).all()
-  )
+  ipcMain.handle('inventory:listRecipes', (_e, productId: string) => listRecipeRows('recipes', 'product_id', productId))
 
   ipcMain.handle('inventory:upsertRecipe', (_e, data: any) => {
     if (data.id) {
-      db.update(recipes).set({ quantityPerUnit: data.quantityPerUnit }).where(eq(recipes.id, data.id)).run()
+      db.update(recipes).set({ ingredientId: data.ingredientId ?? null, subRecipeId: data.subRecipeId ?? null, quantityPerUnit: data.quantityPerUnit })
+        .where(eq(recipes.id, data.id)).run()
+      const row = db.select().from(recipes).where(eq(recipes.id, data.id)).get()
+      if (row?.productId) recomputeProductCost(row.productId)
       return { id: data.id }
     }
     const id = uuid()
-    db.insert(recipes).values({ id, productId: data.productId, ingredientId: data.ingredientId, quantityPerUnit: data.quantityPerUnit }).run()
+    db.insert(recipes).values({ id, productId: data.productId, ingredientId: data.ingredientId ?? null, subRecipeId: data.subRecipeId ?? null, quantityPerUnit: data.quantityPerUnit }).run()
+    if (data.productId) recomputeProductCost(data.productId)
     return { id }
   })
 
   ipcMain.handle('inventory:deleteRecipe', (_e, id: string) => {
+    const row = db.select().from(recipes).where(eq(recipes.id, id)).get()
     db.delete(recipes).where(eq(recipes.id, id)).run()
+    if (row?.productId) recomputeProductCost(row.productId)
     return { ok: true }
   })
 
