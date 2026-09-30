@@ -1,9 +1,13 @@
-import { ipcMain } from 'electron'
-import { getDb } from '../db/client'
-import { eq, and, desc, sql, gte, lte } from 'drizzle-orm'
+import { ipcMain, app, BrowserWindow } from 'electron'
+import { getDb, getSqlite } from '../db/client'
+import { eq, and, desc, like, sql, gte, lte, or, inArray } from 'drizzle-orm'
 import * as schema from '../db/schema'
+import { runMigrations } from '../db/migrate'
+import { seedDatabase } from '../db/seed'
 import { randomUUID } from 'crypto'
 import { hashPin, verifyPin } from '../lib/auth'
+import { mkdirSync, readdirSync } from 'node:fs'
+import path from 'node:path'
 
 const {
   categories, products, addons, productAddons,
@@ -11,13 +15,523 @@ const {
   orders, orderItems, payments,
   users, shifts, cashMovements,
   ingredients, recipes, inventoryTransactions,
+  settings, discountCodes, deliveryZones, kitchenStations, stationCategories, expenses,
+  addonRecipes, modifierRecipes, customers,
+  purchasePriceHistory,
+  subRecipes, subRecipeIngredients,
 } = schema
+
+// ─── Silent print helper ───────────────────────────────────────
+// Prints an HTML string on a hidden window to a named OS printer.
+// Falls back to the default printer when deviceName is empty.
+async function silentPrint(html: string, deviceName?: string | null, copies = 1, paperWidth: string = '80mm'): Promise<{ ok: boolean; error?: string }> {
+  const wins = BrowserWindow.getAllWindows()
+  if (wins.length === 0) return { ok: false, error: 'لا توجد نافذة للطباعة' }
+  const printWin = new BrowserWindow({ show: false, webPreferences: { offscreen: true } })
+  try {
+    await printWin.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html))
+    const widthMicrons = paperWidth === '58mm' ? 58000 : 80000
+    for (let i = 0; i < Math.max(1, copies); i++) {
+      await new Promise<void>((resolve, reject) => {
+        printWin.webContents.print({
+          silent: true,
+          printBackground: true,
+          deviceName: deviceName || undefined,
+          pageSize: { width: widthMicrons, height: 297000 } as any,
+          margins: { marginType: 'none' } as any,
+        }, (success: boolean, failureReason: string) => {
+          if (success) resolve()
+          else reject(new Error(failureReason === 'cancelled' ? 'أُلغيت الطباعة' : String(failureReason || 'فشلت الطباعة')))
+        })
+      })
+    }
+    return { ok: true }
+  } catch (err: any) {
+    return { ok: false, error: err?.message || 'فشلت الطباعة' }
+  } finally {
+    if (!printWin.isDestroyed()) printWin.close()
+  }
+}
 
 function now() { return new Date().toISOString() }
 function uuid() { return randomUUID() }
+const r2 = (n: number) => Math.round(n * 100) / 100
+
+// ─── Inventory helpers (raw SQL, snake_case) ─────────────────
+function getOpenShiftId(dataShiftId?: string | null): string | null {
+  const row = getSqlite().prepare("SELECT id FROM shifts WHERE status = 'open' LIMIT 1").get() as { id: string } | undefined
+  return row?.id || dataShiftId || null
+}
+
+// Recalculate a product's cost_price from its recipe (Σ quantity × ingredient cost)
+function recomputeProductCost(productId: string) {
+  const s = getSqlite()
+  const rows = s.prepare(`
+    SELECT r.quantity_per_unit AS qty, i.cost_per_unit AS unitCost
+    FROM recipes r JOIN ingredients i ON i.id = r.ingredient_id
+    WHERE r.product_id = ? AND r.ingredient_id IS NOT NULL
+    UNION ALL
+    SELECT r.quantity_per_unit * sri.quantity_per_unit AS qty, i.cost_per_unit AS unitCost
+    FROM recipes r
+    JOIN sub_recipe_ingredients sri ON sri.sub_recipe_id = r.sub_recipe_id
+    JOIN ingredients i ON i.id = sri.ingredient_id
+    WHERE r.product_id = ? AND r.sub_recipe_id IS NOT NULL
+  `).all(productId, productId) as any[]
+  const cost = rows.reduce((sum, r) => sum + (Number(r.qty) || 0) * (Number(r.unitCost) || 0), 0)
+  s.prepare('UPDATE products SET cost_price = ? WHERE id = ?').run(cost, productId)
+}
+
+// Expand recipe rows (ingredients AND sub-recipes) into flat ingredient consumptions
+function expandRecipes(rows: { ingredient_id?: string | null; sub_recipe_id?: string | null; quantity_per_unit: number }[]): { ingredientId: string; qty: number }[] {
+  const s = getSqlite()
+  const out: { ingredientId: string; qty: number }[] = []
+  for (const r of rows) {
+    const factor = Number(r.quantity_per_unit) || 0
+    if (r.sub_recipe_id) {
+      const parts = s.prepare('SELECT sri.ingredient_id AS ingredientId, sri.quantity_per_unit AS qty FROM sub_recipe_ingredients sri WHERE sri.sub_recipe_id = ?').all(r.sub_recipe_id) as { ingredientId: string; qty: number }[]
+      for (const p of parts) out.push({ ingredientId: p.ingredientId, qty: factor * (Number(p.qty) || 0) })
+    } else if (r.ingredient_id) {
+      out.push({ ingredientId: r.ingredient_id, qty: factor })
+    }
+  }
+  return out
+}
+
+// Unified recipe rows (ingredient rows + sub-recipe rows) for a product/addon/modifier
+function listRecipeRows(table: string, entityCol: string, entityId: string) {
+  const s = getSqlite()
+  const ingredientRows = s.prepare(`
+    SELECT r.id, r.ingredient_id AS ingredientId, NULL AS subRecipeId,
+           r.quantity_per_unit AS quantityPerUnit,
+           i.name AS ingredientName, NULL AS subRecipeName, i.unit, NULL AS subRecipeUnit,
+           i.cost_per_unit AS costPerUnit, NULL AS subRecipeCostPerUnit,
+           i.cost_per_unit * r.quantity_per_unit AS lineCost
+    FROM ${table} r JOIN ingredients i ON i.id = r.ingredient_id
+    WHERE r.${entityCol} = ? AND r.ingredient_id IS NOT NULL
+  `).all(entityId) as any[]
+  const subRows = s.prepare(`
+    SELECT r.id, NULL AS ingredientId, r.sub_recipe_id AS subRecipeId,
+           r.quantity_per_unit AS quantityPerUnit,
+           NULL AS ingredientName, sr.name AS subRecipeName, NULL AS unit, sr.unit AS subRecipeUnit,
+           NULL AS costPerUnit,
+           (SELECT COALESCE(SUM(i.cost_per_unit * sri.quantity_per_unit), 0)
+            FROM sub_recipe_ingredients sri JOIN ingredients i ON i.id = sri.ingredient_id
+            WHERE sri.sub_recipe_id = sr.id) AS subRecipeCostPerUnit,
+           (SELECT COALESCE(SUM(i.cost_per_unit * sri.quantity_per_unit), 0)
+            FROM sub_recipe_ingredients sri JOIN ingredients i ON i.id = sri.ingredient_id
+            WHERE sri.sub_recipe_id = sr.id) * r.quantity_per_unit AS lineCost
+    FROM ${table} r JOIN sub_recipes sr ON sr.id = r.sub_recipe_id
+    WHERE r.${entityCol} = ? AND r.sub_recipe_id IS NOT NULL
+  `).all(entityId) as any[]
+  return [...ingredientRows, ...subRows]
+}
+
+// Full rollback — CANCELLED: return ALL ingredients (products + addons)
+function rollbackInventory(orderId: string) {
+  const s = getSqlite()
+  const items = s.prepare('SELECT * FROM order_items WHERE order_id = ?').all(orderId) as any[]
+  const restore = (ingredientId: string, qty: number, note: string) => {
+    s.prepare('UPDATE ingredients SET stock_quantity = stock_quantity + ? WHERE id = ?').run(qty, ingredientId)
+    s.prepare(`INSERT INTO inventory_transactions (id, ingredient_id, type, quantity, reference_order_id, note, created_at)
+      VALUES (?, ?, 'ADJUSTMENT', ?, ?, ?, ?)`)
+      .run(uuid(), ingredientId, qty, orderId, note, now())
+  }
+  for (const item of items) {
+    for (const c of expandRecipes(s.prepare('SELECT ingredient_id, sub_recipe_id, quantity_per_unit FROM recipes WHERE product_id = ?').all(item.product_id) as any[])) {
+      restore(c.ingredientId, c.qty * item.quantity, `إرجاع منتج — طلب ${orderId}`)
+    }
+    if (item.selected_addons_json) {
+      try {
+        const addonIds = JSON.parse(item.selected_addons_json) as string[]
+        for (const addonId of addonIds) {
+          for (const c of expandRecipes(s.prepare('SELECT ingredient_id, sub_recipe_id, quantity_per_unit FROM addon_recipes WHERE addon_id = ?').all(addonId) as any[])) {
+            restore(c.ingredientId, c.qty * item.quantity, `إرجاع إضافة — طلب ${orderId}`)
+          }
+        }
+      } catch {}
+    }
+    if (item.selected_modifiers_json) {
+      try {
+        const mods = JSON.parse(item.selected_modifiers_json) as { modifierId: string }[]
+        for (const mod of mods) {
+          for (const c of expandRecipes(s.prepare('SELECT ingredient_id, sub_recipe_id, quantity_per_unit FROM modifier_recipes WHERE modifier_id = ?').all(mod.modifierId) as any[])) {
+            restore(c.ingredientId, c.qty * item.quantity, `إرجاع تعديل — طلب ${orderId}`)
+          }
+        }
+      } catch {}
+    }
+  }
+}
+
+// Partial rollback — REFUNDED: only products+addons that support rollback
+function rollbackInventoryPartial(orderId: string): number {
+  const s = getSqlite()
+  const items = s.prepare('SELECT * FROM order_items WHERE order_id = ?').all(orderId) as any[]
+  let refundedAmount = 0
+  const restore = (ingredientId: string, qty: number, note: string) => {
+    s.prepare('UPDATE ingredients SET stock_quantity = stock_quantity + ? WHERE id = ?').run(qty, ingredientId)
+    s.prepare(`INSERT INTO inventory_transactions (id, ingredient_id, type, quantity, reference_order_id, note, created_at)
+      VALUES (?, ?, 'ADJUSTMENT', ?, ?, ?, ?)`)
+      .run(uuid(), ingredientId, qty, orderId, note, now())
+  }
+  for (const item of items) {
+    const product = s.prepare('SELECT * FROM products WHERE id = ?').get(item.product_id) as any | undefined
+    if (!product) continue
+    let itemRefund = 0
+
+    if (product.supports_rollback) {
+      for (const c of expandRecipes(s.prepare('SELECT ingredient_id, sub_recipe_id, quantity_per_unit FROM recipes WHERE product_id = ?').all(item.product_id) as any[])) {
+        restore(c.ingredientId, c.qty * item.quantity, `إرجاع جزئي ${orderId} — ${product.name}`)
+      }
+      if (item.selected_modifiers_json) {
+        try {
+          const mods = JSON.parse(item.selected_modifiers_json) as { modifierId: string }[]
+          for (const mod of mods) {
+            for (const c of expandRecipes(s.prepare('SELECT ingredient_id, sub_recipe_id, quantity_per_unit FROM modifier_recipes WHERE modifier_id = ?').all(mod.modifierId) as any[])) {
+              restore(c.ingredientId, c.qty * item.quantity, `إرجاع جزئي ${orderId} — ${product.name}`)
+            }
+          }
+        } catch {}
+      }
+      itemRefund += (item.unit_price ?? product.price) * item.quantity
+    }
+
+    if (item.selected_addons_json) {
+      try {
+        const addonIds = JSON.parse(item.selected_addons_json) as string[]
+        for (const addonId of addonIds) {
+          const addon = s.prepare('SELECT * FROM addons WHERE id = ?').get(addonId) as any | undefined
+          if (!addon || !addon.supports_rollback) continue
+          for (const c of expandRecipes(s.prepare('SELECT ingredient_id, sub_recipe_id, quantity_per_unit FROM addon_recipes WHERE addon_id = ?').all(addonId) as any[])) {
+            restore(c.ingredientId, c.qty * item.quantity, `إرجاع إضافة ${orderId} — ${addon.name}`)
+          }
+          itemRefund += addon.price * item.quantity
+        }
+      } catch {}
+    }
+    refundedAmount += itemRefund
+  }
+  return refundedAmount
+}
+
+// Deduct inventory for an order (products + addons + modifiers)
+function deductInventory(orderId: string) {
+  const s = getSqlite()
+  const items = s.prepare('SELECT * FROM order_items WHERE order_id = ?').all(orderId) as any[]
+  const consume = (ingredientId: string, qty: number, note: string) => {
+    s.prepare('UPDATE ingredients SET stock_quantity = stock_quantity - ? WHERE id = ?').run(qty, ingredientId)
+    s.prepare(`INSERT INTO inventory_transactions (id, ingredient_id, type, quantity, reference_order_id, note, created_at)
+      VALUES (?, ?, 'CONSUMPTION', ?, ?, ?, ?)`)
+      .run(uuid(), ingredientId, -qty, orderId, note, now())
+  }
+  for (const item of items) {
+    for (const c of expandRecipes(s.prepare('SELECT ingredient_id, sub_recipe_id, quantity_per_unit FROM recipes WHERE product_id = ?').all(item.product_id) as any[])) {
+      consume(c.ingredientId, c.qty * item.quantity, `استهلاك منتج — طلب ${orderId}`)
+    }
+    if (item.selected_addons_json) {
+      try {
+        const addonIds = JSON.parse(item.selected_addons_json) as string[]
+        for (const addonId of addonIds) {
+          for (const c of expandRecipes(s.prepare('SELECT ingredient_id, sub_recipe_id, quantity_per_unit FROM addon_recipes WHERE addon_id = ?').all(addonId) as any[])) {
+            consume(c.ingredientId, c.qty * item.quantity, `استهلاك إضافة — طلب ${orderId}`)
+          }
+        }
+      } catch {}
+    }
+    if (item.selected_modifiers_json) {
+      try {
+        const mods = JSON.parse(item.selected_modifiers_json) as { modifierId: string }[]
+        for (const mod of mods) {
+          for (const c of expandRecipes(s.prepare('SELECT ingredient_id, sub_recipe_id, quantity_per_unit FROM modifier_recipes WHERE modifier_id = ?').all(mod.modifierId) as any[])) {
+            consume(c.ingredientId, c.qty * item.quantity, `استهلاك تعديل — طلب ${orderId}`)
+          }
+        }
+      } catch {}
+    }
+  }
+}
+
+// ─── Resilience analytics helpers ─────────────────────────────
+// ABC class by cumulative revenue share (A ≤ 70%, B ≤ 90%, C rest)
+function abcClass(cumShare: number) {
+  if (cumShare <= 0.7) return 'A'
+  if (cumShare <= 0.9) return 'B'
+  return 'C'
+}
+
+// XYZ class by coefficient of variation of daily demand (stable → volatile)
+function xyzClass(cv: number) {
+  if (cv < 0.2) return 'X'
+  if (cv < 0.4) return 'Y'
+  return 'Z'
+}
+
+// Supplier spend concentration for the 70/30 strategy check
+function supplierConcentration(ingredientId: string, from?: string, to?: string) {
+  const s = getSqlite()
+  let where = 'WHERE ingredient_id = ?'
+  const params: any[] = [ingredientId]
+  if (from) { where += ' AND purchased_at >= ?'; params.push(from) }
+  if (to) { where += ' AND purchased_at <= ?'; params.push(to + '\uffff') }
+  const rows = s.prepare(
+    `SELECT supplier, SUM(quantity) AS qty, SUM(unit_cost * quantity) AS spend
+     FROM purchase_price_history ${where} GROUP BY supplier`
+  ).all(...params) as any[]
+  const totalQty = rows.reduce((sum, r) => sum + (Number(r.qty) || 0), 0)
+  const mapped = rows.map(r => ({
+    supplier: r.supplier || 'غير محدد',
+    qty: Number(r.qty) || 0,
+    spend: r2(Number(r.spend) || 0),
+    share: r2(totalQty > 0 ? (Number(r.qty) || 0) / totalQty : 0),
+  })).sort((a, b) => b.share - a.share)
+  return {
+    rows: mapped,
+    topSupplierPct: mapped.length ? mapped[0].share * 100 : 0,
+    singleSupplierConcentration: mapped.length >= 1 && mapped[0].share > 0.7,
+  }
+}
+
+export async function initBackend() {
+  runMigrations()
+  await seedDatabase()
+  registerIpcHandlers()
+}
 
 export function registerIpcHandlers() {
   const db = getDb()
+
+  // ═══════════════════════════════════════════════════════════
+  // SETTINGS
+  // ═══════════════════════════════════════════════════════════
+  ipcMain.handle('settings:get', () =>
+    db.select().from(settings).where(eq(settings.id, 'settings')).get()
+    || { id: 'settings', deliveryFee: 25, taxRate: 0.14, restaurantName: 'فاست فود', currency: 'EGP' }
+  )
+
+  ipcMain.handle('settings:update', (_e, data: any) => {
+    const existing = db.select().from(settings).where(eq(settings.id, 'settings')).get()
+    if (existing) {
+      db.update(settings).set(data).where(eq(settings.id, 'settings')).run()
+    } else {
+      db.insert(settings).values({ id: 'settings', ...data }).run()
+    }
+    return { ok: true }
+  })
+
+  // ═══════════════════════════════════════════════════════════
+  // DISCOUNT CODES
+  // ═══════════════════════════════════════════════════════════
+  ipcMain.handle('discountCode:list', () =>
+    db.select().from(discountCodes)
+  )
+
+  ipcMain.handle('discountCode:create', (_e, data: any) => {
+    const id = uuid()
+    db.insert(discountCodes).values({ id, ...data, active: true, usedCount: 0 }).run()
+    return { id }
+  })
+
+  ipcMain.handle('discountCode:update', (_e, id: string, data: any) => {
+    db.update(discountCodes).set(data).where(eq(discountCodes.id, id)).run()
+    return { ok: true }
+  })
+
+  ipcMain.handle('discountCode:delete', (_e, id: string) => {
+    db.delete(discountCodes).where(eq(discountCodes.id, id)).run()
+    return { ok: true }
+  })
+
+  ipcMain.handle('discountCode:validate', (_e, code: string) => {
+    const dc = db.select().from(discountCodes)
+      .where(and(eq(discountCodes.active, true), sql`UPPER(${discountCodes.code}) = ${code.toUpperCase()}`))
+      .get()
+    if (!dc) return { valid: false, error: 'كود غير صالح' }
+    if (dc.maxUses > 0 && dc.usedCount >= dc.maxUses) return { valid: false, error: 'انتهى الاستخدام' }
+    return { valid: true, discount: { id: dc.id, code: dc.code, type: dc.type, value: dc.value } }
+  })
+
+  ipcMain.handle('discountCode:use', (_e, id: string) => {
+    db.update(discountCodes).set({ usedCount: sql`${discountCodes.usedCount} + 1` })
+      .where(eq(discountCodes.id, id)).run()
+    return { ok: true }
+  })
+
+  // ═══════════════════════════════════════════════════════════
+  // DELIVERY ZONES
+  // ═══════════════════════════════════════════════════════════
+  ipcMain.handle('deliveryZone:list', (_e, includeInactive?: boolean) => {
+    if (includeInactive) {
+      return db.select().from(deliveryZones).orderBy(deliveryZones.sortOrder).all()
+    }
+    return db.select().from(deliveryZones).where(eq(deliveryZones.active, true)).orderBy(deliveryZones.sortOrder).all()
+  })
+
+  ipcMain.handle('deliveryZone:create', (_e, data: any) => {
+    const id = uuid()
+    const maxSort = db.select({ sort: deliveryZones.sortOrder }).from(deliveryZones).orderBy(desc(deliveryZones.sortOrder)).limit(1).get()
+    db.insert(deliveryZones).values({
+      id,
+      name: String(data.name || '').trim(),
+      fee: Number(data.fee) || 0,
+      sortOrder: (Number(maxSort?.sort) || 0) + 1,
+      active: true,
+    }).run()
+    return { id }
+  })
+
+  ipcMain.handle('deliveryZone:update', (_e, id: string, data: any) => {
+    const update: any = {}
+    if (data.name !== undefined) update.name = String(data.name).trim()
+    if (data.fee !== undefined) update.fee = Number(data.fee) || 0
+    if (data.active !== undefined) update.active = !!data.active
+    if (data.sortOrder !== undefined) update.sortOrder = Number(data.sortOrder) || 0
+    db.update(deliveryZones).set(update).where(eq(deliveryZones.id, id)).run()
+    return { ok: true }
+  })
+
+  ipcMain.handle('deliveryZone:delete', (_e, id: string) => {
+    db.update(deliveryZones).set({ active: false }).where(eq(deliveryZones.id, id)).run()
+    return { ok: true }
+  })
+
+  ipcMain.handle('deliveryZone:reorder', (_e: any, ids: string[]) => {
+    ids.forEach((id, i) => {
+      db.update(deliveryZones).set({ sortOrder: i }).where(eq(deliveryZones.id, id)).run()
+    })
+    return { ok: true }
+  })
+
+  // ═══════════════════════════════════════════════════════════
+  // PRINTERS + KITCHEN STATIONS (print routing)
+  // ═══════════════════════════════════════════════════════════
+  ipcMain.handle('printer:list', async (e) => {
+    try {
+      const contents = e.sender
+      const printers = await contents.getPrintersAsync()
+      return printers.map((p: any) => ({ name: p.name, displayName: p.displayName || p.name, isDefault: !!p.isDefault }))
+    } catch {
+      return []
+    }
+  })
+
+  ipcMain.handle('printer:printHtml', async (_e, html: string, opts?: { deviceName?: string; copies?: number; paperWidth?: string }) => {
+    return silentPrint(html, opts?.deviceName, opts?.copies ?? 1, opts?.paperWidth ?? '80mm')
+  })
+
+  ipcMain.handle('printer:test', async (_e, deviceName?: string) => {
+    const html = `<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="UTF-8"><style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:monospace;text-align:center;padding:12px}hr{border:none;border-top:2px dashed #000;margin:8px 0}</style></head><body><h2>🍔 فاست فود</h2><p>صفحة اختبار الطباعة</p><hr><p>الطابعة: ${(deviceName || 'الافتراضية')}</p><p>${new Date().toLocaleString('ar-EG')}</p><p>لو شايف الورقة دي يبقى كله تمام ✅</p></body></html>`
+    return silentPrint(html, deviceName, 1, '80mm')
+  })
+
+  ipcMain.handle('station:list', (_e, includeInactive?: boolean) => {
+    const rows = (includeInactive
+      ? db.select().from(kitchenStations).orderBy(kitchenStations.sortOrder)
+      : db.select().from(kitchenStations).where(eq(kitchenStations.active, true)).orderBy(kitchenStations.sortOrder)
+    ).all()
+    const links = db.select().from(stationCategories).all()
+    const byStation = new Map<string, string[]>()
+    for (const l of links) {
+      if (!byStation.has(l.stationId)) byStation.set(l.stationId, [])
+      byStation.get(l.stationId)!.push(l.categoryId)
+    }
+    return rows.map((s: any) => ({ ...s, categoryIds: byStation.get(s.id) || [] }))
+  })
+
+  ipcMain.handle('station:create', (_e, data: any) => {
+    const id = uuid()
+    const maxSort = db.select({ sort: kitchenStations.sortOrder }).from(kitchenStations).orderBy(desc(kitchenStations.sortOrder)).limit(1).get()
+    db.insert(kitchenStations).values({
+      id,
+      name: String(data.name || 'محطة').trim(),
+      printerName: data.printerName || null,
+      paperWidth: data.paperWidth || '80mm',
+      sortOrder: (Number(maxSort?.sort) || 0) + 1,
+      active: true,
+    }).run()
+    if (Array.isArray(data.categoryIds)) {
+      for (const cid of data.categoryIds) {
+        db.insert(stationCategories).values({ stationId: id, categoryId: cid }).run()
+      }
+    }
+    return { id }
+  })
+
+  ipcMain.handle('station:update', (_e, id: string, data: any) => {
+    const update: any = {}
+    if (data.name !== undefined) update.name = String(data.name).trim()
+    if (data.printerName !== undefined) update.printerName = data.printerName || null
+    if (data.paperWidth !== undefined) update.paperWidth = data.paperWidth
+    if (data.active !== undefined) update.active = !!data.active
+    if (data.sortOrder !== undefined) update.sortOrder = Number(data.sortOrder) || 0
+    if (Object.keys(update).length > 0) {
+      db.update(kitchenStations).set(update).where(eq(kitchenStations.id, id)).run()
+    }
+    if (Array.isArray(data.categoryIds)) {
+      db.delete(stationCategories).where(eq(stationCategories.stationId, id)).run()
+      for (const cid of data.categoryIds) {
+        db.insert(stationCategories).values({ stationId: id, categoryId: cid }).run()
+      }
+    }
+    return { ok: true }
+  })
+
+  ipcMain.handle('station:delete', (_e, id: string) => {
+    db.update(kitchenStations).set({ active: false }).where(eq(kitchenStations.id, id)).run()
+    return { ok: true }
+  })
+
+  // Print routing preview for an order: station → its items
+  ipcMain.handle('station:routeOrder', (_e, orderId: string) => {
+    const items = db.select().from(orderItems).where(eq(orderItems.orderId, orderId)).all() as any[]
+    const prods = db.select().from(products).all() as any[]
+    const pMap = new Map(prods.map((p: any) => [p.id, p]))
+    const stations = db.select().from(kitchenStations).where(eq(kitchenStations.active, true)).orderBy(kitchenStations.sortOrder).all() as any[]
+    const links = db.select().from(stationCategories).all() as any[]
+    const catToStation = new Map<string, string>()
+    for (const l of links) {
+      if (!catToStation.has(l.categoryId)) catToStation.set(l.categoryId, l.stationId)
+    }
+    const activeStations = stations.filter((s: any) => s.id !== 'st-receipt')
+    const routes: { station: any; items: any[] }[] = activeStations.map((s: any) => ({ station: s, items: [] }))
+    const unrouted: any[] = []
+    for (const item of items) {
+      const p = pMap.get(item.productId) as any
+      const sid = p?.categoryId ? catToStation.get(p.categoryId) : undefined
+      const route = routes.find((r) => r.station.id === sid)
+      if (route) route.items.push({ ...item, productName: p?.name, productEmoji: p?.emoji, categoryId: p?.categoryId })
+      else unrouted.push({ ...item, productName: p?.name, productEmoji: p?.emoji, categoryId: p?.categoryId })
+    }
+    return { routes: routes.filter((r) => r.items.length > 0), unrouted }
+  })
+
+  // ═══════════════════════════════════════════════════════════
+  // EXPENSES
+  // ═══════════════════════════════════════════════════════════
+  ipcMain.handle('expense:list', () =>
+    db.select().from(expenses).where(eq(expenses.active, true))
+  )
+
+  ipcMain.handle('expense:create', (_e, data: any) => {
+    const id = uuid()
+    db.insert(expenses).values({ id, ...data, active: true }).run()
+    return { id }
+  })
+
+  ipcMain.handle('expense:update', (_e, id: string, data: any) => {
+    db.update(expenses).set(data).where(eq(expenses.id, id)).run()
+    return { ok: true }
+  })
+
+  ipcMain.handle('expense:delete', (_e, id: string) => {
+    db.update(expenses).set({ active: false }).where(eq(expenses.id, id)).run()
+    return { ok: true }
+  })
+
+  ipcMain.handle('expense:totalMonthly', () => {
+    const result = db.select({ total: sql`COALESCE(SUM(${expenses.amount}), 0)` })
+      .from(expenses).where(and(eq(expenses.active, true), eq(expenses.type, 'monthly'))).get()
+    return result?.total || 0
+  })
 
   // ═══════════════════════════════════════════════════════════
   // CATEGORIES
@@ -104,14 +618,40 @@ export function registerIpcHandlers() {
   })
 
   ipcMain.handle('addon:listByProduct', (_e, productId: string) =>
-    db.select({ id: addons.id, name: addons.name, price: addons.price, emoji: addons.emoji })
+    db.select({ id: addons.id, name: addons.name, price: addons.price, emoji: addons.emoji, supportsRollback: addons.supportsRollback })
       .from(addons)
       .innerJoin(productAddons, eq(addons.id, productAddons.addonId))
-      .where(eq(productAddons.productId, productId))
+      .where(and(eq(productAddons.productId, productId), eq(addons.active, true)))
   )
 
   ipcMain.handle('addon:linkToProduct', (_e, productId: string, addonId: string) => {
     db.insert(productAddons).values({ productId, addonId }).run()
+    return { ok: true }
+  })
+
+  ipcMain.handle('addon:setProductLinks', (_e, productId: string, addonIds: string[]) => {
+    db.delete(productAddons).where(eq(productAddons.productId, productId)).run()
+    for (const addonId of addonIds) {
+      db.insert(productAddons).values({ productId, addonId }).run()
+    }
+    return { ok: true }
+  })
+
+  ipcMain.handle('addon:listRecipes', (_e, addonId: string) => listRecipeRows('addon_recipes', 'addon_id', addonId))
+
+  ipcMain.handle('addon:upsertRecipe', (_e, data: any) => {
+    if (data.id) {
+      db.update(addonRecipes).set({ ingredientId: data.ingredientId ?? null, subRecipeId: data.subRecipeId ?? null, quantityPerUnit: data.quantityPerUnit })
+        .where(eq(addonRecipes.id, data.id)).run()
+      return { id: data.id }
+    }
+    const id = uuid()
+    db.insert(addonRecipes).values({ id, addonId: data.addonId, ingredientId: data.ingredientId ?? null, subRecipeId: data.subRecipeId ?? null, quantityPerUnit: data.quantityPerUnit }).run()
+    return { id }
+  })
+
+  ipcMain.handle('addon:deleteRecipe', (_e, id: string) => {
+    db.delete(addonRecipes).where(eq(addonRecipes.id, id)).run()
     return { ok: true }
   })
 
@@ -162,7 +702,7 @@ export function registerIpcHandlers() {
 
   ipcMain.handle('modifier:listByProduct', (_e: any, productId: string) => {
     const groups = db.select({
-      groupId: modifierGroups.id, groupName: modifierGroups.name, groupType: modifierGroups.type,
+      id: modifierGroups.id, name: modifierGroups.name, type: modifierGroups.type,
     }).from(modifierGroups)
       .innerJoin(productModifierGroups, eq(modifierGroups.id, productModifierGroups.modifierGroupId))
       .where(eq(productModifierGroups.productId, productId))
@@ -171,7 +711,7 @@ export function registerIpcHandlers() {
     return groups.map((g: any) => ({
       ...g,
       modifiers: db.select().from(modifiers)
-        .where(and(eq(modifiers.active, true), eq(modifiers.modifierGroupId, g.groupId)))
+        .where(and(eq(modifiers.active, true), eq(modifiers.modifierGroupId, g.id)))
         .orderBy(modifiers.sortOrder)
         .all(),
     }))
