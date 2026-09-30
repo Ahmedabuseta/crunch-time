@@ -1428,19 +1428,7 @@ export function registerIpcHandlers() {
   })
 
   ipcMain.handle('inventory:deductForOrder', (_e, orderId: string) => {
-    const items = db.select().from(orderItems).where(eq(orderItems.orderId, orderId)).all()
-    for (const item of items) {
-      const recipeItems = db.select().from(recipes).where(eq(recipes.productId, item.productId)).all()
-      for (const r of recipeItems) {
-        const deduction = r.quantityPerUnit * item.quantity
-        db.update(ingredients).set({ stockQuantity: sql`${ingredients.stockQuantity} - ${deduction}` })
-          .where(eq(ingredients.id, r.ingredientId)).run()
-        db.insert(inventoryTransactions).values({
-          id: uuid(), ingredientId: r.ingredientId, type: 'CONSUMPTION', quantity: -deduction,
-          referenceOrderId: orderId, note: `استهلاك طلب ${orderId}`, createdAt: now(),
-        }).run()
-      }
-    }
+    deductInventory(orderId)
     return { ok: true }
   })
 
