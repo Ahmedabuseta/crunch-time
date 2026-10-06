@@ -46,6 +46,7 @@ export interface TicketDistribution {
 export interface OrderTypeSplit {
   delivery: { count: number; revenue: number; percentage: number }
   dineIn: { count: number; revenue: number; percentage: number }
+  takeaway: { count: number; revenue: number; percentage: number }
 }
 
 export interface RevenueTrendPoint {
@@ -160,7 +161,34 @@ export interface SalesTrendReport {
   avgDailyRevenue60: number
   avgDailyRevenue90: number
   weekdayFactors: { weekday: number; avg: number; factor: number }[]
-  items: { productId: string; name: string; emoji: string; baseDailyQty: number; last7Qty: number; trend: number; forecast30d: number }[]
+  items: { productId: string; name: string; emoji: string; baseDailyQty: number; last7Qty: number; trend: number; forecast30d: number; value30d: number }[]
+}
+
+/** One row of the end-of-day delivery settlement: COD cash the driver hands over. */
+export interface DriverSummaryBucket {
+  profileId: string | null
+  name: string
+  phone: string | null
+  active: boolean
+  orderCount: number
+  cashTotal: number
+  visaTotal: number
+  deliveryFee: number
+  total: number
+}
+
+export interface DriverSummary {
+  from: string
+  to: string
+  drivers: DriverSummaryBucket[]
+  unassigned: DriverSummaryBucket
+  totals: {
+    orderCount: number
+    cashTotal: number
+    visaTotal: number
+    deliveryFee: number
+    total: number
+  }
 }
 
 export interface DaysOnHandRow {

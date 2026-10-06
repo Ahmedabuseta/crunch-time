@@ -14,8 +14,7 @@ const sameModifiers = (a: CartItemModifier[], b: CartItemModifier[]) => {
 
 interface CartStore {
   items: CartItem[]
-  orderType: 'delivery' | 'dine-in'
-  tableNumber: string
+  orderType: 'delivery' | 'dine-in' | 'takeaway'
   deliveryAddress: string
   deliveryPhone: string
   customerName: string
@@ -24,6 +23,8 @@ interface CartStore {
   orderNote: string
   deliveryZoneId: string
   deliveryNote: string
+  deliveryProfileId: string
+  deliveryProfileName: string
   addItem: (product: Product, modifiers?: CartItemModifier[]) => string
   removeItem: (lineId: string) => void
   updateQuantity: (lineId: string, quantity: number) => void
@@ -32,8 +33,7 @@ interface CartStore {
   addAddon: (lineId: string, addon: Addon) => void
   updateAddonQty: (lineId: string, addonId: string, qty: number) => void
   removeAddon: (lineId: string, addonId: string) => void
-  setOrderType: (type: 'delivery' | 'dine-in') => void
-  setTableNumber: (num: string) => void
+  setOrderType: (type: 'delivery' | 'dine-in' | 'takeaway') => void
   setDeliveryAddress: (addr: string) => void
   setDeliveryPhone: (phone: string) => void
   setCustomerName: (name: string) => void
@@ -41,6 +41,8 @@ interface CartStore {
   setDiscountCode: (code: string) => void
   setDeliveryZoneId: (id: string) => void
   setDeliveryNote: (note: string) => void
+  setDeliveryProfileId: (id: string) => void
+  setDeliveryProfileName: (name: string) => void
   clearCart: () => void
   subtotal: () => number
   itemCount: () => number
@@ -49,7 +51,6 @@ interface CartStore {
 export const useCartStore = create<CartStore>((set, get) => ({
   items: [],
   orderType: 'dine-in',
-  tableNumber: '',
   deliveryAddress: '',
   deliveryPhone: '',
   customerName: '',
@@ -58,6 +59,8 @@ export const useCartStore = create<CartStore>((set, get) => ({
   orderNote: '',
   deliveryZoneId: '',
   deliveryNote: '',
+  deliveryProfileId: '',
+  deliveryProfileName: '',
 
   addItem: (product, modifiers = []) => {
     const state = get()
@@ -116,7 +119,6 @@ export const useCartStore = create<CartStore>((set, get) => ({
     })),
 
   setOrderType: (type) => set({ orderType: type }),
-  setTableNumber: (num) => set({ tableNumber: num }),
   setDeliveryAddress: (addr) => set({ deliveryAddress: addr }),
   setDeliveryPhone: (phone) => set({ deliveryPhone: phone }),
   setCustomerName: (name) => set({ customerName: name }),
@@ -124,8 +126,10 @@ export const useCartStore = create<CartStore>((set, get) => ({
   setDiscountCode: (code) => set({ discountCode: code }),
   setDeliveryZoneId: (id) => set({ deliveryZoneId: id }),
   setDeliveryNote: (note) => set({ deliveryNote: note }),
+  setDeliveryProfileId: (id) => set({ deliveryProfileId: id }),
+  setDeliveryProfileName: (name) => set({ deliveryProfileName: name }),
 
-  clearCart: () => set({ items: [], tableNumber: '', deliveryAddress: '', deliveryPhone: '', customerName: '', discountCode: '', orderNote: '', deliveryZoneId: '', deliveryNote: '' }),
+  clearCart: () => set({ items: [], deliveryAddress: '', deliveryPhone: '', customerName: '', discountCode: '', orderNote: '', deliveryZoneId: '', deliveryNote: '', deliveryProfileId: '', deliveryProfileName: '' }),
 
   subtotal: () => get().items.reduce((sum, i) => {
     const addonTotal = i.addons.reduce((s, a) => s + a.price * (a.qty || 1), 0)

@@ -8,7 +8,7 @@ interface UserStore {
   fetch: () => Promise<void>
   create: (data: CreateUserInput) => Promise<string>
   update: (id: string, data: UpdateUserInput) => Promise<void>
-  remove: (id: string) => Promise<void>
+  remove: (id: string, opts?: { hard?: boolean }) => Promise<void>
   login: (id: string, pin: string) => Promise<{ ok: boolean; error?: string }>
   logout: () => void
 }
@@ -35,8 +35,9 @@ export const useUserStore = create<UserStore>((set) => ({
     await useUserStore.getState().fetch()
   },
 
-  remove: async (id) => {
-    await window.api.user.delete(id)
+  remove: async (id, opts) => {
+    const result = await window.api.user.delete(id, opts) as { ok: boolean; error?: string }
+    if (!result.ok) throw new Error(result.error || 'فشل حذف المستخدم')
     await useUserStore.getState().fetch()
   },
 
@@ -44,10 +45,14 @@ export const useUserStore = create<UserStore>((set) => ({
     const result = await window.api.user.verifyPin(id, pin) as any
     if (result.ok) {
       set({ currentUser: result.user })
+      await window.api.session.setUser(result.user)
       return { ok: true }
     }
     return { ok: false, error: result.error }
   },
 
-  logout: () => set({ currentUser: null }),
+  logout: () => {
+    set({ currentUser: null })
+    window.api.session.clearUser()
+  },
 }))

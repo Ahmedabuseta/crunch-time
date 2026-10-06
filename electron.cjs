@@ -1,9 +1,18 @@
-const { app, BrowserWindow } = require('electron')
+const { app, BrowserWindow, ipcMain } = require('electron')
+const { existsSync } = require('fs')
 const path = require('path')
 
 const isDev = process.env.NODE_ENV === 'development'
 const MAIN_JS = path.join(__dirname, 'dist-electron', 'main.cjs')
 const PRELOAD_JS = path.join(__dirname, 'dist-electron', 'preload.cjs')
+// Window/taskbar icon on Linux. Packaged builds also ship it (see the `files`
+// list in package.json) so the runtime path resolves inside the asar too.
+const APP_ICON = path.join(__dirname, 'build', 'icon.png')
+
+// Keep Chromium on a whole-number scale on low-DPI Linux displays. Fractional
+// device scale factors are a common source of soft glyph edges in Electron.
+app.commandLine.appendSwitch('high-dpi-support', '1')
+app.commandLine.appendSwitch('force-device-scale-factor', '1')
 
 function createWindow() {
   const win = new BrowserWindow({
@@ -19,7 +28,9 @@ function createWindow() {
     },
     backgroundColor: '#0a0a0a',
     autoHideMenuBar: true,
+    ...(existsSync(APP_ICON) ? { icon: APP_ICON } : {}),
   })
+  win.webContents.setZoomFactor(1)
   win.once('ready-to-show', () => win.show())
 
   if (isDev) {
@@ -41,6 +52,75 @@ function createWindow() {
   return win
 }
 
+function registerUpdaterHandlers(autoUpdater) {
+  ipcMain.handle('updater:check', async () => {
+    if (!autoUpdater) return { ok: false, error: 'unavailable' }
+    try {
+      const res = await autoUpdater.checkForUpdates()
+      return { ok: true, version: res?.updateInfo?.version || null }
+    } catch (e) {
+      return { ok: false, error: String(e?.message || e) }
+    }
+  })
+  ipcMain.handle('updater:quitAndInstall', () => {
+    if (!autoUpdater) return { ok: false }
+    autoUpdater.quitAndInstall(false, true)
+    return { ok: true }
+  })
+}
+
+// ─── Auto-updates (electron-updater + GitHub Releases) ─────────────
+// Skipped entirely in dev: no update feed, no signature, nothing to apply.
+// In production: check on launch, then forward every updater event to the
+// renderer so the UI can show progress + a "restart to update" button.
+function setupAutoUpdates(win) {
+  if (isDev) return
+  if (!existsSync(path.join(process.resourcesPath, 'app-update.yml'))) {
+    console.log('[updater] app-update.yml not found; skipping update checks')
+    registerUpdaterHandlers(null)
+    return
+  }
+  let autoUpdater
+  try {
+    autoUpdater = require('electron-updater').autoUpdater
+  } catch (e) {
+    console.error('[updater] electron-updater not available:', e?.message || e)
+    registerUpdaterHandlers(null)
+    return
+  }
+  try {
+    const log = require('electron-log')
+    log.transports.file.level = 'info'
+    autoUpdater.logger = log
+  } catch { /* logging is optional */ }
+
+  autoUpdater.autoDownload = true
+  autoUpdater.autoInstallOnAppQuit = true
+
+  const send = (status, payload) => {
+    if (!win.isDestroyed()) win.webContents.send('updater:status', { status, ...payload })
+  }
+
+  autoUpdater.on('checking-for-update', () => send('checking'))
+  autoUpdater.on('update-available', (info) => send('available', { version: info?.version }))
+  autoUpdater.on('update-not-available', () => send('up-to-date'))
+  autoUpdater.on('download-progress', (p) => send('downloading', { percent: Math.round(p?.percent || 0) }))
+  autoUpdater.on('update-downloaded', (info) => send('downloaded', { version: info?.version }))
+  autoUpdater.on('error', (err) => {
+    console.error('[updater] error:', err?.message || err)
+    send('error', { message: String(err?.message || err) })
+  })
+
+  registerUpdaterHandlers(autoUpdater)
+
+  // Small delay so the window paints first; failures are silent to the user.
+  setTimeout(() => {
+    autoUpdater.checkForUpdatesAndNotify().catch((e) => {
+      console.error('[updater] check failed:', e?.message || e)
+    })
+  }, 5000)
+}
+
 app.whenReady().then(async () => {
   // Migrate + seed the SQLite DB, then register all IPC handlers, then open the window.
   try {
@@ -49,7 +129,8 @@ app.whenReady().then(async () => {
   } catch (e) {
     console.error('[electron] backend init failed:', e)
   }
-  createWindow()
+  const win = createWindow()
+  setupAutoUpdates(win)
 })
 
 app.on('window-all-closed', () => {

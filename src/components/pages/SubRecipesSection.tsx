@@ -6,6 +6,7 @@ import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { toast } from '@/components/ui/toast'
 import { fmtMoney } from '@/lib/format'
 import { Plus, Pencil, Trash2, Layers, X, Check } from 'lucide-react'
+import { useIsAdmin } from '@/lib/use-is-admin'
 
 interface SubRecipeRow {
   id: string
@@ -28,6 +29,7 @@ interface SubRecipeIngredientRow {
 }
 
 export function SubRecipesSection() {
+  const isAdmin = useIsAdmin()
   const ingredients = useInventoryStore((s) => s.ingredients)
 
   const [subRecipes, setSubRecipes] = useState<SubRecipeRow[]>([])
@@ -83,9 +85,9 @@ export function SubRecipesSection() {
     await load()
   }
 
-  const handleDelete = async (id: string) => {
-    await window.api.subRecipe.delete(id)
-    toast({ title: 'تم حذف الوصفة الفرعية', variant: 'success' })
+  const handleDelete = async (id: string, opts?: { hard?: boolean }) => {
+    await window.api.subRecipe.delete(id, opts)
+    toast({ title: opts?.hard ? 'تم الحذف النهائي للوصفة الفرعية' : 'تم حذف الوصفة الفرعية', variant: 'success' })
     await load()
   }
 
@@ -259,8 +261,10 @@ export function SubRecipesSection() {
       <ConfirmDialog
         open={!!confirmDeleteId}
         title="حذف الوصفة الفرعية"
-        description="سيتم حذف هذه الوصفة الفرعية من قائمتك (لن تُحذف المنتجات التي تستخدمها)."
-        onConfirm={() => { if (confirmDeleteId) { handleDelete(confirmDeleteId); setConfirmDeleteId(null) } }}
+        description="سيتم تعطيل هذه الوصفة الفرعية وإخفاؤها من قائمتك."
+        allowHardDelete={isAdmin}
+        hardDeleteDescription="يحذف الوصفة الفرعية ومكوّناتها نهائياً. لن يمكن استرجاعها."
+        onConfirm={({ hard }) => { if (confirmDeleteId) { handleDelete(confirmDeleteId, { hard }); setConfirmDeleteId(null) } }}
         onCancel={() => setConfirmDeleteId(null)}
       />
     </div>

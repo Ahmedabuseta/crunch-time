@@ -8,10 +8,10 @@ interface ModifierStore {
   fetchByProduct: (productId: string) => Promise<ModifierGroupWithModifiers[]>
   createGroup: (data: any) => Promise<string>
   updateGroup: (id: string, data: any) => Promise<void>
-  removeGroup: (id: string) => Promise<void>
+  removeGroup: (id: string, opts?: { hard?: boolean }) => Promise<void>
   createModifier: (data: any) => Promise<string>
   updateModifier: (id: string, data: any) => Promise<void>
-  removeModifier: (id: string) => Promise<void>
+  removeModifier: (id: string, opts?: { hard?: boolean }) => Promise<void>
 }
 
 export const useModifierStore = create<ModifierStore>((set) => ({
@@ -44,8 +44,9 @@ export const useModifierStore = create<ModifierStore>((set) => ({
     await useModifierStore.getState().fetchGroups()
   },
 
-  removeGroup: async (id) => {
-    await window.api.modifier.deleteGroup(id)
+  removeGroup: async (id, opts) => {
+    const result = await window.api.modifier.deleteGroup(id, opts) as { ok: boolean; error?: string }
+    if (!result.ok) throw new Error(result.error || 'فشل حذف مجموعة الخيارات')
     await useModifierStore.getState().fetchGroups()
   },
 
@@ -60,8 +61,9 @@ export const useModifierStore = create<ModifierStore>((set) => ({
     await useModifierStore.getState().fetchGroups()
   },
 
-  removeModifier: async (id) => {
-    await window.api.modifier.deleteModifier(id)
+  removeModifier: async (id, opts) => {
+    const result = await window.api.modifier.deleteModifier(id, opts) as { ok: boolean; error?: string }
+    if (!result.ok) throw new Error(result.error || 'فشل حذف الخيار')
     await useModifierStore.getState().fetchGroups()
   },
 }))

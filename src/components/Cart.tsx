@@ -1,6 +1,7 @@
 import { useCartStore } from '@/services/cart/cart.store'
 import { useDeliveryStore } from '@/services/delivery/delivery.store'
-import { printOrderPack, buildCustomerReceiptHtml } from '@/lib/print'
+import { printOrderPack, buildCustomerReceiptHtml, contentWidth, autosizeScript } from '@/lib/print'
+import { normalizeReceiptInfo } from '@/lib/receipt'
 import { useOrderStore } from '@/services/order/order.store'
 import { useInventoryStore } from '@/services/inventory/inventory.store'
 import { useUserStore } from '@/services/user/user.store'
@@ -10,10 +11,11 @@ import { Receipt } from './Receipt'
 import { OrderTypeSelector } from './OrderTypeSelector'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { ShoppingCart, Trash2, CheckCircle, Banknote, CreditCard, Printer, RotateCcw, Tag, AlertCircle, Lock, StickyNote } from 'lucide-react'
+import { ShoppingCart, Trash2, CheckCircle, Banknote, CreditCard, Printer, RotateCcw, Tag, AlertCircle, Lock, StickyNote, ChevronLeft, ChevronRight } from 'lucide-react'
 import { useState, useEffect } from 'react'
 import { cn } from '@/lib/utils'
 import { fmtMoney } from '@/lib/format'
+import { toast } from '@/components/ui/toast'
 
 const paymentTypes = [
   { id: 'cash' as const, label: 'كاش', icon: Banknote },
@@ -30,12 +32,13 @@ interface LastOrder {
   deliveryZoneId?: string
   deliveryZoneName?: string
   deliveryNote?: string
+  deliveryProfileId?: string
+  deliveryProfileName?: string
   discountAmount: number
   discountCode?: string
   orderNote?: string
   total: number
   orderType: string
-  tableNumber?: string
   customerName?: string
   customerPhone?: string
   customerAddress?: string
@@ -44,114 +47,19 @@ interface LastOrder {
   createdAt: Date
 }
 
-function buildReceiptHtml(o: LastOrder): string {
-  const dateStr = o.createdAt.toLocaleDateString('ar-EG', { year: 'numeric', month: 'long', day: 'numeric' })
-  const timeStr = o.createdAt.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })
-  const paymentLabels: Record<string, string> = { cash: 'كاش', visa: 'فيزا' }
-  const taxPercent = Math.round((o.taxRate || 0.14) * 100)
-
-  let itemsHtml = ''
-  for (const item of o.items) {
-    const addonTotal = item.addons.reduce((s: number, a: any) => s + a.price * (a.qty || 1), 0)
-    const modifierTotal = item.modifiers.reduce((s: number, m: any) => s + m.priceAdjustment, 0)
-    const lineTotal = (item.product.price + addonTotal + modifierTotal) * item.quantity
-    const itemNote = (item.note || '').trim()
-    itemsHtml += `<div style="display:flex;justify-content:space-between;gap:8px;margin-bottom:6px;font-size:13px"><span style="flex:1;min-width:0;overflow-wrap:anywhere">${item.product.emoji} ${item.product.name}${item.modifiers.length > 0 ? ` (${item.modifiers.map((m: any) => m.modifierName).join('، ')})` : ''} ×${item.quantity}${itemNote ? `<br><span style="color:#b45309;font-size:11px">📝 ${itemNote}</span>` : ''}</span><span style="font-weight:700;white-space:nowrap;flex-shrink:0">${fmtMoney(lineTotal)} ج.م</span></div>`
-    for (const a of item.addons) {
-      itemsHtml += `<div style="display:flex;justify-content:space-between;gap:8px;color:#666;font-size:11px;padding-right:16px;margin-bottom:2px"><span style="flex:1;min-width:0;overflow-wrap:anywhere">↳ ${a.emoji} ${a.name}${(a.qty || 1) > 1 ? ` ×${a.qty}` : ''}${item.quantity > 1 ? ` ×${item.quantity}` : ''}</span><span style="white-space:nowrap;flex-shrink:0">${fmtMoney(a.price * (a.qty || 1) * item.quantity)} ج.م</span></div>`
-    }
-  }
-
-  let deliverySection = ''
-  if (o.orderType === 'delivery') {
-    deliverySection = `<div style="border-bottom:1.5px dashed #ccc;padding-bottom:8px;margin-bottom:8px;font-size:12px">
-      <div style="font-weight:700;margin-bottom:4px">بيانات التوصيل:</div>
-      ${o.customerName ? `<div class="row"><span class="gray">الاسم</span><span style="font-weight:700">${o.customerName}</span></div>` : ''}
-      ${o.customerPhone ? `<div class="row"><span class="gray">التليفون</span><span style="font-weight:700">${o.customerPhone}</span></div>` : ''}
-      ${o.customerAddress ? `<div class="row"><span class="gray">العنوان</span><span style="font-weight:700">${o.customerAddress}</span></div>` : ''}
-      ${o.deliveryZoneName ? `<div class="row"><span class="gray">المنطقة</span><span style="font-weight:700">${o.deliveryZoneName}</span></div>` : ''}
-      ${o.deliveryNote ? `<div class="row"><span class="gray">ملاحظة التوصيل</span><span style="font-weight:700">${o.deliveryNote}</span></div>` : ''}
-    </div>`
-  }
-
-  return `<!DOCTYPE html>
-<html lang="ar" dir="rtl">
-<head>
-<meta charset="UTF-8">
-<title>Receipt ${o.id}</title>
-<link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;700;900&display=swap" rel="stylesheet">
-<style>
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { font-family: 'Tajawal', monospace; font-size: 13px; color: #000; background: #fff; }
-  @media print { @page { margin: 0; size: 80mm auto; } body { margin: 0; } }
-  .receipt { width: 80mm; margin: 0 auto; padding: 8mm 6mm; }
-  .center { text-align: center; }
-  .row { display: flex; justify-content: space-between; margin-bottom: 3px; }
-  .bold { font-weight: 900; }
-  .gray { color: #666; }
-</style>
-</head>
-<body>
-<div class="receipt">
-  <div class="center" style="padding-bottom:10px;border-bottom:2px dashed #999;margin-bottom:10px">
-    <p style="font-size:22px;font-weight:900">🍔 فاست فود</p>
-    <p class="gray" style="font-size:11px;margin-top:2px">نقطة البيع — نظام الكاشير</p>
-  </div>
-
-  <div class="center" style="border-bottom:1.5px dashed #ccc;padding-bottom:8px;margin-bottom:8px">
-    <p style="font-size:10px;color:#666">رقم الطلب</p>
-    <p style="font-size:20px;font-weight:900">${o.id}</p>
-  </div>
-
-  <div style="border-bottom:1.5px dashed #ccc;padding-bottom:8px;margin-bottom:8px;font-size:12px">
-    <div class="row"><span class="gray">التاريخ</span><span style="font-weight:700">${dateStr}</span></div>
-    <div class="row"><span class="gray">الوقت</span><span style="font-weight:700">${timeStr}</span></div>
-    <div class="row"><span class="gray">نوع الطلب</span><span style="font-weight:700">${o.orderType === 'delivery' ? '🛵 توصيل' : '🍽️ صالة'}</span></div>
-    ${o.tableNumber ? `<div class="row"><span class="gray">رقم الطاولة</span><span style="font-weight:700">${o.tableNumber}</span></div>` : ''}
-    <div class="row"><span class="gray">طريقة الدفع</span><span style="font-weight:700">${paymentLabels[o.paymentType] || o.paymentType}</span></div>
-    <div class="row"><span class="gray">الكاشير</span><span style="font-weight:700">${o.cashierName || '—'}</span></div>
-  </div>
-
-  ${deliverySection}
-
-  <div style="border-bottom:1.5px dashed #ccc;padding-bottom:8px;margin-bottom:8px">
-    <div style="font-weight:900;margin-bottom:6px;font-size:12px">الأصناف:</div>
-    ${itemsHtml}
-  </div>
-
-  ${o.orderNote ? `<div style="border:1px solid #f59e0b;background:#fffbeb;border-radius:8px;padding:6px 8px;margin-bottom:8px;font-size:12px"><span style="font-weight:900">📝 ملاحظة الطلب: </span><span>${o.orderNote}</span></div>` : ''}
-
-  <div style="margin-bottom:16px;font-size:12px">
-    <div class="row gray"><span>المجموع الفرعي</span><span>${o.subtotal.toFixed(0)} ج.م</span></div>
-    <div class="row gray"><span>ضريبة القيمة المضافة (${taxPercent}%)</span><span>${o.tax.toFixed(0)} ج.م</span></div>
-    ${o.deliveryFee > 0 ? `<div class="row gray"><span>رسوم التوصيل${o.deliveryZoneName ? ` (${o.deliveryZoneName})` : ''}</span><span>${fmtMoney(o.deliveryFee)} ج.م</span></div>` : ''}
-    ${o.discountAmount > 0 ? `<div class="row" style="color:#16a34a"><span>خصم</span><span>-${o.discountAmount.toFixed(0)} ج.م</span></div>` : ''}
-    <hr style="border:none;border-top:2px solid #000;margin:10px 0">
-    <div class="row" style="font-size:20px"><span class="bold">الإجمالي</span><span class="bold">${o.total.toFixed(0)} ج.م</span></div>
-  </div>
-
-  <div class="center" style="font-size:11px;color:#999;border-top:1.5px dashed #ccc;padding-top:10px">
-    <p style="font-size:14px">شكراً لزيارتكم ❤️</p>
-    <p style="margin-top:4px">فاست فود — نظام نقطة البيع</p>
-    <p style="margin-top:2px;font-size:10px">هذا إيصال إلكتروني ولا يحتاج توقيع</p>
-  </div>
-</div>
-</body>
-</html>`
-}
-
 export function Cart() {
   const items = useCartStore((s) => s.items)
   const subtotal = useCartStore((s) => s.subtotal)
   const itemCount = useCartStore((s) => s.itemCount)
   const clearCart = useCartStore((s) => s.clearCart)
   const orderType = useCartStore((s) => s.orderType)
-  const tableNumber = useCartStore((s) => s.tableNumber)
   const deliveryAddress = useCartStore((s) => s.deliveryAddress)
   const deliveryPhone = useCartStore((s) => s.deliveryPhone)
   const customerName = useCartStore((s) => s.customerName)
   const deliveryZoneId = useCartStore((s) => s.deliveryZoneId)
   const deliveryNote = useCartStore((s) => s.deliveryNote)
+  const deliveryProfileId = useCartStore((s) => s.deliveryProfileId)
+  const deliveryProfileName = useCartStore((s) => s.deliveryProfileName)
   const paymentType = useCartStore((s) => s.paymentType)
   const setPaymentType = useCartStore((s) => s.setPaymentType)
   const discountCode = useCartStore((s) => s.discountCode)
@@ -170,6 +78,7 @@ export function Cart() {
   const [discountResult, setDiscountResult] = useState<{ valid: boolean; discount?: any; error?: string } | null>(null)
   const [settings, setSettings] = useState<any>({})
   const [printStatus, setPrintStatus] = useState('')
+  const [step, setStep] = useState<1 | 2>(1)
   const zones = useDeliveryStore((s) => s.zones)
   const fetchZones = useDeliveryStore((s) => s.fetch)
 
@@ -180,15 +89,21 @@ export function Cart() {
   const rawTaxRate = Number(settings.taxRate)
   const taxRate = rawTaxRate > 1 ? rawTaxRate / 100 : Number.isFinite(rawTaxRate) && settings.taxRate !== undefined ? rawTaxRate : 0.14
   const activeZone = zones.find((z) => z.id === deliveryZoneId && z.active)
-  const legacyFee = settings.deliveryFee !== undefined ? Number(settings.deliveryFee) : 25
-  const tax = subtotal() * taxRate
-  const deliveryFee = orderType === 'delivery' ? (activeZone ? Number(activeZone.fee) : (zones.length > 0 ? 0 : legacyFee)) : 0
-  const discountAmount = discountResult?.valid
+  // Money stays in whole pounds: round the subtotal once, then derive tax,
+  // discount and total from that rounded figure so every line the receipt
+  // prints (subtotal + tax + delivery − discount) adds up to the total exactly.
+  const sub = Math.round(subtotal())
+  const tax = Math.round(sub * taxRate)
+  const deliveryFee = orderType === 'delivery' && activeZone ? Math.round(Number(activeZone.fee) || 0) : 0
+  const rawDiscount = discountResult?.valid
     ? discountResult.discount.type === 'percentage'
-      ? subtotal() * (discountResult.discount.value / 100)
-      : discountResult.discount.value
+      ? Math.round(sub * (discountResult.discount.value / 100))
+      : Math.round(Number(discountResult.discount.value) || 0)
     : 0
-  const total = subtotal() + tax + deliveryFee - discountAmount
+  // Never discount more than the goods themselves — mirrors seed.ts, and keeps
+  // the total from going negative (and therefore never a float).
+  const discountAmount = Math.min(Math.max(rawDiscount, 0), sub)
+  const total = sub + tax + deliveryFee - discountAmount
 
   const handleValidateDiscount = async () => {
     if (!discountCode.trim()) { setDiscountResult(null); return }
@@ -222,14 +137,16 @@ const handleCheckout = async () => {
 
       const createdAt = new Date()
       const result = await createOrder({
-        orderType, tableNumber,
+        orderType,
         customerName: orderType === 'delivery' ? customerName : undefined,
         customerPhone: orderType === 'delivery' ? deliveryPhone : undefined,
         customerAddress: orderType === 'delivery' ? deliveryAddress : undefined,
         deliveryZoneId: orderType === 'delivery' ? deliveryZoneId || undefined : undefined,
         deliveryZoneName: orderType === 'delivery' ? activeZone?.name : undefined,
         deliveryNote: orderType === 'delivery' ? deliveryNote.trim() || undefined : undefined,
-        subtotal: subtotal(), tax, deliveryFee, total,
+        deliveryProfileId: orderType === 'delivery' ? deliveryProfileId || undefined : undefined,
+        deliveryProfileName: orderType === 'delivery' ? deliveryProfileName || undefined : undefined,
+        subtotal: sub, tax, deliveryFee, total,
         paymentType, cashierName: currentUser?.name,
         userId: currentUser?.id,
         note: orderNote.trim() || undefined,
@@ -247,14 +164,16 @@ const handleCheckout = async () => {
       }
 
       setLastOrder({
-        id: result, items: cartItems, subtotal: subtotal(), tax, taxRate,
+        id: result, items: cartItems, subtotal: sub, tax, taxRate,
         deliveryFee,
         deliveryZoneId: orderType === 'delivery' ? deliveryZoneId || undefined : undefined,
         deliveryZoneName: orderType === 'delivery' ? activeZone?.name : undefined,
         deliveryNote: orderType === 'delivery' ? deliveryNote.trim() || undefined : undefined,
+        deliveryProfileId: orderType === 'delivery' ? deliveryProfileId || undefined : undefined,
+        deliveryProfileName: orderType === 'delivery' ? deliveryProfileName || undefined : undefined,
         discountAmount, discountCode: discountResult?.valid ? discountCode : undefined,
         orderNote: orderNote.trim() || undefined, total, orderType,
-        tableNumber: tableNumber || undefined, customerName: customerName || undefined,
+        customerName: customerName || undefined,
         customerPhone: deliveryPhone || undefined, customerAddress: deliveryAddress || undefined,
         paymentType, cashierName: currentUser?.name, createdAt,
       })
@@ -262,10 +181,13 @@ const handleCheckout = async () => {
       // ─── Silent auto-print: receipt + routed kitchen tickets ───
       try {
         const s: any = await window.api.settings.get()
+        // Delivery order with no driver yet: the kitchen must start work now,
+        // so its tickets print — but the customer receipt waits until a driver
+        // is assigned (releases from the الديلفري page).
+        const withholdReceipt = orderType === 'delivery' && !deliveryProfileId
         const printed = await printOrderPack({
           order: {
             id: result, orderType,
-            tableNumber: tableNumber || undefined,
             customerName: customerName || undefined,
             customerPhone: deliveryPhone || undefined,
             customerAddress: deliveryAddress || undefined,
@@ -279,28 +201,55 @@ const handleCheckout = async () => {
               quantity: i.quantity, unitPrice: i.product.price,
               note: i.note, modifiers: i.modifiers, addons: i.addons,
             })),
-            subtotal: subtotal(), tax, taxRate, deliveryFee,
+            subtotal: sub, tax, taxRate, deliveryFee,
             discountAmount, discountCode: discountResult?.valid ? discountCode : undefined,
             total, paymentType,
           },
           receiptPrinter: s?.receiptPrinter,
-          receiptWidth: s?.receiptWidth || '80mm',
-          autoReceipt: s?.autoPrintReceipt ?? true,
+          paperWidth: s?.receiptWidth || '80mm',
+          autoReceipt: (s?.autoPrintReceipt ?? true) && !withholdReceipt,
           autoKitchen: s?.autoPrintKitchen ?? true,
           copies: s?.kitchenCopies || 1,
+          receiptCopies: s?.receiptCopies || 1,
+          receiptInfo: s,
         })
         const failedKitchen = printed.kitchen.filter((k) => !k.ok)
         if (printed.receipt && !printed.receipt.ok) {
-          setPrintStatus(`⚠️ الإيصال ما اتطبعش: ${printed.receipt.error}`)
+          const message = `الإيصال ما اتطبعش: ${printed.receipt.error || 'فشلت الطباعة'}`
+          setPrintStatus(`⚠️ ${message}`)
+          toast({ title: 'فشلت الطباعة التلقائية', description: message, variant: 'error', duration: 7000 })
         } else if (failedKitchen.length > 0) {
-          setPrintStatus(`⚠️ المطبخ: ${failedKitchen.map((k) => `${k.station} (${k.error})`).join('، ')}`)
+          const message = `المطبخ: ${failedKitchen.map((k) => `${k.station} (${k.error || 'فشلت الطباعة'})`).join('، ')}`
+          setPrintStatus(`⚠️ ${message}`)
+          toast({ title: 'فشلت طباعة بعض تذاكر المطبخ', description: message, variant: 'error', duration: 7000 })
         } else if (printed.unrouted > 0) {
-          setPrintStatus(`⚠️ ${printed.unrouted} صنف مش مربوط بمحطة — اتأكد من التوجيه في الإعدادات`)
+          const message = `${printed.unrouted} صنف مش مربوط بمحطة — اتأكد من التوجيه في الإعدادات`
+          setPrintStatus(`⚠️ ${message}`)
+          toast({ title: 'الطلب تم، لكن التوجيه ناقص', description: message, variant: 'warning', duration: 7000 })
         } else {
           setPrintStatus('')
+          if (withholdReceipt) {
+            const kitchenLine = printed.kitchen.some((k) => k.ok) ? 'تذاكر المطبخ اتطبعت' : 'مفيش تذاكر مطبخ اتطبعت'
+            toast({
+              title: 'طلب توصيل — لسه بدون سائق',
+              description: `${kitchenLine} — الإيصال هيتطبع بعد تعيين السائق · الطلب ${result}`,
+              variant: 'warning',
+              duration: 7000,
+            })
+          } else if (s?.autoPrintReceipt || s?.autoPrintKitchen) {
+            const parts = [
+              printed.receipt?.ok ? 'الإيصال' : '',
+              printed.kitchen.some((k) => k.ok) ? 'تذاكر المطبخ' : '',
+            ].filter(Boolean)
+            if (parts.length > 0) {
+              toast({ title: 'تمت الطباعة التلقائية', description: `${parts.join(' و ')} — الطلب ${result}`, variant: 'success' })
+            }
+          }
         }
       } catch (err: any) {
-        setPrintStatus(`⚠️ الطباعة: ${err?.message || 'فشلت'}`)
+        const message = err?.message || 'فشلت'
+        setPrintStatus(`⚠️ الطباعة: ${message}`)
+        toast({ title: 'فشلت الطباعة التلقائية', description: message, variant: 'error', duration: 7000 })
       }
     } catch (err: any) {
       console.error('checkout failed', err)
@@ -310,21 +259,54 @@ const handleCheckout = async () => {
 
   const handlePrint = async () => {
     if (!lastOrder) return
+    // Same rule as OrderHistory: a delivery order with no driver hasn't been
+    // released for its customer receipt yet.
+    if (lastOrder.orderType === 'delivery' && !lastOrder.deliveryProfileId) {
+      toast({
+        title: 'الإيصال لسه مقفول',
+        description: `الطلب ${lastOrder.id} بدون سائق — عيّن سائق من صفحة الديلفري الأول`,
+        variant: 'warning',
+        duration: 6500,
+      })
+      return
+    }
+    toast({
+      title: 'جارٍ طباعة الإيصال',
+      description: `الطلب ${lastOrder.id}`,
+      duration: 5000,
+    })
+    const s: any = await window.api.settings.get()
+    const paper = s?.receiptWidth || '80mm'
+    const cw = contentWidth(paper)
+    const html = buildCustomerReceiptHtml(lastOrder as any, cw, normalizeReceiptInfo(s))
+    const htmlWithAutosize = html.replace('</head>', autosizeScript(cw) + '</head>')
     try {
-      const s: any = await window.api.settings.get()
-      const res = await window.api.printer.printHtml(
-        buildCustomerReceiptHtml({ ...lastOrder, taxRate: lastOrder.taxRate } as any, s?.receiptWidth || '80mm'),
-        { deviceName: s?.receiptPrinter || undefined, copies: 1, paperWidth: s?.receiptWidth || '80mm' },
-      )
-      if (!res?.ok) {
-        const html = buildReceiptHtml(lastOrder)
+      const res = await window.api.printer.printHtml(html, { deviceName: s?.receiptPrinter || undefined, copies: 1, paperWidth: paper, order: lastOrder as any })
+      if (res?.ok) {
+        toast({
+          title: 'تمت طباعة الإيصال',
+          description: `الطلب ${lastOrder.id} أُرسل للطابعة`,
+          variant: 'success',
+        })
+      } else {
+        toast({
+          title: 'تعذر الإرسال للطابعة',
+          description: res?.error || 'تم فتح نافذة الطباعة اليدوية',
+          variant: 'warning',
+          duration: 6500,
+        })
         const w = window.open('', '_blank', 'width=400,height=600')
-        if (w) { w.document.write(html); w.document.close(); w.onload = () => { w.print(); w.onafterprint = () => w.close() } }
+        if (w) { w.document.write(htmlWithAutosize); w.document.close(); w.onload = () => { w.print(); w.onafterprint = () => w.close() } }
       }
-    } catch {
-      const html = buildReceiptHtml(lastOrder)
+    } catch (err: any) {
+      toast({
+        title: 'حدث خطأ أثناء الطباعة',
+        description: err?.message || 'تم فتح نافذة الطباعة اليدوية',
+        variant: 'warning',
+        duration: 6500,
+      })
       const w = window.open('', '_blank', 'width=400,height=600')
-      if (w) { w.document.write(html); w.document.close(); w.onload = () => { w.print(); w.onafterprint = () => w.close() } }
+      if (w) { w.document.write(htmlWithAutosize); w.document.close(); w.onload = () => { w.print(); w.onafterprint = () => w.close() } }
     }
   }
 
@@ -339,7 +321,11 @@ const handleCheckout = async () => {
             <div><h2 className="font-black text-sm">تم الطلب!</h2><p className="text-[10px] text-muted-foreground">{lastOrder.id}</p></div>
           </div>
           <div className="flex gap-2">
-            <Button variant="outline" size="touch" className="rounded-xl gap-2 flex-1" onClick={handlePrint}><Printer className="h-5 w-5" /> طباعة</Button>
+            <Button variant="outline" size="touch" className="rounded-xl gap-2 flex-1" onClick={handlePrint}
+              disabled={lastOrder.orderType === 'delivery' && !lastOrder.deliveryProfileId}
+              title={lastOrder.orderType === 'delivery' && !lastOrder.deliveryProfileId ? 'الإيصال يتطبع بعد تعيين السائق' : 'طباعة الإيصال'}>
+              <Printer className="h-5 w-5" /> {lastOrder.orderType === 'delivery' && !lastOrder.deliveryProfileId ? 'مؤجل' : 'طباعة'}
+            </Button>
             <Button variant="ghost" size="touch" className="rounded-xl gap-2 flex-1" onClick={handleNewOrder}><RotateCcw className="h-5 w-5" /> طلب جديد</Button>
           </div>
         </div>
@@ -349,7 +335,7 @@ const handleCheckout = async () => {
         <div className="h-px bg-border mx-4" />
         <ScrollArea className="flex-1 p-4">
           <div className="bg-white rounded-xl overflow-hidden shadow-lg">
-            <Receipt orderId={lastOrder.id} items={lastOrder.items} subtotal={lastOrder.subtotal} tax={lastOrder.tax} taxRate={lastOrder.taxRate} deliveryFee={lastOrder.deliveryFee} deliveryZoneName={lastOrder.deliveryZoneName} deliveryNote={lastOrder.deliveryNote} discountAmount={lastOrder.discountAmount} discountCode={lastOrder.discountCode} orderNote={lastOrder.orderNote} total={lastOrder.total} orderType={lastOrder.orderType} tableNumber={lastOrder.tableNumber} customerName={lastOrder.customerName} customerPhone={lastOrder.customerPhone} customerAddress={lastOrder.customerAddress} paymentType={lastOrder.paymentType} cashierName={lastOrder.cashierName} />
+            <Receipt orderId={lastOrder.id} items={lastOrder.items} subtotal={lastOrder.subtotal} tax={lastOrder.tax} taxRate={lastOrder.taxRate} deliveryFee={lastOrder.deliveryFee} deliveryZoneName={lastOrder.deliveryZoneName} deliveryNote={lastOrder.deliveryNote} deliveryProfileName={lastOrder.deliveryProfileName} discountAmount={lastOrder.discountAmount} discountCode={lastOrder.discountCode} orderNote={lastOrder.orderNote} total={lastOrder.total} orderType={lastOrder.orderType} customerName={lastOrder.customerName} customerPhone={lastOrder.customerPhone} customerAddress={lastOrder.customerAddress} paymentType={lastOrder.paymentType} cashierName={lastOrder.cashierName} createdAt={lastOrder.createdAt} info={normalizeReceiptInfo(settings)} />
           </div>
         </ScrollArea>
         <div className="p-4"><Button className="w-full rounded-2xl h-11 font-black" onClick={handleNewOrder}>طلب جديد</Button></div>
@@ -359,40 +345,65 @@ const handleCheckout = async () => {
 
   return (
     <div className="flex flex-col h-full">
+      {/* Header */}
       <div className="flex items-center justify-between px-5 pt-5 pb-3">
         <div className="flex items-center gap-2">
           <div className="w-8 h-8 rounded-xl bg-primary/10 flex items-center justify-center"><ShoppingCart className="h-4 w-4 text-primary" /></div>
           <h2 className="font-black text-sm">الطلب</h2>
           {items.length > 0 && <span className="text-[10px] text-muted-foreground bg-secondary rounded-full px-2 py-0.5 font-bold">{itemCount()} أصناف</span>}
         </div>
-        {items.length > 0 && <Button variant="ghost" size="icon" className="h-11 w-11 text-muted-foreground hover:text-destructive rounded-xl" onClick={clearCart}><Trash2 className="h-5 w-5" /></Button>}
+        {items.length > 0 && <Button variant="ghost" size="icon" className="h-11 w-11 text-muted-foreground hover:text-destructive rounded-xl" onClick={() => { clearCart(); setStep(1) }}><Trash2 className="h-5 w-5" /></Button>}
       </div>
 
-      <div className="px-4 pb-3"><OrderTypeSelector /></div>
-      <div className="h-px bg-border mx-4" />
+      {/* Step indicator */}
+      {items.length > 0 && (
+        <div className="flex items-center gap-2 px-5 pb-3">
+          <button onClick={() => setStep(1)} className={cn("flex items-center gap-1.5 text-xs font-bold transition-colors cursor-pointer", step === 1 ? "text-primary" : "text-muted-foreground hover:text-foreground")}>
+            <span className={cn("w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black", step === 1 ? "bg-primary text-primary-foreground" : "bg-secondary")}>1</span>
+            الطلب
+          </button>
+          <div className={cn("flex-1 h-0.5 rounded-full mx-1", step === 2 ? "bg-primary" : "bg-secondary")} />
+          <button onClick={() => { if (items.length > 0) setStep(2) }} className={cn("flex items-center gap-1.5 text-xs font-bold transition-colors cursor-pointer", step === 2 ? "text-primary" : "text-muted-foreground hover:text-foreground")}>
+            <span className={cn("w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black", step === 2 ? "bg-primary text-primary-foreground" : "bg-secondary")}>2</span>
+            الدفع
+          </button>
+        </div>
+      )}
 
       {items.length === 0 ? (
         <div className="flex flex-col items-center justify-center flex-1 text-muted-foreground gap-3">
           <div className="w-16 h-16 rounded-3xl bg-secondary/60 flex items-center justify-center"><ShoppingCart className="h-7 w-7 opacity-40" /></div>
           <div className="text-center"><p className="text-sm font-bold">السلة فارغة</p><p className="text-[11px] text-muted-foreground mt-0.5">اضغط على الأصناف لإضافتها</p></div>
         </div>
-      ) : (
+      ) : step === 1 ? (
+        /* ── Step 1: Order ── */
         <>
           <ScrollArea className="flex-1 px-4 min-h-0">
             <div className="py-1">
               {items.map((item) => <CartItem key={item.lineId} item={item} />)}
             </div>
           </ScrollArea>
-
-          <ScrollArea className="shrink-0 max-h-[45%] px-5 py-3 space-y-2 bg-secondary/20 rounded-t-3xl border-t">
-            {/* Order note */}
+          <div className="p-4 border-t bg-background">
+            <Button className="w-full rounded-2xl h-12 text-base font-black gap-2" onClick={() => setStep(2)}>
+              التالي — الدفع <ChevronLeft className="h-5 w-5" />
+            </Button>
+          </div>
+        </>
+      ) : (
+        /* ── Step 2: Payment ── */
+        <>
+          <ScrollArea className="flex-1 px-5 py-3 space-y-2">
+            {/* Order type */}
+            <div className="pb-2"><OrderTypeSelector /></div>
+            <div className="h-px bg-border" />
             <div className="relative">
-              <StickyNote className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-amber-400/70 pointer-events-none" />
-              <input type="text" placeholder="ملاحظة للطلب كله… (مستعجل، بدون بصل…)" value={orderNote}
-                onChange={e => setOrderNote(e.target.value)}
-                className="w-full pr-10 pl-3 py-2.5 rounded-xl bg-amber-500/5 border border-amber-500/20 text-sm font-medium focus:ring-1 focus:ring-amber-500/40 focus:outline-none placeholder:text-muted-foreground" dir="rtl" />
+              <StickyNote className="absolute right-3 top-3 h-4 w-4 text-amber-400/70 pointer-events-none" />
+              <textarea placeholder="ملاحظة للطلب كله… (مستعجل، بدون بصل…)" value={orderNote}
+                onChange={e => setOrderNote(e.target.value)} rows={2}
+                className="w-full pr-10 pl-3 py-2.5 rounded-xl bg-amber-500/5 border border-amber-500/20 text-sm font-medium focus:ring-1 focus:ring-amber-500/40 focus:outline-none placeholder:text-muted-foreground resize-none" dir="rtl"
+                style={{ overflowWrap: 'anywhere', wordBreak: 'break-word' }} />
             </div>
-            {/* Discount code input */}
+            {/* Discount code */}
             <div className="flex gap-2 items-center">
               <div className="relative flex-1">
                 <Tag className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -409,25 +420,33 @@ const handleCheckout = async () => {
               </div>
             )}
 
-            {/* Totals — single compact line */}
-            <div className="flex items-center gap-3 text-xs text-muted-foreground">
-              <span>الفرعي <span className="font-bold text-foreground">{subtotal().toFixed(0)}</span></span>
-              <span>ضريبة <span className="font-bold text-foreground">{tax.toFixed(0)}</span></span>
+            {/* Totals */}
+            <div className="bg-secondary/30 rounded-xl p-3 space-y-1 text-xs text-muted-foreground">
+              <div className="flex justify-between"><span>الفرعي</span><span className="font-bold text-foreground">{sub} ج.م</span></div>
+              <div className="flex justify-between"><span>ضريبة القيمة المضافة</span><span className="font-bold text-foreground">{tax} ج.م</span></div>
               {orderType === 'delivery' && (
-                <span>توصيل{activeZone ? ` (${activeZone.name})` : ''} <span className="font-bold text-foreground">{fmtMoney(deliveryFee)}</span></span>
+                <div className="flex justify-between">
+                  <span>توصيل{activeZone ? ` (${activeZone.name})` : ''}</span>
+                  <span className="font-bold text-foreground">{fmtMoney(deliveryFee)} ج.م</span>
+                </div>
               )}
               {orderType === 'delivery' && zones.length > 0 && !deliveryZoneId && (
-                <span className="text-amber-400 font-bold">اختار المنطقة</span>
+                <div className="flex justify-between"><span className="text-amber-400 font-bold">اختار المنطقة</span></div>
               )}
-              {discountAmount > 0 && <span className="text-green-400">خصم <span className="font-bold">-{discountAmount.toFixed(0)}</span></span>}
-              <span className="mr-auto flex items-baseline gap-1">
+              {discountAmount > 0 && (
+                <div className="flex justify-between text-green-400"><span>خصم</span><span className="font-bold">-{discountAmount} ج.م</span></div>
+              )}
+              <div className="h-px bg-border my-1" />
+              <div className="flex justify-between items-baseline">
                 <span className="font-black text-sm text-foreground">الإجمالي</span>
-                <span className="font-black text-xl text-primary">{total.toFixed(0)}</span>
-                <span className="font-medium">ج.م</span>
-              </span>
+                <div className="flex items-baseline gap-1">
+                  <span className="font-black text-xl text-primary">{total}</span>
+                  <span className="font-medium text-foreground">ج.م</span>
+                </div>
+              </div>
             </div>
 
-            {/* Payment type — cash or visa */}
+            {/* Payment type */}
             <div className="flex gap-1.5 bg-secondary/60 p-1 rounded-xl">
               {paymentTypes.map(({ id, label, icon: Icon }) => (
                 <button key={id} onClick={() => setPaymentType(id)}
@@ -438,7 +457,7 @@ const handleCheckout = async () => {
               ))}
             </div>
 
-            {/* Validation error + shift warning */}
+            {/* Validation + shift warning */}
             {(validationError || !currentShift) && (
               <div className="space-y-2">
                 {validationError && (
@@ -455,11 +474,19 @@ const handleCheckout = async () => {
                 )}
               </div>
             )}
-
-            <Button className="w-full rounded-2xl h-12 text-base font-black shadow-lg shadow-primary/25 transition-transform active:scale-[0.98]" size="lg" onClick={handleCheckout} disabled={!currentShift}>
-              تأكيد الطلب · {total.toFixed(0)} ج.م
-            </Button>
           </ScrollArea>
+
+          {/* Bottom actions */}
+          <div className="p-4 border-t bg-background space-y-2">
+            <div className="flex gap-2">
+              <Button variant="ghost" className="rounded-2xl h-12 gap-1 shrink-0" onClick={() => setStep(1)}>
+                <ChevronRight className="h-5 w-5" /> رجوع
+              </Button>
+              <Button className="flex-1 rounded-2xl h-12 text-base font-black shadow-lg shadow-primary/25 transition-transform active:scale-[0.98]" size="lg" onClick={handleCheckout} disabled={!currentShift}>
+                تأكيد الطلب · {total} ج.م
+              </Button>
+            </div>
+          </div>
         </>
       )}
     </div>

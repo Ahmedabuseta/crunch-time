@@ -3,18 +3,30 @@ export type OrderStatus = 'COMPLETED' | 'CANCELLED' | 'REFUNDED'
 export interface Order {
   id: string
   status: OrderStatus
+  /** Delivery workflow only: 'unassigned' = no driver yet, 'assigned' = driver set, null = not delivery. */
+  driverStatus: 'unassigned' | 'assigned' | null
   orderType: string
-  tableNumber: string | null
+  customerName: string | null
+  customerPhone: string | null
+  customerAddress: string | null
   deliveryAddress: string | null
   deliveryPhone: string | null
   deliveryZoneId: string | null
   deliveryZoneName: string | null
   deliveryNote: string | null
+  deliveryProfileId: string | null
+  deliveryProfileName: string | null
   note: string | null
   subtotal: number
   tax: number
   deliveryFee: number
+  discountCode: string | null
+  discountAmount: number
   total: number
+  paymentType: string
+  cashierName: string | null
+  statusReason: string | null
+  refundedAmount: number
   userId: string | null
   shiftId: string | null
   createdAt: string
@@ -39,7 +51,6 @@ export interface OrderWithItems extends Order {
 
 export interface CreateOrderInput {
   orderType: string
-  tableNumber?: string
   customerName?: string
   customerPhone?: string
   customerAddress?: string
@@ -48,6 +59,8 @@ export interface CreateOrderInput {
   deliveryZoneId?: string
   deliveryZoneName?: string
   deliveryNote?: string
+  deliveryProfileId?: string
+  deliveryProfileName?: string
   subtotal: number
   tax: number
   deliveryFee: number
@@ -74,6 +87,8 @@ export interface CreateOrderInput {
 export interface OrderFilters {
   status?: OrderStatus
   orderType?: string
+  paymentType?: string
+  search?: string
   from?: string
   to?: string
 }

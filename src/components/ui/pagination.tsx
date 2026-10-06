@@ -1,4 +1,5 @@
 import { ChevronLeft, ChevronRight } from 'lucide-react'
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
 
 interface PaginationProps {
@@ -44,15 +45,16 @@ export function Pagination({
           عرض {start + 1}–{end} من {total}
         </span>
         {onPageSizeChange && total > pageSizeOptions[0] && (
-          <select
-            value={pageSize}
-            onChange={(e) => onPageSizeChange(Number(e.target.value))}
-            className="px-2 py-1 rounded-lg bg-secondary text-[10px] font-bold border-0 focus:ring-1 focus:ring-primary focus:outline-none cursor-pointer"
-          >
-            {pageSizeOptions.map((s) => (
-              <option key={s} value={s}>{s} / صفحة</option>
-            ))}
-          </select>
+          <Select value={String(pageSize)} onValueChange={(v) => onPageSizeChange(Number(v))}>
+            <SelectTrigger className="w-auto px-2 py-1 rounded-lg bg-secondary text-[10px] font-bold h-auto min-h-0">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {pageSizeOptions.map((s) => (
+                <SelectItem key={s} value={String(s)}>{s} / صفحة</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         )}
       </div>
       <div className="flex items-center gap-1.5">

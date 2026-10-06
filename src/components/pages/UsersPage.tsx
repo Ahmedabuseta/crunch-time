@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react'
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select'
 import { useUserStore } from '@/services/user/user.store'
 import { Button } from '@/components/ui/button'
 import { Plus, Pencil, Trash2, Shield, User, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { fmtMoney } from '@/lib/format'
 import { ListToolbar } from '@/components/ui/list-toolbar'
 import { DataTable, type DataColumn } from '@/components/ui/data-table'
 import { Pagination } from '@/components/ui/pagination'
@@ -11,18 +11,20 @@ import { useListControls } from '@/components/ui/list-controls'
 import { toast } from '@/components/ui/toast'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import type { ViewMode } from '@/components/ui/view-toggle'
+import { useIsAdmin } from '@/lib/use-is-admin'
 
 const roleLabel = (role: string) => (role === 'admin' ? 'مدير' : 'كاشير')
 
 export function UsersPage() {
   const users = useUserStore((s) => s.users)
+  const isAdmin = useIsAdmin()
   const fetch = useUserStore((s) => s.fetch)
   const create = useUserStore((s) => s.create)
   const update = useUserStore((s) => s.update)
   const remove = useUserStore((s) => s.remove)
   const [showForm, setShowForm] = useState(false)
   const [editId, setEditId] = useState<string | null>(null)
-  const [form, setForm] = useState({ name: '', pin: '', role: 'cashier', hourlyRate: '', commissionRate: '' })
+  const [form, setForm] = useState({ name: '', pin: '', role: 'cashier' })
   const [view, setView] = useState<ViewMode>('table')
   const [roleFilter, setRoleFilter] = useState<string | null>(null)
   const [pendingDelete, setPendingDelete] = useState<any>(null)
@@ -35,32 +37,32 @@ export function UsersPage() {
     filter: (u) => !roleFilter || u.role === roleFilter,
   })
 
-  const resetForm = () => { setForm({ name: '', pin: '', role: 'cashier', hourlyRate: '', commissionRate: '' }); setEditId(null); setShowForm(false) }
+  const resetForm = () => { setForm({ name: '', pin: '', role: 'cashier' }); setEditId(null); setShowForm(false) }
 
   const handleCreate = async () => {
     if (!form.name || !form.pin) return
-    await create({ name: form.name, pin: form.pin, role: form.role as 'admin' | 'cashier', hourlyRate: parseFloat(form.hourlyRate) || 0, commissionRate: parseFloat(form.commissionRate) || 0 })
+    await create({ name: form.name, pin: form.pin, role: form.role as 'admin' | 'cashier' })
     toast({ title: 'تم إنشاء المستخدم', description: form.name, variant: 'success' })
     resetForm()
   }
 
   const handleUpdate = async () => {
     if (!editId || !form.name) return
-    const data: any = { name: form.name, role: form.role, hourlyRate: parseFloat(form.hourlyRate) || 0, commissionRate: parseFloat(form.commissionRate) || 0 }
+    const data: any = { name: form.name, role: form.role }
     if (form.pin) data.pin = form.pin
     await update(editId, data)
     toast({ title: 'تم تحديث المستخدم', description: form.name, variant: 'success' })
     resetForm()
   }
 
-  const handleDelete = async (u: any) => {
-    await remove(u.id)
-    toast({ title: 'تم حذف المستخدم', description: u.name, variant: 'success' })
+  const handleDelete = async (u: any, opts?: { hard?: boolean }) => {
+    await remove(u.id, opts)
+    toast({ title: opts?.hard ? 'تم الحذف النهائي للمستخدم' : 'تم حذف المستخدم', description: u.name, variant: 'success' })
   }
 
   const startEdit = (u: any) => {
     setEditId(u.id); setShowForm(false)
-    setForm({ name: u.name, pin: '', role: u.role, hourlyRate: String(u.hourlyRate || ''), commissionRate: String(u.commissionRate || '') })
+    setForm({ name: u.name, pin: '', role: u.role })
   }
 
   const columns: DataColumn<any>[] = [
@@ -107,15 +109,15 @@ export function UsersPage() {
             <input value={form.pin} onChange={e => setForm(f => ({ ...f, pin: e.target.value }))} placeholder={editId ? 'اتركه فارغ للاحتفاظ' : 'الرقم السري (4 أرقام)'} maxLength={4} className="px-3 py-2 rounded-xl bg-secondary text-sm border-0 focus:ring-1 focus:ring-primary focus:outline-none text-center" />
           </div>
           {/* Role select */}
-          <select value={form.role} onChange={e => setForm(f => ({ ...f, role: e.target.value }))} className="w-full px-3 py-2 rounded-xl bg-secondary text-sm border-0 focus:ring-1 focus:ring-primary focus:outline-none">
-            <option value="cashier">كاشير</option>
-            <option value="admin">مدير</option>
-          </select>
-          {/* Pay fields */}
-          <div className="grid grid-cols-2 gap-3">
-            <input type="number" min="0" value={form.hourlyRate} onChange={e => setForm(f => ({ ...f, hourlyRate: e.target.value }))} placeholder="الأجر/ساعة (ج.م)" className="px-3 py-2 rounded-xl bg-secondary text-sm border-0 focus:ring-1 focus:ring-primary focus:outline-none" />
-            <input type="number" min="0" max="100" value={form.commissionRate} onChange={e => setForm(f => ({ ...f, commissionRate: e.target.value }))} placeholder="العمولة (%)" className="px-3 py-2 rounded-xl bg-secondary text-sm border-0 focus:ring-1 focus:ring-primary focus:outline-none" />
-          </div>
+          <Select value={form.role} onValueChange={v => setForm(f => ({ ...f, role: v }))}>
+            <SelectTrigger className="w-full rounded-xl">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="cashier">كاشير</SelectItem>
+              <SelectItem value="admin">مدير</SelectItem>
+            </SelectContent>
+          </Select>
           <div className="flex gap-2">
             <Button className="flex-1 rounded-xl" onClick={editId ? handleUpdate : handleCreate}>{editId ? 'تحديث' : 'إضافة'}</Button>
             {editId && <Button variant="ghost" className="rounded-xl" onClick={resetForm}>إلغاء</Button>}
@@ -151,11 +153,7 @@ export function UsersPage() {
               </div>
               <div className="flex-1">
                 <p className="font-bold text-sm">{u.name}</p>
-                <p className="text-xs text-muted-foreground">{roleLabel(u.role)}
-                  {((u.hourlyRate || 0) > 0 || (u.commissionRate || 0) > 0) && (
-                    <span> · {(u.hourlyRate || 0) > 0 ? `${fmtMoney(u.hourlyRate!)} ج/س` : ''}{(u.hourlyRate || 0) > 0 && (u.commissionRate || 0) > 0 ? ' · ' : ''}{(u.commissionRate || 0) > 0 ? `${u.commissionRate}%` : ''}</span>
-                  )}
-                </p>
+                <p className="text-xs text-muted-foreground">{roleLabel(u.role)}</p>
               </div>
               <span className={cn("text-[10px] font-bold rounded-full px-2.5 py-0.5", u.role === 'admin' ? "bg-primary/10 text-primary" : "bg-secondary text-muted-foreground")}>
                 {roleLabel(u.role)}
@@ -175,8 +173,10 @@ export function UsersPage() {
       <ConfirmDialog
         open={!!pendingDelete}
         title="حذف المستخدم"
-        description={pendingDelete ? `سيتم حذف «${pendingDelete.name}» نهائياً.` : undefined}
-        onConfirm={() => { if (pendingDelete) { handleDelete(pendingDelete); setPendingDelete(null) } }}
+        description={pendingDelete ? `سيتم تعطيل «${pendingDelete.name}» ومنع دخوله للنظام.` : undefined}
+        allowHardDelete={isAdmin}
+        hardDeleteDescription="يحذف المستخدم نهائياً. لن يمكن استرجاعه."
+        onConfirm={({ hard }) => { if (pendingDelete) { handleDelete(pendingDelete, { hard }); setPendingDelete(null) } }}
         onCancel={() => setPendingDelete(null)}
       />
     </div>

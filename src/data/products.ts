@@ -21,7 +21,7 @@ export interface Addon {
   emoji: string
 }
 
-export type OrderType = 'delivery' | 'dine-in'
+export type OrderType = 'delivery' | 'dine-in' | 'takeaway'
 
 export const categories: Category[] = [
   { id: "burgers", name: "برجر", emoji: "🍔", color: "var(--cat-burgers)" },

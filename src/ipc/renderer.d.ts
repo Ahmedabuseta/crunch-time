@@ -1,3 +1,21 @@
+import type { PrintOrder } from '../lib/print'
+
+// Soft-delete by default; admins can request permanent removal with { hard: true }.
+export type DeleteOpts = { hard?: boolean }
+
+export interface UpdaterBridge {
+  check: () => Promise<{ ok: boolean; version?: string | null; error?: string }>
+  quitAndInstall: () => Promise<{ ok: boolean }>
+  onStatus: (cb: (s: UpdateStatus) => void) => () => void
+}
+
+export interface UpdateStatus {
+  status: 'checking' | 'available' | 'downloading' | 'downloaded' | 'up-to-date' | 'error'
+  version?: string
+  percent?: number
+  message?: string
+}
+
 export interface Customer {
   id: string
   phone: string
@@ -13,6 +31,13 @@ export interface DeliveryZone {
   name: string
   fee: number
   sortOrder: number
+  active: boolean
+}
+
+export interface DeliveryProfile {
+  id: string
+  name: string
+  phone: string | null
   active: boolean
 }
 
@@ -33,6 +58,10 @@ export interface KitchenStation {
 }
 
 export interface ApiBridge {
+  session: {
+    setUser: (user: { id: string; role: string } | null) => Promise<void>
+    clearUser: () => Promise<void>
+  }
   settings: {
     get: () => Promise<any>
     update: (data: any) => Promise<{ ok: boolean }>
@@ -41,7 +70,7 @@ export interface ApiBridge {
     list: () => Promise<any[]>
     create: (data: any) => Promise<{ id: string }>
     update: (id: string, data: any) => Promise<{ ok: boolean }>
-    delete: (id: string) => Promise<{ ok: boolean }>
+    delete: (id: string, opts?: DeleteOpts) => Promise<{ ok: boolean; error?: string }>
     validate: (code: string) => Promise<any>
     use: (id: string) => Promise<{ ok: boolean }>
   }
@@ -49,33 +78,39 @@ export interface ApiBridge {
     list: (includeInactive?: boolean) => Promise<DeliveryZone[]>
     create: (data: { name: string; fee: number }) => Promise<{ id: string }>
     update: (id: string, data: Partial<{ name: string; fee: number; active: boolean; sortOrder: number }>) => Promise<{ ok: boolean }>
-    delete: (id: string) => Promise<{ ok: boolean }>
+    delete: (id: string, opts?: DeleteOpts) => Promise<{ ok: boolean; error?: string }>
     reorder: (ids: string[]) => Promise<{ ok: boolean }>
+  }
+  deliveryProfile: {
+    list: (includeInactive?: boolean) => Promise<DeliveryProfile[]>
+    create: (data: { name: string; phone?: string }) => Promise<{ id: string }>
+    update: (id: string, data: Partial<{ name: string; phone: string; active: boolean }>) => Promise<{ ok: boolean }>
+    delete: (id: string, opts?: DeleteOpts) => Promise<{ ok: boolean; error?: string }>
   }
   printer: {
     list: () => Promise<OsPrinter[]>
-    printHtml: (html: string, opts?: { deviceName?: string; copies?: number; paperWidth?: string }) => Promise<{ ok: boolean; error?: string }>
+    printHtml: (html: string, opts?: { deviceName?: string; copies?: number; paperWidth?: string; order?: PrintOrder }) => Promise<{ ok: boolean; error?: string }>
     test: (deviceName?: string) => Promise<{ ok: boolean; error?: string }>
   }
   station: {
     list: (includeInactive?: boolean) => Promise<KitchenStation[]>
     create: (data: { name: string; printerName?: string; paperWidth?: string; categoryIds?: string[] }) => Promise<{ id: string }>
     update: (id: string, data: Partial<{ name: string; printerName: string | null; paperWidth: string; active: boolean; categoryIds: string[] }>) => Promise<{ ok: boolean }>
-    delete: (id: string) => Promise<{ ok: boolean }>
+    delete: (id: string, opts?: DeleteOpts) => Promise<{ ok: boolean; error?: string }>
     routeOrder: (orderId: string) => Promise<{ routes: { station: KitchenStation; items: any[] }[]; unrouted: any[] }>
   }
   expense: {
     list: () => Promise<any[]>
     create: (data: any) => Promise<{ id: string }>
     update: (id: string, data: any) => Promise<{ ok: boolean }>
-    delete: (id: string) => Promise<{ ok: boolean }>
+    delete: (id: string, opts?: DeleteOpts) => Promise<{ ok: boolean; error?: string }>
     totalMonthly: () => Promise<number>
   }
   category: {
     list: () => Promise<any[]>
     create: (data: any) => Promise<{ id: string }>
     update: (id: string, data: any) => Promise<{ ok: boolean }>
-    delete: (id: string) => Promise<{ ok: boolean }>
+    delete: (id: string, opts?: DeleteOpts) => Promise<{ ok: boolean; error?: string }>
     reorder: (ids: string[]) => Promise<{ ok: boolean }>
   }
   product: {
@@ -83,41 +118,44 @@ export interface ApiBridge {
     getById: (id: string) => Promise<any>
     create: (data: any) => Promise<{ id: string }>
     update: (id: string, data: any) => Promise<{ ok: boolean }>
-    delete: (id: string) => Promise<{ ok: boolean }>
+    delete: (id: string, opts?: DeleteOpts) => Promise<{ ok: boolean; error?: string }>
   }
   addon: {
     list: () => Promise<any[]>
     create: (data: any) => Promise<{ id: string }>
     update: (id: string, data: any) => Promise<{ ok: boolean }>
-    delete: (id: string) => Promise<{ ok: boolean }>
+    delete: (id: string, opts?: DeleteOpts) => Promise<{ ok: boolean; error?: string }>
     listByProduct: (productId: string) => Promise<any[]>
     linkToProduct: (productId: string, addonId: string) => Promise<{ ok: boolean }>
     setProductLinks: (productId: string, addonIds: string[]) => Promise<{ ok: boolean }>
     listRecipes: (addonId: string) => Promise<any[]>
     upsertRecipe: (data: any) => Promise<{ id: string }>
-    deleteRecipe: (id: string) => Promise<{ ok: boolean }>
+    deleteRecipe: (id: string) => Promise<{ ok: boolean; error?: string }>
   }
   modifier: {
     listGroups: () => Promise<any[]>
     createGroup: (data: any) => Promise<{ id: string }>
     updateGroup: (id: string, data: any) => Promise<{ ok: boolean }>
-    deleteGroup: (id: string) => Promise<{ ok: boolean }>
+    deleteGroup: (id: string, opts?: DeleteOpts) => Promise<{ ok: boolean; error?: string }>
     listByGroup: (groupId: string) => Promise<any[]>
     createModifier: (data: any) => Promise<{ id: string }>
     updateModifier: (id: string, data: any) => Promise<{ ok: boolean }>
-    deleteModifier: (id: string) => Promise<{ ok: boolean }>
+    deleteModifier: (id: string, opts?: DeleteOpts) => Promise<{ ok: boolean; error?: string }>
     listByProduct: (productId: string) => Promise<any[]>
     linkToProduct: (productId: string, groupId: string) => Promise<{ ok: boolean }>
     setProductLinks: (productId: string, groupIds: string[]) => Promise<{ ok: boolean }>
     listRecipes: (modifierId: string) => Promise<any[]>
     upsertRecipe: (data: any) => Promise<{ id: string }>
-    deleteRecipe: (id: string) => Promise<{ ok: boolean }>
+    deleteRecipe: (id: string) => Promise<{ ok: boolean; error?: string }>
   }
   order: {
     create: (data: any) => Promise<{ id: string }>
     list: (filters?: any) => Promise<any[]>
     getById: (id: string) => Promise<any>
     updateStatus: (id: string, status: string, reason?: string) => Promise<{ ok: boolean }>
+    assignDriver: (orderId: string, profileId: string) => Promise<{ ok: boolean; error?: string; receiptReady?: boolean }>
+    unassignedCount: () => Promise<number>
+    delete: (id: string) => Promise<{ ok: boolean; error?: string }>
   }
   payment: {
     create: (data: any) => Promise<{ id: string }>
@@ -128,7 +166,7 @@ export interface ApiBridge {
     list: () => Promise<any[]>
     create: (data: any) => Promise<{ id: string }>
     update: (id: string, data: any) => Promise<{ ok: boolean }>
-    delete: (id: string) => Promise<{ ok: boolean }>
+    delete: (id: string, opts?: DeleteOpts) => Promise<{ ok: boolean; error?: string }>
     verifyPin: (id: string, pin: string) => Promise<{ ok: boolean; user?: any; error?: string }>
   }
   customer: {
@@ -151,19 +189,19 @@ export interface ApiBridge {
   subRecipe: {
     listAll: () => Promise<{ id: string; name: string; unit: string; active: boolean; costPerUnit: number; ingredientCount: number }[]>
     upsert: (data: { id?: string; name: string; unit: string; active?: boolean }) => Promise<{ id: string }>
-    delete: (id: string) => Promise<{ ok: boolean }>
+    delete: (id: string, opts?: DeleteOpts) => Promise<{ ok: boolean; error?: string }>
     listIngredients: (subRecipeId: string) => Promise<{ id: string; subRecipeId: string; ingredientId: string; quantityPerUnit: number; ingredientName: string; unit: string; costPerUnit: number; lineCost: number }[]>
     upsertIngredient: (data: { id?: string; subRecipeId: string; ingredientId: string; quantityPerUnit: number }) => Promise<{ id: string }>
-    deleteIngredient: (id: string) => Promise<{ ok: boolean }>
+    deleteIngredient: (id: string) => Promise<{ ok: boolean; error?: string }>
   }
   inventory: {
     listIngredients: () => Promise<any[]>
     createIngredient: (data: any) => Promise<{ id: string }>
     updateIngredient: (id: string, data: any) => Promise<{ ok: boolean }>
-    deleteIngredient: (id: string) => Promise<{ ok: boolean }>
+    deleteIngredient: (id: string, opts?: DeleteOpts) => Promise<{ ok: boolean; error?: string }>
     listRecipes: (productId: string) => Promise<any[]>
     upsertRecipe: (data: any) => Promise<{ id: string }>
-    deleteRecipe: (id: string) => Promise<{ ok: boolean }>
+    deleteRecipe: (id: string) => Promise<{ ok: boolean; error?: string }>
     getAlerts: () => Promise<any[]>
     getPurchaseSavings: () => Promise<Record<string, { name: string; standard: number; lastUnitCost: number | null; totalSaved: number }>>
     restock: (ingredientId: string, qty: number, note?: string, opts?: { unitCost?: number; supplier?: string }) => Promise<{ ok: boolean; ppv?: number }>
@@ -194,6 +232,8 @@ export interface ApiBridge {
     purchasePriceVariance: (from?: string, to?: string) => Promise<any>
     salesTrend: (opts?: { days?: number; forecastDays?: number }) => Promise<any>
     daysOnHand: () => Promise<any>
+    discountSummary: (from?: string, to?: string) => Promise<any>
+    driverSummary: (opts?: { from?: string; to?: string }) => Promise<any>
   }
   backup: {
     trigger: () => Promise<any>
@@ -204,5 +244,6 @@ export interface ApiBridge {
 declare global {
   interface Window {
     api: ApiBridge
+    updater?: UpdaterBridge
   }
 }

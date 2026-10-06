@@ -15,30 +15,70 @@ const {
   orders, orderItems, payments,
   users, shifts, cashMovements,
   ingredients, recipes, inventoryTransactions,
-  settings, discountCodes, deliveryZones, kitchenStations, stationCategories, expenses,
+  settings, discountCodes, deliveryZones, deliveryProfiles, kitchenStations, stationCategories, expenses,
   addonRecipes, modifierRecipes, customers,
   purchasePriceHistory,
   subRecipes, subRecipeIngredients,
 } = schema
 
 // ─── Silent print helper ───────────────────────────────────────
-// Prints an HTML string on a hidden window to a named OS printer.
-// Falls back to the default printer when deviceName is empty.
+// Prints an HTML string on a hidden window via the OS print driver (CUPS/Windows).
+// CUPS renders everything as pixels — Arabic, fonts, RTL all just work.
 async function silentPrint(html: string, deviceName?: string | null, copies = 1, paperWidth: string = '80mm'): Promise<{ ok: boolean; error?: string }> {
   const wins = BrowserWindow.getAllWindows()
   if (wins.length === 0) return { ok: false, error: 'لا توجد نافذة للطباعة' }
-  const printWin = new BrowserWindow({ show: false, webPreferences: { offscreen: true } })
+
+  // Thermal paper is 80mm, but the XP-80 driver's printable area is 72mm.
+  const paperMm = paperWidth === '58mm' ? 48 : 72
+  const widthPx = Math.round(paperMm * 96 / 25.4)
+  const printWin = new BrowserWindow({ show: false, webPreferences: { offscreen: true }, width: widthPx, height: 200 })
+
   try {
     await printWin.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html))
-    const widthMicrons = paperWidth === '58mm' ? 58000 : 80000
+    await printWin.webContents.executeJavaScript('document.fonts.ready')
+    await new Promise(r => setTimeout(r, 300))
+
+    const availablePrinters = await printWin.webContents.getPrintersAsync()
+    const selectedPrinter = deviceName
+      ? availablePrinters.find((printer) => printer.name === deviceName)
+      : availablePrinters.find((printer) => printer.isDefault)
+    if (deviceName && !selectedPrinter) {
+      const availableNames = availablePrinters.map((printer) => printer.displayName || printer.name).join('، ')
+      return {
+        ok: false,
+        error: `الطابعة «${deviceName}» غير متاحة حالياً. الطابعات الظاهرة: ${availableNames || 'لا توجد طابعات'}`,
+      }
+    }
+    if (!deviceName && !selectedPrinter) {
+      return { ok: false, error: 'لا توجد طابعة افتراضية متاحة حالياً.' }
+    }
+
+    const measurement: { height: number; text: string; width: number } = await printWin.webContents.executeJavaScript(`(() => {
+      const ticket = document.querySelector('.ticket') || document.body
+      const rect = ticket.getBoundingClientRect()
+      return {
+        height: Math.ceil(rect.height),
+        width: Math.ceil(rect.width),
+        text: (ticket.textContent || '').replace(/\\s+/g, ' ').trim()
+      }
+    })()`)
+
+    const MICRONS_PER_PX = 25_400 / 96
+    const widthMicrons = paperMm * 1000
+    const heightMicrons = Math.max(20_000, Math.ceil(measurement.height * MICRONS_PER_PX))
+
+    console.log(`[print] preview: ${measurement.text}`)
+    console.log(`[print] ticket=${measurement.width}x${measurement.height}px page=${widthMicrons}x${heightMicrons}µm printer=${selectedPrinter?.name || deviceName || '(default)'}`)
+
     for (let i = 0; i < Math.max(1, copies); i++) {
       await new Promise<void>((resolve, reject) => {
         printWin.webContents.print({
           silent: true,
           printBackground: true,
-          deviceName: deviceName || undefined,
-          pageSize: { width: widthMicrons, height: 297000 } as any,
+          deviceName: selectedPrinter?.name,
+          pageSize: { width: widthMicrons, height: heightMicrons } as any,
           margins: { marginType: 'none' } as any,
+          scaleFactor: 100,
         }, (success: boolean, failureReason: string) => {
           if (success) resolve()
           else reject(new Error(failureReason === 'cancelled' ? 'أُلغيت الطباعة' : String(failureReason || 'فشلت الطباعة')))
@@ -47,6 +87,7 @@ async function silentPrint(html: string, deviceName?: string | null, copies = 1,
     }
     return { ok: true }
   } catch (err: any) {
+    console.log(`[print] error: ${err.message}`)
     return { ok: false, error: err?.message || 'فشلت الطباعة' }
   } finally {
     if (!printWin.isDestroyed()) printWin.close()
@@ -300,15 +341,141 @@ export async function initBackend() {
 export function registerIpcHandlers() {
   const db = getDb()
 
+  // ─── Session: track current user for role-based access ─────
+  let sessionUser: { id: string; role: string } | null = null
+
+  function requireAdmin(): void {
+    if (!sessionUser || sessionUser.role !== 'admin') {
+      throw new Error('Unauthorized — admin access required')
+    }
+  }
+
+  // Hard delete: permanently remove a row plus the link rows that only exist to
+  // join it. Refuses when historical data still points at the row (order items,
+  // inventory ledgers, past orders) so reports can never be silently corrupted.
+  // Any table with a foreign key to this one that the caller did not list is
+  // discovered from PRAGMA foreign_key_list and treated as a refusal — an
+  // unlisted dependency fails safely instead of crashing the renderer.
+  function hardDelete(
+    table: string,
+    id: string,
+    checks: { countSql: string; label: string }[] = [],
+    deletes: string[] = [],
+  ): { ok: boolean; error?: string } {
+    const sqlite = getSqlite()
+    const exists = sqlite.prepare(`SELECT id FROM ${table} WHERE id = ?`).get(id)
+    if (!exists) return { ok: false, error: 'العنصر غير موجود' }
+
+    // Tables the caller already handles — as a history check or as join rows
+    // to cascade. Parsed from the SQL so the discovery below can skip them.
+    const handled = new Set<string>()
+    for (const c of checks) {
+      const m = c.countSql.match(/\bFROM\s+(\w+)/i)
+      if (m) handled.add(m[1])
+    }
+    for (const d of deletes) {
+      const m = d.match(/\bFROM\s+(\w+)/i)
+      if (m) handled.add(m[1])
+    }
+
+    // Every other table with a FK to this one becomes an automatic refusal
+    // check, so a new or forgotten dependency can never crash the delete.
+    // PRAGMA foreign_key_list(T) lists the tables T points AT, so scan
+    // every table and keep the FKs that land on this one.
+    const extra: { countSql: string; params: string[]; label: string }[] = []
+    const childColumns = new Map<string, string[]>()
+    const allTables = sqlite.prepare(
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'",
+    ).all() as { name: string }[]
+    for (const t of allTables) {
+      const fks = sqlite.prepare(`PRAGMA foreign_key_list(${t.name})`).all() as { table: string; from: string }[]
+      for (const fk of fks) {
+        if (fk.table !== table) continue
+        if (handled.has(t.name)) continue
+        if (!childColumns.has(t.name)) childColumns.set(t.name, [])
+        childColumns.get(t.name)!.push(fk.from)
+      }
+    }
+    for (const [child, columns] of childColumns) {
+      extra.push({
+        countSql: `SELECT COUNT(*) FROM ${child} WHERE ${columns.map(c => `${c} = ?`).join(' OR ')}`,
+        params: columns.map(() => id),
+        label: child,
+      })
+    }
+
+    const remove = sqlite.transaction(() => {
+      for (const c of [...checks, ...extra]) {
+        const params = 'params' in c ? (c as { params: string[] }).params : [id]
+        // COUNT(*) returns its value under the expression's own
+        // column name, so read the first column instead of
+        // assuming a "count" key that the query never sets.
+        const row = sqlite.prepare(c.countSql).get(...params) as Record<string, unknown> | undefined
+        const count = Number(Object.values(row ?? {})[0] ?? 0)
+        if (count > 0) {
+          return { ok: false as const, error: `لا يمكن الحذف النهائي — العنصر مرتبط بـ ${c.label}. عطّله بدل حذفه للحفاظ على سجل الطلبات.` }
+        }
+      }
+      for (const d of deletes) sqlite.prepare(d).run(id)
+      sqlite.prepare(`DELETE FROM ${table} WHERE id = ?`).run(id)
+      return { ok: true as const }
+    })
+    try {
+      return remove()
+    } catch (e: any) {
+      // Last resort: a constraint that slipped past the checks (e.g. a race)
+      // becomes a refusal, never a raw crash in the renderer.
+      if (e?.code === 'SQLITE_CONSTRAINT_FOREIGNKEY' || /foreign key constraint failed/i.test(String(e?.message || ''))) {
+        return { ok: false, error: 'لا يمكن الحذف النهائي — العنصر مرتبط ببيانات أخرى. عطّله بدل حذفه.' }
+      }
+      throw e
+    }
+  }
+
+  ipcMain.handle('session:setUser', (_e, user: { id: string; role: string } | null) => {
+    sessionUser = user
+  })
+  ipcMain.handle('session:clearUser', () => {
+    sessionUser = null
+  })
+
   // ═══════════════════════════════════════════════════════════
   // SETTINGS
   // ═══════════════════════════════════════════════════════════
   ipcMain.handle('settings:get', () =>
     db.select().from(settings).where(eq(settings.id, 'settings')).get()
-    || { id: 'settings', deliveryFee: 25, taxRate: 0.14, restaurantName: 'فاست فود', currency: 'EGP' }
+    || { id: 'settings', deliveryFee: 25, taxRate: 0.14, restaurantName: 'Crunch Time', currency: 'EGP' }
   )
 
-  ipcMain.handle('settings:update', (_e, data: any) => {
+  ipcMain.handle('settings:update', async (e, data: any) => {
+    requireAdmin()
+    if (data.autoPrintReceipt === true) {
+      const available = await e.sender.getPrintersAsync()
+      if (available.length === 0) throw new Error('لا توجد طابعات متاحة لتفعيل طباعة الإيصال التلقائية.')
+    }
+    if (data.autoPrintKitchen === true) {
+      const available = await e.sender.getPrintersAsync()
+      const availableNames = new Set(available.map((printer: any) => printer.name))
+      const configuredStation = db.select({ id: kitchenStations.id })
+        .from(kitchenStations)
+        .where(and(eq(kitchenStations.active, true), sql`${kitchenStations.id} <> 'st-receipt'`))
+        .all()
+        .some((station: any) => {
+          const row = db.select({ printerName: kitchenStations.printerName })
+            .from(kitchenStations)
+            .where(eq(kitchenStations.id, station.id)).get()
+          return Boolean(row?.printerName && availableNames.has(row.printerName))
+        })
+      if (!configuredStation) {
+        throw new Error('أضف محطة مطبخ نشطة واربطها بطابعة متاحة حالياً قبل تفعيل الطباعة التلقائية للمطبخ.')
+      }
+    }
+    if (data.receiptPrinter) {
+      const available = await e.sender.getPrintersAsync()
+      if (!available.some((printer: any) => printer.name === data.receiptPrinter)) {
+        throw new Error('طابعة الإيصال غير متاحة حالياً. حدّث قائمة الطابعات واختر طابعة ظاهرة.')
+      }
+    }
     const existing = db.select().from(settings).where(eq(settings.id, 'settings')).get()
     if (existing) {
       db.update(settings).set(data).where(eq(settings.id, 'settings')).run()
@@ -326,18 +493,24 @@ export function registerIpcHandlers() {
   )
 
   ipcMain.handle('discountCode:create', (_e, data: any) => {
+    requireAdmin()
     const id = uuid()
     db.insert(discountCodes).values({ id, ...data, active: true, usedCount: 0 }).run()
     return { id }
   })
 
   ipcMain.handle('discountCode:update', (_e, id: string, data: any) => {
+    requireAdmin()
     db.update(discountCodes).set(data).where(eq(discountCodes.id, id)).run()
     return { ok: true }
   })
 
-  ipcMain.handle('discountCode:delete', (_e, id: string) => {
-    db.delete(discountCodes).where(eq(discountCodes.id, id)).run()
+ipcMain.handle('discountCode:delete', (_e, id: string, opts?: { hard?: boolean }) => {
+    requireAdmin()
+    if (opts?.hard) return hardDelete('discount_codes', id)
+    const row = db.select({ id: discountCodes.id }).from(discountCodes).where(eq(discountCodes.id, id)).get()
+    if (!row) return { ok: false, error: 'كود الخصم غير موجود' }
+    db.update(discountCodes).set({ active: false }).where(eq(discountCodes.id, id)).run()
     return { ok: true }
   })
 
@@ -367,6 +540,7 @@ export function registerIpcHandlers() {
   })
 
   ipcMain.handle('deliveryZone:create', (_e, data: any) => {
+    requireAdmin()
     const id = uuid()
     const maxSort = db.select({ sort: deliveryZones.sortOrder }).from(deliveryZones).orderBy(desc(deliveryZones.sortOrder)).limit(1).get()
     db.insert(deliveryZones).values({
@@ -380,6 +554,7 @@ export function registerIpcHandlers() {
   })
 
   ipcMain.handle('deliveryZone:update', (_e, id: string, data: any) => {
+    requireAdmin()
     const update: any = {}
     if (data.name !== undefined) update.name = String(data.name).trim()
     if (data.fee !== undefined) update.fee = Number(data.fee) || 0
@@ -389,15 +564,59 @@ export function registerIpcHandlers() {
     return { ok: true }
   })
 
-  ipcMain.handle('deliveryZone:delete', (_e, id: string) => {
+  ipcMain.handle('deliveryZone:delete', (_e, id: string, opts?: { hard?: boolean }) => {
+    requireAdmin()
+    if (opts?.hard) {
+      return hardDelete('delivery_zones', id, [
+        { countSql: 'SELECT COUNT(*) FROM orders WHERE delivery_zone_id = ?', label: 'طلبات سابقة' },
+      ])
+    }
+    const row = db.select({ id: deliveryZones.id }).from(deliveryZones).where(eq(deliveryZones.id, id)).get()
+    if (!row) return { ok: false, error: 'منطقة التوصيل غير موجودة' }
     db.update(deliveryZones).set({ active: false }).where(eq(deliveryZones.id, id)).run()
     return { ok: true }
   })
 
   ipcMain.handle('deliveryZone:reorder', (_e: any, ids: string[]) => {
+    requireAdmin()
     ids.forEach((id, i) => {
       db.update(deliveryZones).set({ sortOrder: i }).where(eq(deliveryZones.id, id)).run()
     })
+    return { ok: true }
+  })
+
+  // ═══════════════════════════════════════════════════════════
+  // DELIVERY PROFILES (delivery boys)
+  // ═══════════════════════════════════════════════════════════
+  ipcMain.handle('deliveryProfile:list', (_e, includeInactive?: boolean) => {
+    if (includeInactive) return db.select().from(deliveryProfiles).all()
+    return db.select().from(deliveryProfiles).where(eq(deliveryProfiles.active, true)).all()
+  })
+  ipcMain.handle('deliveryProfile:create', (_e, data: any) => {
+    requireAdmin()
+    const id = uuid()
+    db.insert(deliveryProfiles).values({ id, name: data.name, phone: data.phone || null, active: true }).run()
+    return { id }
+  })
+  ipcMain.handle('deliveryProfile:update', (_e, id: string, data: any) => {
+    requireAdmin()
+    const update: any = {}
+    if (data.name !== undefined) update.name = String(data.name).trim()
+    if (data.phone !== undefined) update.phone = data.phone || null
+    if (data.active !== undefined) update.active = data.active
+    db.update(deliveryProfiles).set(update).where(eq(deliveryProfiles.id, id)).run()
+    return { ok: true }
+  })
+  ipcMain.handle('deliveryProfile:delete', (_e, id: string, opts?: { hard?: boolean }) => {
+    requireAdmin()
+    if (opts?.hard) {
+      return hardDelete('delivery_profiles', id, [
+        { countSql: 'SELECT COUNT(*) FROM orders WHERE delivery_profile_id = ?', label: 'طلبات سابقة' },
+      ])
+    }
+    const row = db.select({ id: deliveryProfiles.id }).from(deliveryProfiles).where(eq(deliveryProfiles.id, id)).get()
+    if (!row) return { ok: false, error: 'مندوب التوصيل غير موجود' }
+    db.update(deliveryProfiles).set({ active: false }).where(eq(deliveryProfiles.id, id)).run()
     return { ok: true }
   })
 
@@ -419,7 +638,7 @@ export function registerIpcHandlers() {
   })
 
   ipcMain.handle('printer:test', async (_e, deviceName?: string) => {
-    const html = `<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="UTF-8"><style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:monospace;text-align:center;padding:12px}hr{border:none;border-top:2px dashed #000;margin:8px 0}</style></head><body><h2>🍔 فاست فود</h2><p>صفحة اختبار الطباعة</p><hr><p>الطابعة: ${(deviceName || 'الافتراضية')}</p><p>${new Date().toLocaleString('ar-EG')}</p><p>لو شايف الورقة دي يبقى كله تمام ✅</p></body></html>`
+    const html = `<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="UTF-8"><style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:monospace;text-align:center;padding:12px}hr{border:none;border-top:2px dashed #000;margin:8px 0}</style></head><body><h2>Crunch Time</h2><p>صفحة اختبار الطباعة</p><hr><p>الطابعة: ${(deviceName || 'الافتراضية')}</p><p>${new Date().toLocaleString('ar-EG')}</p><p>لو شايف الورقة دي يبقى كله تمام</p></body></html>`
     return silentPrint(html, deviceName, 1, '80mm')
   })
 
@@ -437,12 +656,52 @@ export function registerIpcHandlers() {
     return rows.map((s: any) => ({ ...s, categoryIds: byStation.get(s.id) || [] }))
   })
 
-  ipcMain.handle('station:create', (_e, data: any) => {
+  async function validateStationPrinter(event: { sender: { getPrintersAsync: () => Promise<any[]> } }, printerName: string | null | undefined, stationId?: string) {
+    if (!printerName) return
+    const available = await event.sender.getPrintersAsync()
+    if (!available.some((printer: any) => printer.name === printerName)) {
+      throw new Error('الطابعة المختارة غير متاحة حالياً. حدّث قائمة الطابعات واختر طابعة ظاهرة.')
+    }
+    const duplicate = db.select({ id: kitchenStations.id, name: kitchenStations.name })
+      .from(kitchenStations)
+      .where(and(eq(kitchenStations.printerName, printerName), eq(kitchenStations.active, true)))
+      .all()
+      .find((station: any) => stationId ? station.id !== stationId : true)
+    if (duplicate) {
+      throw new Error(`الطابعة مستخدمة بالفعل في محطة «${duplicate.name}». اختار طابعة مختلفة حتى لا يتكرر نفس الطلب.`)
+    }
+  }
+
+  function validateStationCategories(categoryIds: unknown, stationId?: string) {
+    if (!Array.isArray(categoryIds)) return
+    const ids = categoryIds.map(String)
+    if (new Set(ids).size !== ids.length) {
+      throw new Error('لا يمكن تكرار نفس القسم داخل المحطة.')
+    }
+    const existingLinks = db.select({ stationId: stationCategories.stationId, categoryId: stationCategories.categoryId })
+      .from(stationCategories)
+      .all()
+    const conflict = existingLinks.find((link: any) => ids.includes(link.categoryId) && link.stationId !== stationId)
+    if (conflict) {
+      const owner = db.select({ name: kitchenStations.name }).from(kitchenStations)
+        .where(and(eq(kitchenStations.id, conflict.stationId), eq(kitchenStations.active, true))).get()
+      if (owner) {
+        throw new Error(`القسم مرتبط بالفعل بمحطة «${owner.name}». انقله أولاً قبل حفظ هذه المحطة.`)
+      }
+    }
+  }
+
+  ipcMain.handle('station:create', async (e, data: any) => {
+    requireAdmin()
+    const name = String(data.name || '').trim()
+    if (!name) throw new Error('اكتب اسم المحطة أولاً.')
+    await validateStationPrinter(e, data.printerName || null)
+    validateStationCategories(data.categoryIds)
     const id = uuid()
     const maxSort = db.select({ sort: kitchenStations.sortOrder }).from(kitchenStations).orderBy(desc(kitchenStations.sortOrder)).limit(1).get()
     db.insert(kitchenStations).values({
       id,
-      name: String(data.name || 'محطة').trim(),
+      name,
       printerName: data.printerName || null,
       paperWidth: data.paperWidth || '80mm',
       sortOrder: (Number(maxSort?.sort) || 0) + 1,
@@ -456,7 +715,11 @@ export function registerIpcHandlers() {
     return { id }
   })
 
-  ipcMain.handle('station:update', (_e, id: string, data: any) => {
+  ipcMain.handle('station:update', async (e, id: string, data: any) => {
+    requireAdmin()
+    if (data.name !== undefined && !String(data.name).trim()) throw new Error('اسم المحطة لا يمكن أن يكون فارغاً.')
+    if (data.printerName !== undefined) await validateStationPrinter(e, data.printerName || null, id)
+    validateStationCategories(data.categoryIds, id)
     const update: any = {}
     if (data.name !== undefined) update.name = String(data.name).trim()
     if (data.printerName !== undefined) update.printerName = data.printerName || null
@@ -475,7 +738,18 @@ export function registerIpcHandlers() {
     return { ok: true }
   })
 
-  ipcMain.handle('station:delete', (_e, id: string) => {
+  ipcMain.handle('station:delete', (_e, id: string, opts?: { hard?: boolean }) => {
+    requireAdmin()
+    if (opts?.hard) {
+      return hardDelete(
+        'kitchen_stations',
+        id,
+        [],
+        ['DELETE FROM station_categories WHERE station_id = ?'],
+      )
+    }
+    const row = db.select({ id: kitchenStations.id }).from(kitchenStations).where(eq(kitchenStations.id, id)).get()
+    if (!row) return { ok: false, error: 'محطة المطبخ غير موجودة' }
     db.update(kitchenStations).set({ active: false }).where(eq(kitchenStations.id, id)).run()
     return { ok: true }
   })
@@ -486,9 +760,11 @@ export function registerIpcHandlers() {
     const prods = db.select().from(products).all() as any[]
     const pMap = new Map(prods.map((p: any) => [p.id, p]))
     const stations = db.select().from(kitchenStations).where(eq(kitchenStations.active, true)).orderBy(kitchenStations.sortOrder).all() as any[]
+    const activeStationIds = new Set(stations.map((station: any) => station.id))
     const links = db.select().from(stationCategories).all() as any[]
     const catToStation = new Map<string, string>()
     for (const l of links) {
+      if (!activeStationIds.has(l.stationId)) continue
       if (!catToStation.has(l.categoryId)) catToStation.set(l.categoryId, l.stationId)
     }
     const activeStations = stations.filter((s: any) => s.id !== 'st-receipt')
@@ -512,17 +788,23 @@ export function registerIpcHandlers() {
   )
 
   ipcMain.handle('expense:create', (_e, data: any) => {
+    requireAdmin()
     const id = uuid()
     db.insert(expenses).values({ id, ...data, active: true }).run()
     return { id }
   })
 
   ipcMain.handle('expense:update', (_e, id: string, data: any) => {
+    requireAdmin()
     db.update(expenses).set(data).where(eq(expenses.id, id)).run()
     return { ok: true }
   })
 
-  ipcMain.handle('expense:delete', (_e, id: string) => {
+  ipcMain.handle('expense:delete', (_e, id: string, opts?: { hard?: boolean }) => {
+    requireAdmin()
+    if (opts?.hard) return hardDelete('expenses', id)
+    const row = db.select({ id: expenses.id }).from(expenses).where(eq(expenses.id, id)).get()
+    if (!row) return { ok: false, error: 'المصروف غير موجود' }
     db.update(expenses).set({ active: false }).where(eq(expenses.id, id)).run()
     return { ok: true }
   })
@@ -537,29 +819,59 @@ export function registerIpcHandlers() {
   // CATEGORIES
   // ═══════════════════════════════════════════════════════════
   ipcMain.handle('category:list', () =>
-    db.select().from(categories).where(eq(categories.active, true)).orderBy(categories.sortOrder)
+    db.select().from(categories).where(eq(categories.active, true)).orderBy(categories.sortOrder, categories.name)
   )
 
   ipcMain.handle('category:create', (_e, data: any) => {
+    requireAdmin()
     const id = uuid()
-    db.insert(categories).values({ id, ...data, active: true }).run()
+    const maxOrderRow = db.select({ max: sql<number>`COALESCE(MAX(sort_order), 0)` }).from(categories).get()
+    const maxOrder = maxOrderRow?.max ?? 0
+    const sortOrder = typeof data.sortOrder === 'number' && !isNaN(data.sortOrder) ? data.sortOrder : maxOrder + 1
+    db.insert(categories).values({ id, ...data, sortOrder, active: true }).run()
     return { id }
   })
 
   ipcMain.handle('category:update', (_e, id: string, data: any) => {
+    requireAdmin()
     db.update(categories).set(data).where(eq(categories.id, id)).run()
     return { ok: true }
   })
 
-  ipcMain.handle('category:delete', (_e, id: string) => {
-    db.update(categories).set({ active: false }).where(eq(categories.id, id)).run()
-    return { ok: true }
+  ipcMain.handle('category:delete', (_e, id: string, opts?: { hard?: boolean }) => {
+    requireAdmin()
+    const sqlite = getSqlite()
+    if (opts?.hard) {
+      return hardDelete(
+        'categories',
+        id,
+        [{ countSql: 'SELECT COUNT(*) FROM products WHERE category_id = ?', label: 'منتجات' }],
+        ['DELETE FROM station_categories WHERE category_id = ?'],
+      )
+    }
+    const removeCategory = sqlite.transaction(() => {
+      const category = sqlite.prepare('SELECT id FROM categories WHERE id = ?').get(id) as { id: string } | undefined
+      if (!category) return { ok: false, error: 'القسم غير موجود' }
+      const activeProductsCount = (sqlite.prepare('SELECT COUNT(*) AS count FROM products WHERE category_id = ? AND active = 1').get(id) as { count: number }).count
+      if (activeProductsCount > 0) {
+        return { ok: false, error: 'لا يمكن تعطيل القسم وفيه منتجات نشطة. عطّل المنتجات أولاً.' }
+      }
+      sqlite.prepare('UPDATE categories SET active = 0 WHERE id = ?').run(id)
+      sqlite.prepare('DELETE FROM station_categories WHERE category_id = ?').run(id)
+      return { ok: true }
+    })
+    return removeCategory()
   })
 
   ipcMain.handle('category:reorder', (_e: any, ids: string[]) => {
-    ids.forEach((id, i) => {
-      db.update(categories).set({ sortOrder: i }).where(eq(categories.id, id)).run()
-    })
+    requireAdmin()
+    const sqlite = getSqlite()
+    const updateOrder = sqlite.prepare('UPDATE categories SET sort_order = ? WHERE id = ?')
+    sqlite.transaction(() => {
+      ids.forEach((id, i) => {
+        updateOrder.run(i + 1, id)
+      })
+    })()
     return { ok: true }
   })
 
@@ -579,18 +891,37 @@ export function registerIpcHandlers() {
   )
 
   ipcMain.handle('product:create', (_e, data: any) => {
+    requireAdmin()
     const id = uuid()
     db.insert(products).values({ id, ...data, active: true }).run()
     return { id }
   })
 
   ipcMain.handle('product:update', (_e, id: string, data: any) => {
+    requireAdmin()
     db.update(products).set(data).where(eq(products.id, id)).run()
     return { ok: true }
   })
 
-  ipcMain.handle('product:delete', (_e, id: string) => {
+  ipcMain.handle('product:delete', (_e, id: string, opts?: { hard?: boolean }) => {
+    requireAdmin()
+    if (opts?.hard) {
+      return hardDelete(
+        'products',
+        id,
+        [{ countSql: 'SELECT COUNT(*) FROM order_items WHERE product_id = ?', label: 'طلبات سابقة' }],
+        [
+          'DELETE FROM product_addons WHERE product_id = ?',
+          'DELETE FROM product_modifier_groups WHERE product_id = ?',
+          'DELETE FROM recipes WHERE product_id = ?',
+        ],
+      )
+    }
+    const row = db.select({ id: products.id }).from(products).where(eq(products.id, id)).get()
+    if (!row) return { ok: false, error: 'المنتج غير موجود' }
     db.update(products).set({ active: false }).where(eq(products.id, id)).run()
+    db.delete(productAddons).where(eq(productAddons.productId, id)).run()
+    db.delete(productModifierGroups).where(eq(productModifierGroups.productId, id)).run()
     return { ok: true }
   })
 
@@ -602,18 +933,32 @@ export function registerIpcHandlers() {
   )
 
   ipcMain.handle('addon:create', (_e, data: any) => {
+    requireAdmin()
     const id = uuid()
     db.insert(addons).values({ id, ...data, active: true }).run()
     return { id }
   })
 
   ipcMain.handle('addon:update', (_e, id: string, data: any) => {
+    requireAdmin()
     db.update(addons).set(data).where(eq(addons.id, id)).run()
     return { ok: true }
   })
 
-  ipcMain.handle('addon:delete', (_e, id: string) => {
+  ipcMain.handle('addon:delete', (_e, id: string, opts?: { hard?: boolean }) => {
+    requireAdmin()
+    if (opts?.hard) {
+      return hardDelete(
+        'addons',
+        id,
+        [{ countSql: 'SELECT COUNT(*) FROM addon_recipes WHERE addon_id = ?', label: 'وصفات' }],
+        ['DELETE FROM product_addons WHERE addon_id = ?'],
+      )
+    }
+    const row = db.select({ id: addons.id }).from(addons).where(eq(addons.id, id)).get()
+    if (!row) return { ok: false, error: 'الإضافة غير موجودة' }
     db.update(addons).set({ active: false }).where(eq(addons.id, id)).run()
+    db.delete(productAddons).where(eq(productAddons.addonId, id)).run()
     return { ok: true }
   })
 
@@ -625,11 +970,13 @@ export function registerIpcHandlers() {
   )
 
   ipcMain.handle('addon:linkToProduct', (_e, productId: string, addonId: string) => {
+    requireAdmin()
     db.insert(productAddons).values({ productId, addonId }).run()
     return { ok: true }
   })
 
   ipcMain.handle('addon:setProductLinks', (_e, productId: string, addonIds: string[]) => {
+    requireAdmin()
     db.delete(productAddons).where(eq(productAddons.productId, productId)).run()
     for (const addonId of addonIds) {
       db.insert(productAddons).values({ productId, addonId }).run()
@@ -640,6 +987,7 @@ export function registerIpcHandlers() {
   ipcMain.handle('addon:listRecipes', (_e, addonId: string) => listRecipeRows('addon_recipes', 'addon_id', addonId))
 
   ipcMain.handle('addon:upsertRecipe', (_e, data: any) => {
+    requireAdmin()
     if (data.id) {
       db.update(addonRecipes).set({ ingredientId: data.ingredientId ?? null, subRecipeId: data.subRecipeId ?? null, quantityPerUnit: data.quantityPerUnit })
         .where(eq(addonRecipes.id, data.id)).run()
@@ -651,6 +999,9 @@ export function registerIpcHandlers() {
   })
 
   ipcMain.handle('addon:deleteRecipe', (_e, id: string) => {
+    requireAdmin()
+    const row = db.select({ id: addonRecipes.id }).from(addonRecipes).where(eq(addonRecipes.id, id)).get()
+    if (!row) return { ok: false, error: 'ارتباط الوصفة غير موجود' }
     db.delete(addonRecipes).where(eq(addonRecipes.id, id)).run()
     return { ok: true }
   })
@@ -663,18 +1014,38 @@ export function registerIpcHandlers() {
   )
 
   ipcMain.handle('modifier:createGroup', (_e, data: any) => {
+    requireAdmin()
     const id = uuid()
     db.insert(modifierGroups).values({ id, ...data, active: true }).run()
     return { id }
   })
 
   ipcMain.handle('modifier:updateGroup', (_e, id: string, data: any) => {
+    requireAdmin()
     db.update(modifierGroups).set(data).where(eq(modifierGroups.id, id)).run()
     return { ok: true }
   })
 
-  ipcMain.handle('modifier:deleteGroup', (_e, id: string) => {
+  ipcMain.handle('modifier:deleteGroup', (_e, id: string, opts?: { hard?: boolean }) => {
+    requireAdmin()
+    if (opts?.hard) {
+      // Member modifiers carry their own recipes; if any exist the
+      // group is history-linked and must be refused, not cascaded.
+      return hardDelete(
+        'modifier_groups',
+        id,
+        [{ countSql: 'SELECT COUNT(*) FROM modifier_recipes WHERE modifier_id IN (SELECT id FROM modifiers WHERE modifier_group_id = ?)', label: 'وصفات خيارات' }],
+        [
+          'DELETE FROM product_modifier_groups WHERE modifier_group_id = ?',
+          'DELETE FROM modifiers WHERE modifier_group_id = ?',
+        ],
+      )
+    }
+    const row = db.select({ id: modifierGroups.id }).from(modifierGroups).where(eq(modifierGroups.id, id)).get()
+    if (!row) return { ok: false, error: 'مجموعة الخيارات غير موجودة' }
     db.update(modifierGroups).set({ active: false }).where(eq(modifierGroups.id, id)).run()
+    db.update(modifiers).set({ active: false }).where(eq(modifiers.modifierGroupId, id)).run()
+    db.delete(productModifierGroups).where(eq(productModifierGroups.modifierGroupId, id)).run()
     return { ok: true }
   })
 
@@ -685,17 +1056,29 @@ export function registerIpcHandlers() {
   )
 
   ipcMain.handle('modifier:createModifier', (_e, data: any) => {
+    requireAdmin()
     const id = uuid()
     db.insert(modifiers).values({ id, ...data, active: true }).run()
     return { id }
   })
 
   ipcMain.handle('modifier:updateModifier', (_e, id: string, data: any) => {
+    requireAdmin()
     db.update(modifiers).set(data).where(eq(modifiers.id, id)).run()
     return { ok: true }
   })
 
-  ipcMain.handle('modifier:deleteModifier', (_e, id: string) => {
+  ipcMain.handle('modifier:deleteModifier', (_e, id: string, opts?: { hard?: boolean }) => {
+    requireAdmin()
+    if (opts?.hard) {
+      return hardDelete(
+        'modifiers',
+        id,
+        [{ countSql: 'SELECT COUNT(*) FROM modifier_recipes WHERE modifier_id = ?', label: 'وصفات' }],
+      )
+    }
+    const row = db.select({ id: modifiers.id }).from(modifiers).where(eq(modifiers.id, id)).get()
+    if (!row) return { ok: false, error: 'الخيار غير موجود' }
     db.update(modifiers).set({ active: false }).where(eq(modifiers.id, id)).run()
     return { ok: true }
   })
@@ -718,11 +1101,13 @@ export function registerIpcHandlers() {
   })
 
   ipcMain.handle('modifier:linkToProduct', (_e, productId: string, groupId: string) => {
+    requireAdmin()
     db.insert(productModifierGroups).values({ productId, modifierGroupId: groupId }).run()
     return { ok: true }
   })
 
   ipcMain.handle('modifier:setProductLinks', (_e, productId: string, groupIds: string[]) => {
+    requireAdmin()
     db.delete(productModifierGroups).where(eq(productModifierGroups.productId, productId)).run()
     for (const groupId of groupIds) {
       db.insert(productModifierGroups).values({ productId, modifierGroupId: groupId }).run()
@@ -733,6 +1118,7 @@ export function registerIpcHandlers() {
   ipcMain.handle('modifier:listRecipes', (_e, modifierId: string) => listRecipeRows('modifier_recipes', 'modifier_id', modifierId))
 
   ipcMain.handle('modifier:upsertRecipe', (_e, data: any) => {
+    requireAdmin()
     if (data.id) {
       db.update(modifierRecipes).set({ ingredientId: data.ingredientId ?? null, subRecipeId: data.subRecipeId ?? null, quantityPerUnit: data.quantityPerUnit })
         .where(eq(modifierRecipes.id, data.id)).run()
@@ -744,6 +1130,9 @@ export function registerIpcHandlers() {
   })
 
   ipcMain.handle('modifier:deleteRecipe', (_e, id: string) => {
+    requireAdmin()
+    const row = db.select({ id: modifierRecipes.id }).from(modifierRecipes).where(eq(modifierRecipes.id, id)).get()
+    if (!row) return { ok: false, error: 'ارتباط الوصفة غير موجود' }
     db.delete(modifierRecipes).where(eq(modifierRecipes.id, id)).run()
     return { ok: true }
   })
@@ -773,20 +1162,28 @@ export function registerIpcHandlers() {
       id,
       status: 'COMPLETED',
       orderType: data.orderType,
-      tableNumber: data.tableNumber || null,
       customerName: data.customerName || null,
       customerPhone: data.customerPhone || null,
       customerAddress: data.customerAddress || null,
       deliveryAddress: data.deliveryAddress || null,
       deliveryPhone: data.deliveryPhone || null,
-      subtotal: data.subtotal,
-      tax: data.tax,
-      deliveryFee: data.deliveryFee || 0,
+      // Money is always whole pounds — never persist a float total/discount,
+      // regardless of which client (Electron IPC or in-browser mock) sent it.
+      subtotal: Math.round(Number(data.subtotal) || 0),
+      tax: Math.round(Number(data.tax) || 0),
+      deliveryFee: Math.round(Number(data.deliveryFee) || 0),
       ...resolveDeliveryZone(data.deliveryZoneId, data.deliveryZoneName),
       deliveryNote: (data.deliveryNote || '').trim() || null,
+      deliveryProfileId: data.deliveryProfileId || null,
+      deliveryProfileName: data.deliveryProfileName || null,
+      // The server derives the delivery workflow state — a client can't claim
+      // a driver it never sent, and non-delivery orders never enter it.
+      driverStatus: data.orderType === 'delivery'
+        ? (data.deliveryProfileId ? 'assigned' : 'unassigned')
+        : null,
       discountCode: data.discountCode || null,
-      discountAmount: data.discountAmount || 0,
-      total: data.total,
+      discountAmount: Math.round(Number(data.discountAmount) || 0),
+      total: Math.round(Number(data.total) || 0),
       paymentType: data.paymentType || 'cash',
       cashierName: data.cashierName || null,
       note: (data.note || '').trim() || null,
@@ -856,12 +1253,19 @@ export function registerIpcHandlers() {
   ipcMain.handle('order:list', (_e, filters?: any) => {
     const conditions = [] as any[]
     if (filters?.status) conditions.push(eq(orders.status, filters.status))
+    if (filters?.orderType) conditions.push(eq(orders.orderType, filters.orderType))
+    if (filters?.paymentType) conditions.push(eq(orders.paymentType, filters.paymentType))
     if (filters?.search) {
       const term = `%${filters.search.toLowerCase()}%`
       conditions.push(or(
         like(orders.id, term),
         like(orders.customerName, term),
         like(orders.customerPhone, term),
+        like(orders.customerAddress, term),
+        like(orders.deliveryZoneName, term),
+        like(orders.deliveryNote, term),
+        like(orders.note, term),
+        like(orders.cashierName, term),
       ))
     }
     if (filters?.from) conditions.push(gte(orders.createdAt, filters.from))
@@ -938,6 +1342,7 @@ export function registerIpcHandlers() {
   })
 
   ipcMain.handle('order:updateStatus', (_e, id: string, status: string, reason?: string) => {
+    requireAdmin()
     const order = db.select().from(orders).where(eq(orders.id, id)).get()
     if (!order) return { ok: false, error: 'الطلب غير موجود' }
     if ((status === 'CANCELLED' || status === 'REFUNDED') && (!reason || !reason.trim())) {
@@ -971,6 +1376,100 @@ export function registerIpcHandlers() {
     db.update(orders).set({ status, statusReason: reason || null, updatedAt: ts })
       .where(eq(orders.id, id)).run()
     return { ok: true }
+  })
+
+  // ─── Delivery driver workflow ─────────────────────────────
+  // Cashier *and* admin may assign: the cashier hands orders to drivers all
+  // day, so this deliberately has no requireAdmin() (unlike updateStatus).
+  ipcMain.handle('order:assignDriver', (_e, orderId: string, profileId: string) => {
+    const order = db.select().from(orders).where(eq(orders.id, orderId)).get()
+    if (!order) return { ok: false, error: 'الطلب غير موجود' }
+    if (order.orderType !== 'delivery') return { ok: false, error: 'التعيين متاح لطلبات التوصيل فقط' }
+    if (order.status === 'CANCELLED' || order.status === 'REFUNDED') {
+      return { ok: false, error: 'الطلب ملغى أو مسترد — مفيش سبب لتعيين سائق' }
+    }
+    const profile = db.select().from(deliveryProfiles).where(eq(deliveryProfiles.id, profileId)).get()
+    if (!profile) return { ok: false, error: 'الديلفري غير موجود' }
+    if (!profile.active) return { ok: false, error: 'الديلفري معطل — اختار واحد تاني' }
+
+    db.update(orders).set({
+      deliveryProfileId: profile.id,
+      deliveryProfileName: profile.name,
+      driverStatus: 'assigned',
+      updatedAt: now(),
+    }).where(eq(orders.id, orderId)).run()
+    // Receipt is released the moment a driver exists on the order.
+    return { ok: true, receiptReady: true }
+  })
+
+  // Badge feed for the الديلفري top tab — today's unresolved delivery orders
+  // only, so old backfilled rows never keep the badge lit forever. A NULL
+  // driver_status on a delivery order means the same as 'unassigned' (rows
+  // written outside order:create, e.g. by the demo seed) — count those too.
+  ipcMain.handle('order:unassignedCount', () => {
+    const today = new Date().toISOString().slice(0, 10)
+    const row = db.select({ c: sql<number>`COUNT(*)` }).from(orders)
+      .where(and(
+        eq(orders.orderType, 'delivery'),
+        sql`(${orders.driverStatus} IS NULL OR ${orders.driverStatus} = 'unassigned')`,
+        sql`${orders.status} NOT IN ('CANCELLED', 'REFUNDED')`,
+        gte(orders.createdAt, today),
+      )).get() as { c: number } | undefined
+    return Number(row?.c || 0)
+  })
+
+  ipcMain.handle('order:delete', (_e, id: string) => {
+    requireAdmin()
+    const sqlite = getSqlite()
+    const deleteOrder = sqlite.transaction(() => {
+      const order = sqlite.prepare('SELECT id, status, order_type, customer_phone, payment_type, shift_id FROM orders WHERE id = ?').get(id) as {
+        id: string
+        status: string
+        order_type: string
+        customer_phone: string | null
+        payment_type: string
+        shift_id: string | null
+      } | undefined
+      if (!order) return { ok: false, error: 'الطلب غير موجود' }
+
+      // A completed order has already consumed stock. Restore it exactly once
+      // before removing its order-linked inventory history.
+      if (order.status === 'COMPLETED') rollbackInventory(id)
+
+      // Foreign keys are enabled, so remove every direct order child first.
+      sqlite.prepare('DELETE FROM inventory_transactions WHERE reference_order_id = ?').run(id)
+      sqlite.prepare('DELETE FROM payments WHERE order_id = ?').run(id)
+      sqlite.prepare('DELETE FROM order_items WHERE order_id = ?').run(id)
+
+      // Cash movements store the order id in their note rather than a FK.
+      if (order.shift_id) {
+        sqlite.prepare(`
+          DELETE FROM cash_movements
+          WHERE shift_id = ? AND note LIKE ?
+        `).run(order.shift_id, `%طلب ${id}%`)
+      }
+
+      sqlite.prepare('DELETE FROM orders WHERE id = ?').run(id)
+
+      if (order.customer_phone) {
+        const customerPhone = order.customer_phone.replace(/\D/g, '')
+        const customer = sqlite.prepare('SELECT id FROM customers WHERE phone = ?').get(customerPhone) as { id: string } | undefined
+        if (customer) {
+          const remainingOrders = sqlite.prepare('SELECT customer_phone, created_at FROM orders WHERE customer_phone IS NOT NULL').all() as { customer_phone: string; created_at: string }[]
+          const customerOrders = remainingOrders.filter((remaining) => remaining.customer_phone.replace(/\D/g, '') === customerPhone)
+          const lastOrderAt = customerOrders.reduce<string | null>((latest, remaining) => !latest || remaining.created_at > latest ? remaining.created_at : latest, null)
+          sqlite.prepare(`
+            UPDATE customers
+            SET order_count = ?, last_order_at = ?
+            WHERE id = ?
+          `).run(customerOrders.length, lastOrderAt, customer.id)
+        }
+      }
+
+      return { ok: true }
+    })
+
+    return deleteOrder()
   })
 
   // ═══════════════════════════════════════════════════════════
@@ -1008,6 +1507,7 @@ export function registerIpcHandlers() {
   )
 
   ipcMain.handle('user:create', async (_e, data: any) => {
+    requireAdmin()
     const id = uuid()
     const pinHash = await hashPin(data.pin)
     db.insert(users).values({ id, name: data.name, pinHash, role: data.role || 'cashier', active: true, createdAt: now(), hourlyRate: data.hourlyRate || 0, commissionRate: data.commissionRate || 0 }).run()
@@ -1015,6 +1515,7 @@ export function registerIpcHandlers() {
   })
 
   ipcMain.handle('user:update', async (_e, id: string, data: any) => {
+    requireAdmin()
     const update: any = { name: data.name, role: data.role }
     if (data.pin) update.pinHash = await hashPin(data.pin)
     if (data.hourlyRate !== undefined) update.hourlyRate = Number(data.hourlyRate) || 0
@@ -1023,7 +1524,24 @@ export function registerIpcHandlers() {
     return { ok: true }
   })
 
-  ipcMain.handle('user:delete', (_e, id: string) => {
+  ipcMain.handle('user:delete', (_e, id: string, opts?: { hard?: boolean }) => {
+    requireAdmin()
+    const user = db.select({ id: users.id, role: users.role, active: users.active }).from(users).where(eq(users.id, id)).get()
+    if (!user) return { ok: false, error: 'المستخدم غير موجود' }
+    if (!user.active) return { ok: false, error: 'المستخدم معطل بالفعل' }
+    if (sessionUser?.id === id) return { ok: false, error: 'لا يمكن حذف المستخدم الحالي أثناء الجلسة' }
+    if (user.role === 'admin') {
+      const activeAdmins = db.select({ id: users.id }).from(users).where(and(eq(users.role, 'admin'), eq(users.active, true))).all()
+      if (activeAdmins.length <= 1) {
+        return { ok: false, error: 'لا يمكن حذف آخر مدير في النظام' }
+      }
+    }
+    if (opts?.hard) {
+      return hardDelete('users', id, [
+        { countSql: 'SELECT COUNT(*) FROM orders WHERE user_id = ?', label: 'طلبات سابقة' },
+        { countSql: 'SELECT COUNT(*) FROM shifts WHERE user_id = ?', label: 'ورديات' },
+      ])
+    }
     db.update(users).set({ active: false }).where(eq(users.id, id)).run()
     return { ok: true }
   })
@@ -1107,6 +1625,7 @@ export function registerIpcHandlers() {
   )
 
   ipcMain.handle('shift:list', (_e, filters?: any) => {
+    requireAdmin()
     const conditions: any[] = []
     if (filters?.userId) conditions.push(eq(shifts.userId, filters.userId))
     if (filters?.from) conditions.push(gte(shifts.startedAt, filters.from))
@@ -1121,6 +1640,7 @@ export function registerIpcHandlers() {
   // CASH DRAWER
   // ═══════════════════════════════════════════════════════════
   ipcMain.handle('cashDrawer:addMovement', (_e, data: any) => {
+    // Cashiers can add movements (no requireAdmin)
     const id = uuid()
     db.insert(cashMovements).values({
       id, shiftId: data.shiftId, type: data.type, amount: data.amount, note: data.note || null, createdAt: now(),
@@ -1128,11 +1648,13 @@ export function registerIpcHandlers() {
     return { id }
   })
 
-  ipcMain.handle('cashDrawer:listByShift', (_e, shiftId: string) =>
-    db.select().from(cashMovements).where(eq(cashMovements.shiftId, shiftId)).orderBy(cashMovements.createdAt).all()
-  )
+  ipcMain.handle('cashDrawer:listByShift', (_e, shiftId: string) => {
+    requireAdmin()
+    return db.select().from(cashMovements).where(eq(cashMovements.shiftId, shiftId)).orderBy(cashMovements.createdAt).all()
+  })
 
   ipcMain.handle('cashDrawer:reconcile', (_e, shiftId: string) => {
+    requireAdmin()
     const movs = db.select().from(cashMovements).where(eq(cashMovements.shiftId, shiftId)).all()
     const shift = db.select().from(shifts).where(eq(shifts.id, shiftId)).get()
     if (!shift) return null
@@ -1159,6 +1681,7 @@ export function registerIpcHandlers() {
   })
 
   ipcMain.handle('cashDrawer:reconcileBatch', (_e, shiftIds: string[]) => {
+    requireAdmin()
     const results: Record<string, any> = {}
     for (const shiftId of shiftIds) {
       const movs = db.select().from(cashMovements).where(eq(cashMovements.shiftId, shiftId)).all()
@@ -1179,6 +1702,7 @@ export function registerIpcHandlers() {
   })
 
   ipcMain.handle('cashDrawer:expectedCash', (_e, shiftId: string) => {
+    // Cashiers need this for closing their shift (no requireAdmin)
     const movs = db.select().from(cashMovements).where(eq(cashMovements.shiftId, shiftId)).all()
     const shift = db.select().from(shifts).where(eq(shifts.id, shiftId)).get()
     if (!shift) return null
@@ -1201,6 +1725,7 @@ export function registerIpcHandlers() {
   )
 
   ipcMain.handle('inventory:createIngredient', (_e, data: any) => {
+    requireAdmin()
     const id = uuid()
     db.insert(ingredients).values({ id, ...data, active: true }).run()
     if (Number(data?.stockQuantity) > 0) {
@@ -1212,11 +1737,41 @@ export function registerIpcHandlers() {
   })
 
   ipcMain.handle('inventory:updateIngredient', (_e, id: string, data: any) => {
+    requireAdmin()
     db.update(ingredients).set(data).where(eq(ingredients.id, id)).run()
     return { ok: true }
   })
 
-  ipcMain.handle('inventory:deleteIngredient', (_e, id: string) => {
+  ipcMain.handle('inventory:deleteIngredient', (_e, id: string, opts?: { hard?: boolean }) => {
+    requireAdmin()
+    const ingredient = db.select({ id: ingredients.id, name: ingredients.name, active: ingredients.active }).from(ingredients).where(eq(ingredients.id, id)).get()
+    if (!ingredient) return { ok: false, error: 'المادة غير موجودة' }
+
+    if (opts?.hard) {
+      return hardDelete(
+        'ingredients',
+        id,
+        [
+          { countSql: 'SELECT COUNT(*) FROM inventory_transactions WHERE ingredient_id = ?', label: 'حركات مخزون' },
+          { countSql: 'SELECT COUNT(*) FROM recipes WHERE ingredient_id = ?', label: 'وصفات منتجات' },
+          { countSql: 'SELECT COUNT(*) FROM sub_recipe_ingredients WHERE ingredient_id = ?', label: 'وصفات فرعية' },
+          { countSql: 'SELECT COUNT(*) FROM addon_recipes WHERE ingredient_id = ?', label: 'وصفات إضافات' },
+          { countSql: 'SELECT COUNT(*) FROM modifier_recipes WHERE ingredient_id = ?', label: 'وصفات خيارات' },
+          { countSql: 'SELECT COUNT(*) FROM purchase_price_history WHERE ingredient_id = ?', label: 'سجل أسعار شراء' },
+        ],
+      )
+    }
+    if (!ingredient.active) return { ok: false, error: 'المادة معطلة بالفعل' }
+
+    const usedInProductRecipes = db.select({ id: recipes.id }).from(recipes).where(eq(recipes.ingredientId, id)).limit(1).all().length > 0
+    const usedInSubRecipes = db.select({ id: subRecipeIngredients.id }).from(subRecipeIngredients).where(eq(subRecipeIngredients.ingredientId, id)).limit(1).all().length > 0
+    const usedInAddonRecipes = db.select({ id: addonRecipes.id }).from(addonRecipes).where(eq(addonRecipes.ingredientId, id)).limit(1).all().length > 0
+    const usedInModifierRecipes = db.select({ id: modifierRecipes.id }).from(modifierRecipes).where(eq(modifierRecipes.ingredientId, id)).limit(1).all().length > 0
+
+    if (usedInProductRecipes || usedInSubRecipes || usedInAddonRecipes || usedInModifierRecipes) {
+      return { ok: false, error: 'لا يمكن تعطيل المادة لأنها مستخدمة في وصفات. احذف الارتباطات أولاً.' }
+    }
+
     db.update(ingredients).set({ active: false }).where(eq(ingredients.id, id)).run()
     return { ok: true }
   })
@@ -1224,6 +1779,7 @@ export function registerIpcHandlers() {
   ipcMain.handle('inventory:listRecipes', (_e, productId: string) => listRecipeRows('recipes', 'product_id', productId))
 
   ipcMain.handle('inventory:upsertRecipe', (_e, data: any) => {
+    requireAdmin()
     if (data.id) {
       db.update(recipes).set({ ingredientId: data.ingredientId ?? null, subRecipeId: data.subRecipeId ?? null, quantityPerUnit: data.quantityPerUnit })
         .where(eq(recipes.id, data.id)).run()
@@ -1238,9 +1794,11 @@ export function registerIpcHandlers() {
   })
 
   ipcMain.handle('inventory:deleteRecipe', (_e, id: string) => {
-    const row = db.select().from(recipes).where(eq(recipes.id, id)).get()
+    requireAdmin()
+    const row = db.select({ id: recipes.id, productId: recipes.productId }).from(recipes).where(eq(recipes.id, id)).get()
+    if (!row) return { ok: false, error: 'ارتباط الوصفة غير موجود' }
     db.delete(recipes).where(eq(recipes.id, id)).run()
-    if (row?.productId) recomputeProductCost(row.productId)
+    if (row.productId) recomputeProductCost(row.productId)
     return { ok: true }
   })
 
@@ -1265,6 +1823,7 @@ export function registerIpcHandlers() {
   })
 
   ipcMain.handle('subRecipe:upsert', (_e, data: { id?: string; name: string; unit: string; active?: boolean }) => {
+    requireAdmin()
     if (data.id) {
       db.update(subRecipes).set({ name: data.name, unit: data.unit, active: data.active ?? true }).where(eq(subRecipes.id, data.id)).run()
       return { id: data.id }
@@ -1274,7 +1833,32 @@ export function registerIpcHandlers() {
     return { id }
   })
 
-  ipcMain.handle('subRecipe:delete', (_e, id: string) => {
+  ipcMain.handle('subRecipe:delete', (_e, id: string, opts?: { hard?: boolean }) => {
+    requireAdmin()
+    const row = db.select({ id: subRecipes.id, active: subRecipes.active }).from(subRecipes).where(eq(subRecipes.id, id)).get()
+    if (!row) return { ok: false, error: 'الوصفة الفرعية غير موجودة' }
+
+    if (opts?.hard) {
+      return hardDelete(
+        'sub_recipes',
+        id,
+        [
+          { countSql: 'SELECT COUNT(*) FROM recipes WHERE sub_recipe_id = ?', label: 'وصفات منتجات' },
+          { countSql: 'SELECT COUNT(*) FROM addon_recipes WHERE sub_recipe_id = ?', label: 'وصفات إضافات' },
+          { countSql: 'SELECT COUNT(*) FROM modifier_recipes WHERE sub_recipe_id = ?', label: 'وصفات خيارات' },
+        ],
+        ['DELETE FROM sub_recipe_ingredients WHERE sub_recipe_id = ?'],
+      )
+    }
+    if (!row.active) return { ok: false, error: 'الوصفة الفرعية معطلة بالفعل' }
+
+    const usedInProducts = db.select({ id: recipes.id }).from(recipes).where(eq(recipes.subRecipeId, id)).limit(1).all().length > 0
+    const usedInAddons = db.select({ id: addonRecipes.id }).from(addonRecipes).where(eq(addonRecipes.subRecipeId, id)).limit(1).all().length > 0
+    const usedInModifiers = db.select({ id: modifierRecipes.id }).from(modifierRecipes).where(eq(modifierRecipes.subRecipeId, id)).limit(1).all().length > 0
+    if (usedInProducts || usedInAddons || usedInModifiers) {
+      return { ok: false, error: 'لا يمكن تعطيل الوصفة الفرعية لأنها مرتبطة بمنتجات/إضافات/خيارات.' }
+    }
+
     db.update(subRecipes).set({ active: false }).where(eq(subRecipes.id, id)).run()
     return { ok: true }
   })
@@ -1293,6 +1877,7 @@ export function registerIpcHandlers() {
   })
 
   ipcMain.handle('subRecipe:upsertIngredient', (_e, data: { id?: string; subRecipeId: string; ingredientId: string; quantityPerUnit: number }) => {
+    requireAdmin()
     if (data.id) {
       db.update(subRecipeIngredients).set({ ingredientId: data.ingredientId, quantityPerUnit: data.quantityPerUnit })
         .where(eq(subRecipeIngredients.id, data.id)).run()
@@ -1304,6 +1889,9 @@ export function registerIpcHandlers() {
   })
 
   ipcMain.handle('subRecipe:deleteIngredient', (_e, id: string) => {
+    requireAdmin()
+    const row = db.select({ id: subRecipeIngredients.id }).from(subRecipeIngredients).where(eq(subRecipeIngredients.id, id)).get()
+    if (!row) return { ok: false, error: 'ارتباط المادة غير موجود' }
     db.delete(subRecipeIngredients).where(eq(subRecipeIngredients.id, id)).run()
     return { ok: true }
   })
@@ -1333,6 +1921,7 @@ export function registerIpcHandlers() {
   })
 
   ipcMain.handle('inventory:restock', (_e, ingredientId: string, qty: number, note?: string, opts?: { unitCost?: number; supplier?: string }) => {
+    requireAdmin()
     const unitCost = opts?.unitCost != null ? Number(opts.unitCost) : null
     const supplier = opts?.supplier?.trim() || null
     db.update(ingredients).set({ stockQuantity: sql`${ingredients.stockQuantity} + ${qty}` })
@@ -1408,6 +1997,7 @@ export function registerIpcHandlers() {
   })
 
   ipcMain.handle('inventory:recordWaste', (_e, ingredientId: string, qty: number, note?: string) => {
+    requireAdmin()
     const amount = -Math.abs(Number(qty) || 0)
     db.update(ingredients).set({ stockQuantity: sql`${ingredients.stockQuantity} + ${amount}` })
       .where(eq(ingredients.id, ingredientId)).run()
@@ -1418,6 +2008,7 @@ export function registerIpcHandlers() {
   })
 
   ipcMain.handle('inventory:adjust', (_e, ingredientId: string, delta: number, note?: string) => {
+    requireAdmin()
     const qty = Number(delta) || 0
     db.update(ingredients).set({ stockQuantity: sql`${ingredients.stockQuantity} + ${qty}` })
       .where(eq(ingredients.id, ingredientId)).run()
@@ -1436,6 +2027,7 @@ export function registerIpcHandlers() {
   // REPORTS
   // ═══════════════════════════════════════════════════════════
   ipcMain.handle('report:dailySummary', (_e, date?: string) => {
+    requireAdmin()
     const targetDate = date || new Date().toISOString().slice(0, 10)
     const s = getSqlite()
     const all = s.prepare('SELECT * FROM orders').all() as any[]
@@ -1468,6 +2060,7 @@ export function registerIpcHandlers() {
   })
 
   ipcMain.handle('report:periodSummary', (_e, from?: string, to?: string) => {
+    requireAdmin()
     const s = getSqlite()
     const allOrders = s.prepare('SELECT * FROM orders').all() as any[]
     const inRange = (o: any) => {
@@ -1504,6 +2097,7 @@ export function registerIpcHandlers() {
   })
 
   ipcMain.handle('report:profitSummary', (_e, from?: string, to?: string) => {
+    requireAdmin()
     const s = getSqlite()
     const all = (s.prepare('SELECT * FROM orders').all() as any[]).filter(o => {
       if (o.status === 'CANCELLED') return false
@@ -1543,6 +2137,7 @@ export function registerIpcHandlers() {
   })
 
   ipcMain.handle('report:hourlyBreakdown', (_e, date?: string) => {
+    requireAdmin()
     const targetDate = date || new Date().toISOString().slice(0, 10)
     const all = db.select().from(orders).all()
     const dayOrders = all.filter(o => o.createdAt.startsWith(targetDate) && o.status !== 'CANCELLED')
@@ -1557,6 +2152,7 @@ export function registerIpcHandlers() {
   })
 
   ipcMain.handle('report:topItems', (_e, limit = 10, from?: string, to?: string) => {
+    requireAdmin()
     const all = db.select().from(orderItems).all()
     const allOrders = db.select().from(orders).all()
     const validOrderIds = new Set(
@@ -1583,6 +2179,7 @@ export function registerIpcHandlers() {
   })
 
   ipcMain.handle('report:categoryRevenue', (_e, from?: string, to?: string) => {
+    requireAdmin()
     const allOrders = db.select().from(orders).all()
     const validOrderIds = new Set(
       allOrders.filter(o => {
@@ -1612,6 +2209,7 @@ export function registerIpcHandlers() {
   })
 
   ipcMain.handle('report:addonStats', (_e, from?: string, to?: string) => {
+    requireAdmin()
     const allOrders = db.select().from(orders).all()
     const validOrderIds = new Set(
       allOrders.filter(o => {
@@ -1641,6 +2239,7 @@ export function registerIpcHandlers() {
   })
 
   ipcMain.handle('report:ticketDistribution', (_e, from?: string, to?: string) => {
+    requireAdmin()
     const allOrders = db.select().from(orders).all().filter(o => {
       if (o.status === 'CANCELLED') return false
       if (from && o.createdAt < from) return false
@@ -1662,6 +2261,7 @@ export function registerIpcHandlers() {
   })
 
   ipcMain.handle('report:orderTypeSplit', (_e, from?: string, to?: string) => {
+    requireAdmin()
     const allOrders = db.select().from(orders).all().filter(o => {
       if (o.status === 'CANCELLED') return false
       if (from && o.createdAt < from) return false
@@ -1670,14 +2270,17 @@ export function registerIpcHandlers() {
     })
     const delivery = allOrders.filter(o => o.orderType === 'delivery')
     const dineIn = allOrders.filter(o => o.orderType === 'dine-in')
+    const takeaway = allOrders.filter(o => o.orderType === 'takeaway')
     const total = allOrders.length || 1
     return {
       delivery: { count: delivery.length, revenue: delivery.reduce((s, o) => s + o.total, 0), percentage: delivery.length / total * 100 },
       dineIn: { count: dineIn.length, revenue: dineIn.reduce((s, o) => s + o.total, 0), percentage: dineIn.length / total * 100 },
+      takeaway: { count: takeaway.length, revenue: takeaway.reduce((s, o) => s + o.total, 0), percentage: takeaway.length / total * 100 },
     }
   })
 
   ipcMain.handle('report:shiftReport', (_e, shiftId: string) => {
+    requireAdmin()
     const shift = db.select().from(shifts).where(eq(shifts.id, shiftId)).get()
     if (!shift) return null
     const user = db.select().from(users).where(eq(users.id, shift.userId)).get()
@@ -1707,6 +2310,7 @@ export function registerIpcHandlers() {
   })
 
   ipcMain.handle('report:shiftSummary', (_e, from?: string, to?: string) => {
+    requireAdmin()
     const conditions: any[] = []
     if (from) conditions.push(gte(shifts.startedAt, from))
     if (to) {
@@ -1794,6 +2398,7 @@ export function registerIpcHandlers() {
   })
 
   ipcMain.handle('report:laborSummary', (_e, from?: string, to?: string) => {
+    requireAdmin()
     const inRange = (ts: string) => {
       if (from && ts < from) return false
       if (to && ts > to + '\uffff') return false
@@ -1810,8 +2415,8 @@ export function registerIpcHandlers() {
     for (const u of allUsers) {
       const uShifts = allShifts.filter(x => x.userId === u.id)
       const hoursWorked = uShifts.reduce((sum, x) => {
-        if (!x.endedAt) return sum
-        return sum + (new Date(x.endedAt).getTime() - new Date(x.startedAt).getTime()) / 3600000
+        const end = x.endedAt ? new Date(x.endedAt) : new Date()
+        return sum + (end.getTime() - new Date(x.startedAt).getTime()) / 3600000
       }, 0)
       const uOrders = allOrders.filter(o => o.userId === u.id)
       const sales = uOrders.reduce((sum, o) => sum + o.total, 0)
@@ -1826,7 +2431,7 @@ export function registerIpcHandlers() {
         hourlyRate: u.hourlyRate || 0,
         commissionRate: u.commissionRate || 0,
         shiftCount: uShifts.length,
-        hoursWorked: Math.round(hoursWorked * 10) / 10,
+        hoursWorked: Math.round(hoursWorked * 100) / 100,
         orderCount: uOrders.length,
         sales,
         wage: Math.round(wage),
@@ -1845,6 +2450,7 @@ export function registerIpcHandlers() {
   })
 
   ipcMain.handle('report:voidSummary', (_e, from?: string, to?: string) => {
+    requireAdmin()
     const inRange = (ts: string) => {
       if (from && ts < from) return false
       if (to && ts > to + '\uffff') return false
@@ -1901,7 +2507,83 @@ export function registerIpcHandlers() {
     }
   })
 
+  // ─── Delivery settlement (report-only) ─────────────────────
+  // Groups a day's (or a range's) delivery orders by driver. cashTotal is the
+  // COD money that driver collected and hands over at end of day; visa is
+  // shown separately because it never passes through their hands.
+  ipcMain.handle('report:driverSummary', (_e, opts?: { from?: string; to?: string }) => {
+    requireAdmin()
+    const from = (opts?.from || new Date().toISOString().slice(0, 10)).slice(0, 10)
+    const to = (opts?.to || from).slice(0, 10)
+    const rows = db.select().from(orders).where(and(
+      eq(orders.orderType, 'delivery'),
+      gte(orders.createdAt, from),
+      lte(orders.createdAt, to + '\uffff'),
+      sql`${orders.status} NOT IN ('CANCELLED', 'REFUNDED')`,
+    )).all()
+    const profiles = db.select().from(deliveryProfiles).all()
+
+    const bucket = () => ({ orderCount: 0, cashTotal: 0, visaTotal: 0, deliveryFee: 0, total: 0 })
+    const groups = new Map<string | null, ReturnType<typeof bucket>>()
+    for (const o of rows) {
+      // null key = the بدون سائق bucket (nothing assigned yet).
+      const key = o.driverStatus === 'assigned' && o.deliveryProfileId ? o.deliveryProfileId : null
+      if (!groups.has(key)) groups.set(key, bucket())
+      const b = groups.get(key)!
+      b.orderCount++
+      b.deliveryFee += Number(o.deliveryFee) || 0
+      b.total += Number(o.total) || 0
+      if (o.paymentType === 'cash') b.cashTotal += Number(o.total) || 0
+      else b.visaTotal += Number(o.total) || 0
+    }
+
+    const named = [...groups.entries()].map(([profileId, b]) => {
+      const p = profileId ? profiles.find((x) => x.id === profileId) : null
+      const sample = rows.find((o) => (o.deliveryProfileId || null) === profileId)
+      return {
+        profileId,
+        // Fall back to the name stored on the order so a removed profile can
+        // never hide money it already collected.
+        name: p?.name || (profileId ? sample?.deliveryProfileName : 'بدون سائق') || 'ديلفري محذوف',
+        phone: p?.phone || null,
+        active: p ? p.active : false,
+        orderCount: b.orderCount,
+        cashTotal: Math.round(b.cashTotal),
+        visaTotal: Math.round(b.visaTotal),
+        deliveryFee: Math.round(b.deliveryFee),
+        total: Math.round(b.total),
+      }
+    })
+
+    const all = bucket()
+    for (const o of rows) {
+      all.orderCount++
+      all.deliveryFee += Number(o.deliveryFee) || 0
+      all.total += Number(o.total) || 0
+      if (o.paymentType === 'cash') all.cashTotal += Number(o.total) || 0
+      else all.visaTotal += Number(o.total) || 0
+    }
+
+    return {
+      from,
+      to,
+      drivers: named.filter((d) => d.profileId !== null).sort((a, b) => b.total - a.total),
+      unassigned: named.find((d) => d.profileId === null) || {
+        profileId: null, name: 'بدون سائق', phone: null, active: false,
+        orderCount: 0, cashTotal: 0, visaTotal: 0, deliveryFee: 0, total: 0,
+      },
+      totals: {
+        orderCount: all.orderCount,
+        cashTotal: Math.round(all.cashTotal),
+        visaTotal: Math.round(all.visaTotal),
+        deliveryFee: Math.round(all.deliveryFee),
+        total: Math.round(all.total),
+      },
+    }
+  })
+
   ipcMain.handle('report:revenueTrend', (_e, days = 7) => {
+    requireAdmin()
     const allOrders = db.select().from(orders).all().filter(o => o.status !== 'CANCELLED')
     const result: { date: string; revenue: number; orderCount: number }[] = []
     for (let d = days - 1; d >= 0; d--) {
@@ -1912,13 +2594,15 @@ export function registerIpcHandlers() {
     return result
   })
 
-  ipcMain.handle('report:inventoryAlerts', () =>
-    db.select().from(ingredients)
+  ipcMain.handle('report:inventoryAlerts', () => {
+    requireAdmin()
+    return db.select().from(ingredients)
       .where(and(eq(ingredients.active, true), sql`${ingredients.stockQuantity} <= ${ingredients.minStock}`))
       .all()
-  )
+  })
 
   ipcMain.handle('report:paymentMethodBreakdown', (_e, from?: string, to?: string) => {
+    requireAdmin()
     const allOrders = db.select().from(orders).all().filter(o => {
       if (o.status === 'CANCELLED') return false
       if (from && o.createdAt < from) return false
@@ -1936,6 +2620,63 @@ export function registerIpcHandlers() {
     return Object.values(methods)
   })
 
+  ipcMain.handle('report:discountSummary', (_e, from?: string, to?: string) => {
+    requireAdmin()
+    const allOrders = db.select().from(orders).all().filter(o => {
+      if (o.status === 'CANCELLED') return false
+      if (from && o.createdAt < from) return false
+      if (to && o.createdAt > to + '\uffff') return false
+      return true
+    })
+    const byCode: Record<string, { code: string; count: number; totalDiscount: number; totalRevenue: number }> = {}
+    const noDiscountOrders: typeof allOrders = []
+    for (const o of allOrders) {
+      if (o.discountCode && (o.discountAmount || 0) > 0) {
+        if (!byCode[o.discountCode]) byCode[o.discountCode] = { code: o.discountCode, count: 0, totalDiscount: 0, totalRevenue: 0 }
+        byCode[o.discountCode].count++
+        byCode[o.discountCode].totalDiscount += o.discountAmount || 0
+        byCode[o.discountCode].totalRevenue += o.total
+      } else {
+        noDiscountOrders.push(o)
+      }
+    }
+    const codes = Object.values(byCode).sort((a, b) => b.totalDiscount - a.totalDiscount)
+    const allCodes = db.select().from(discountCodes).all()
+    const codesWithRemaining = codes.map(c => {
+      const dc = allCodes.find(d => d.code === c.code)
+      return {
+        ...c,
+        avgDiscount: c.count > 0 ? c.totalDiscount / c.count : 0,
+        maxUses: dc?.maxUses || 0,
+        usedCount: dc?.usedCount || 0,
+        remaining: dc ? (dc.maxUses > 0 ? Math.max(0, dc.maxUses - dc.usedCount) : null) : null,
+        type: dc?.type || 'unknown',
+        value: dc?.value || 0,
+      }
+    })
+    const totalDiscountOrders = codes.reduce((s, c) => s + c.count, 0)
+    const totalDiscountAmount = codes.reduce((s, c) => s + c.totalDiscount, 0)
+    const totalDiscountRevenue = codes.reduce((s, c) => s + c.totalRevenue, 0)
+    const totalNoDiscountRevenue = noDiscountOrders.reduce((s, o) => s + o.total, 0)
+    return {
+      codes: codesWithRemaining,
+      summary: {
+        totalDiscountOrders,
+        totalDiscountAmount,
+        totalDiscountRevenue,
+        totalNoDiscountOrders: noDiscountOrders.length,
+        totalNoDiscountRevenue,
+        totalRevenue: totalDiscountRevenue + totalNoDiscountRevenue,
+        discountRate: allOrders.length > 0 ? (totalDiscountOrders / allOrders.length) * 100 : 0,
+        avgDiscountPerOrder: totalDiscountOrders > 0 ? totalDiscountAmount / totalDiscountOrders : 0,
+        discountToRevenueRatio: (totalDiscountRevenue + totalNoDiscountRevenue) > 0
+          ? (totalDiscountAmount / (totalDiscountRevenue + totalNoDiscountRevenue)) * 100 : 0,
+        avgOrderWithDiscount: totalDiscountOrders > 0 ? totalDiscountRevenue / totalDiscountOrders : 0,
+        avgOrderWithoutDiscount: noDiscountOrders.length > 0 ? totalNoDiscountRevenue / noDiscountOrders.length : 0,
+      },
+    }
+  })
+
   // ─── Market-resilience analytics (ABC/XYZ, turnover, PPV, trend, DIO) ──
   const ABC_XYZ_POLICIES: Record<string, string> = {
     AX: 'إعادة طلب يومية + مراقبة مستمرة',
@@ -1950,6 +2691,7 @@ export function registerIpcHandlers() {
   }
 
   ipcMain.handle('report:abcXyz', (_e, from?: string, to?: string) => {
+    requireAdmin()
     const allOrders = db.select().from(orders).all().filter(o => {
       if (o.status === 'CANCELLED') return false
       if (from && o.createdAt < from) return false
@@ -2026,6 +2768,7 @@ export function registerIpcHandlers() {
   })
 
   ipcMain.handle('report:inventoryTurnover', (_e, from?: string, to?: string) => {
+    requireAdmin()
     const s = getSqlite()
     const allOrders = db.select().from(orders).all().filter(o => {
       if (o.status === 'CANCELLED') return false
@@ -2112,6 +2855,7 @@ export function registerIpcHandlers() {
   })
 
   ipcMain.handle('report:purchasePriceVariance', (_e, from?: string, to?: string) => {
+    requireAdmin()
     const s = getSqlite()
     let where = 'WHERE 1=1'
     const params: any[] = []
@@ -2179,19 +2923,28 @@ export function registerIpcHandlers() {
   })
 
   ipcMain.handle('report:salesTrend', (_e, opts?: { days?: number; forecastDays?: number }) => {
+    requireAdmin()
     const days = Math.max(7, Math.min(90, Number(opts?.days) || 60))
     const forecastDays = Math.max(7, Math.min(90, Number(opts?.forecastDays) || 30))
-    const cutoff = new Date(Date.now() - days * 86400000).toISOString().slice(0, 10)
-    const allOrders = db.select().from(orders).all().filter(o => o.status !== 'CANCELLED' && o.createdAt >= cutoff)
+    // The 30/60/90-day averages each need their own window, so always collect a
+    // full 90 days even when the chart shows fewer — otherwise sumLast(90) over a
+    // 60-row history silently repeats the 60-day figure. REFUNDED money went back
+    // to the customer, so like every other report here it never counts as revenue.
+    const statDays = 90
+    const cutoff = new Date(Date.now() - Math.max(days, statDays) * 86400000).toISOString().slice(0, 10)
+    const allOrders = db.select().from(orders).all().filter(o => o.status !== 'CANCELLED' && o.status !== 'REFUNDED' && o.createdAt >= cutoff)
     const dayList: string[] = []
     for (let d = days - 1; d >= 0; d--) dayList.push(new Date(Date.now() - d * 86400000).toISOString().slice(0, 10))
     const daySet = new Set(dayList)
+    const statList: string[] = []
+    for (let d = statDays - 1; d >= 0; d--) statList.push(new Date(Date.now() - d * 86400000).toISOString().slice(0, 10))
+    const statSet = new Set(statList)
 
     const daily = new Map<string, { revenue: number; orderCount: number; qty: number }>()
     const orderMap = new Map(allOrders.map(o => [o.id, o]))
     for (const o of allOrders) {
       const d = o.createdAt.slice(0, 10)
-      if (!daySet.has(d)) continue
+      if (!statSet.has(d)) continue
       if (!daily.has(d)) daily.set(d, { revenue: 0, orderCount: 0, qty: 0 })
       const rec = daily.get(d)!
       rec.revenue += o.total
@@ -2215,9 +2968,12 @@ export function registerIpcHandlers() {
 
     const hRevenue = historical.reduce((sum, r) => sum + r.revenue, 0)
     const baseDailyRevenue = hRevenue / days
+    // The averages read the full 90-day series, not the chart window, so each
+    // card shows the window it names.
+    const statHistorical = statList.map(d => daily.get(d)?.revenue || 0)
     const sumLast = (n: number) => {
-      const slice = historical.slice(Math.max(0, historical.length - n))
-      return slice.reduce((acc, r) => acc + r.revenue, 0) / Math.max(1, slice.length)
+      const slice = statHistorical.slice(Math.max(0, statHistorical.length - n))
+      return slice.reduce((acc, r) => acc + r, 0) / Math.max(1, slice.length)
     }
 
     const byWeekday: Record<number, { sum: number; count: number }> = {}
@@ -2257,10 +3013,14 @@ export function registerIpcHandlers() {
         const last7 = values.slice(-7).reduce((acc, v) => acc + v, 0)
         const prior7 = values.slice(-14, -7).reduce((acc, v) => acc + v, 0)
         const trend = prior7 > 0 ? r2(((last7 - prior7) / prior7) * 100) : last7 > 0 ? 100 : 0
-        return { productId: pid, name: p.name, emoji: p.emoji, baseDailyQty: r2(baseDailyQty), last7Qty: r2(last7 / 7), trend, forecast30d: r2(baseDailyQty * 30) }
+        // 70% of last week's run rate + 30% of the long-run base: recent
+        // momentum drives the forecast without letting one spike own it.
+        const dailyQty = 0.7 * (last7 / 7) + 0.3 * baseDailyQty
+        const value30d = dailyQty * 30 * (Number(p.price) || 0)
+        return { productId: pid, name: p.name, emoji: p.emoji, baseDailyQty: r2(baseDailyQty), last7Qty: r2(last7 / 7), trend, forecast30d: r2(dailyQty * 30), value30d: r2(value30d) }
       })
       .filter((x): x is NonNullable<typeof x> => x !== null)
-      .sort((a, b) => b.baseDailyQty - a.baseDailyQty)
+      .sort((a, b) => b.value30d - a.value30d)
       .slice(0, 10)
 
     return {
@@ -2278,6 +3038,7 @@ export function registerIpcHandlers() {
   })
 
   ipcMain.handle('report:daysOnHand', () => {
+    requireAdmin()
     const s = getSqlite()
     const active = db.select().from(ingredients).where(eq(ingredients.active, true)).all()
     const cutoff = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10)

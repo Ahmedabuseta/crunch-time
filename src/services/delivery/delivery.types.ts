@@ -6,6 +6,13 @@ export interface DeliveryZone {
   active: boolean
 }
 
+export interface DeliveryProfile {
+  id: string
+  name: string
+  phone: string | null
+  active: boolean
+}
+
 export interface KitchenStation {
   id: string
   name: string

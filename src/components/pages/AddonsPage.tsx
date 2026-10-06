@@ -13,9 +13,11 @@ import { DataTable, type DataColumn } from '@/components/ui/data-table'
 import { Pagination } from '@/components/ui/pagination'
 import { useListControls } from '@/components/ui/list-controls'
 import type { ViewMode } from '@/components/ui/view-toggle'
+import { useIsAdmin } from '@/lib/use-is-admin'
 
 export function AddonsPage() {
   const addons = useAddonStore((s) => s.addons)
+  const isAdmin = useIsAdmin()
   const fetch = useAddonStore((s) => s.fetch)
   const create = useAddonStore((s) => s.create)
   const update = useAddonStore((s) => s.update)
@@ -52,9 +54,9 @@ export function AddonsPage() {
     resetForm()
   }
 
-  const handleDelete = async (a: any) => {
-    await remove(a.id)
-    toast({ title: 'تم حذف الإضافة', description: a.name, variant: 'success' })
+  const handleDelete = async (a: any, opts?: { hard?: boolean }) => {
+    await remove(a.id, opts)
+    toast({ title: opts?.hard ? 'تم الحذف النهائي للإضافة' : 'تم حذف الإضافة', description: a.name, variant: 'success' })
   }
 
   const startEdit = (a: any) => {
@@ -152,8 +154,10 @@ export function AddonsPage() {
       <ConfirmDialog
         open={!!pendingDelete}
         title="حذف الإضافة"
-        description={pendingDelete ? `سيتم حذف «${pendingDelete.name}» نهائياً.` : undefined}
-        onConfirm={() => { if (pendingDelete) { handleDelete(pendingDelete); setPendingDelete(null) } }}
+        description={pendingDelete ? `سيتم تعطيل «${pendingDelete.name}» وإخفاؤه من قوائم البيع.` : undefined}
+        allowHardDelete={isAdmin}
+        hardDeleteDescription="يحذف الإضافة ووصفاتها نهائياً. لن يمكن استرجاعه."
+        onConfirm={({ hard }) => { if (pendingDelete) { handleDelete(pendingDelete, { hard }); setPendingDelete(null) } }}
         onCancel={() => setPendingDelete(null)}
       />
     </div>

@@ -1,4 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react'
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select'
 import { createPortal } from 'react-dom'
 import { useProductStore } from '@/services/product/product.store'
 import { useCategoryStore } from '@/services/category/category.store'
@@ -19,11 +20,13 @@ import { DataTable, type DataColumn } from '@/components/ui/data-table'
 import { Pagination } from '@/components/ui/pagination'
 import { useListControls } from '@/components/ui/list-controls'
 import type { ViewMode } from '@/components/ui/view-toggle'
+import { useIsAdmin } from '@/lib/use-is-admin'
 
 type TabId = 'data' | 'recipe' | 'addons' | 'modifiers'
 
 export function ProductsPage() {
   const products = useProductStore((s) => s.products)
+  const isAdmin = useIsAdmin()
   const fetchProducts = useProductStore((s) => s.fetch)
   const createProduct = useProductStore((s) => s.create)
   const updateProduct = useProductStore((s) => s.update)
@@ -90,7 +93,7 @@ export function ProductsPage() {
 
   const handleCreate = async () => {
     if (!form.name || !form.price || !form.categoryId) return
-    const id = await createProduct({ name: form.name, emoji: form.emoji || '🍽️', price: parseFloat(form.price), categoryId: form.categoryId, description: form.description })
+    const id = await createProduct({ name: form.name, emoji: form.emoji || '', price: parseFloat(form.price), categoryId: form.categoryId, description: form.description })
     await Promise.all([
       window.api.addon.setProductLinks(id, selectedAddons),
       window.api.modifier.setProductLinks(id, selectedModGroups),
@@ -110,9 +113,9 @@ export function ProductsPage() {
     resetForm()
   }
 
-  const handleDelete = async (p: any) => {
-    await removeProduct(p.id)
-    toast({ title: 'تم حذف المنتج', description: p.name, variant: 'success' })
+  const handleDelete = async (p: any, opts?: { hard?: boolean }) => {
+    await removeProduct(p.id, opts)
+    toast({ title: opts?.hard ? 'تم الحذف النهائي للمنتج' : 'تم حذف المنتج', description: p.name, variant: 'success' })
   }
 
   const startEdit = async (p: any) => {
@@ -203,10 +206,14 @@ export function ProductsPage() {
                       <input type="number" value={form.price} onChange={e => setForm(f => ({ ...f, price: e.target.value }))} placeholder="السعر (ج.م)" className="px-4 py-3 min-h-[48px] rounded-xl bg-secondary text-base border-0 focus:ring-1 focus:ring-primary focus:outline-none" />
                     </div>
 
-                    <select value={form.categoryId} onChange={e => setForm(f => ({ ...f, categoryId: e.target.value }))} className="w-full px-4 py-3 min-h-[48px] rounded-xl bg-secondary text-base border-0 focus:ring-1 focus:ring-primary focus:outline-none">
-                      <option value="">اختر القسم</option>
-                      {categories.map(c => <option key={c.id} value={c.id}>{c.emoji} {c.name}</option>)}
-                    </select>
+                    <Select value={form.categoryId} onValueChange={v => setForm(f => ({ ...f, categoryId: v }))}>
+                      <SelectTrigger className="w-full min-h-[48px] rounded-xl bg-secondary text-base">
+                        <SelectValue placeholder="اختر القسم" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {categories.map(c => <SelectItem key={c.id} value={c.id}>{c.emoji} {c.name}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
 
                     <input value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} placeholder="الوصف" className="w-full px-4 py-3 min-h-[48px] rounded-xl bg-secondary text-base border-0 focus:ring-1 focus:ring-primary focus:outline-none" dir="rtl" />
 
@@ -479,8 +486,10 @@ export function ProductsPage() {
       <ConfirmDialog
         open={!!pendingDelete}
         title="حذف المنتج"
-        description={pendingDelete ? `سيتم حذف «${pendingDelete.name}» نهائياً.` : undefined}
-        onConfirm={() => { if (pendingDelete) { handleDelete(pendingDelete); setPendingDelete(null) } }}
+        description={pendingDelete ? `سيتم تعطيل «${pendingDelete.name}» وإخفاؤه من قوائم البيع.` : undefined}
+        allowHardDelete={isAdmin}
+        hardDeleteDescription="يحذف المنتج ووصفاته نهائياً. لن يمكن استرجاعه."
+        onConfirm={({ hard }) => { if (pendingDelete) { handleDelete(pendingDelete, { hard }); setPendingDelete(null) } }}
         onCancel={() => setPendingDelete(null)}
       />
     </div>

@@ -2,6 +2,30 @@
 
 @custom-variant dark (&:is(.dark *));
 
+@font-face {
+  font-family: 'Tajawal';
+  src: url('./assets/fonts/Tajawal-Regular.ttf') format('truetype');
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Tajawal';
+  src: url('./assets/fonts/Tajawal-Medium.ttf') format('truetype');
+  font-style: normal;
+  font-weight: 500 600;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Tajawal';
+  src: url('./assets/fonts/Tajawal-Bold.ttf') format('truetype');
+  font-style: normal;
+  font-weight: 700 900;
+  font-display: swap;
+}
+
 @keyframes slideUp {
   from { opacity: 0; transform: translateY(12px); }
   to { opacity: 1; transform: translateY(0); }
@@ -23,15 +47,16 @@
   50% { transform: scale(1.05); }
 }
 
-:root {
+/* ─── Dark mode (default) ─── */
+:root, :root.dark {
   --background: oklch(0.13 0.01 260);
   --foreground: oklch(0.95 0 0);
   --card: oklch(0.18 0.015 260);
   --card-foreground: oklch(0.95 0 0);
   --popover: oklch(0.18 0.015 260);
   --popover-foreground: oklch(0.95 0 0);
-  --primary: oklch(0.7 0.22 25);
-  --primary-foreground: oklch(0.98 0 0);
+  --primary: oklch(0.78 0.16 85);
+  --primary-foreground: oklch(0.15 0.02 85);
   --secondary: oklch(0.22 0.02 260);
   --secondary-foreground: oklch(0.9 0 0);
   --muted: oklch(0.22 0.02 260);
@@ -42,14 +67,77 @@
   --destructive-foreground: oklch(0.98 0 0);
   --border: oklch(0.26 0.02 260);
   --input: oklch(0.26 0.02 260);
+  --ring: oklch(0.78 0.16 85);
+}
+
+/* ─── Light mode ─── */
+:root.light {
+  --background: oklch(0.97 0.003 260);
+  --foreground: oklch(0.15 0.01 260);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.15 0.01 260);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.15 0.01 260);
+  --primary: oklch(0.7 0.16 85);
+  --primary-foreground: oklch(0.15 0.02 85);
+  --secondary: oklch(0.93 0.005 260);
+  --secondary-foreground: oklch(0.2 0.01 260);
+  --muted: oklch(0.93 0.005 260);
+  --muted-foreground: oklch(0.5 0.01 260);
+  --accent: oklch(0.93 0.005 260);
+  --accent-foreground: oklch(0.2 0.01 260);
+  --destructive: oklch(0.55 0.22 25);
+  --destructive-foreground: oklch(1 0 0);
+  --border: oklch(0.88 0.005 260);
+  --input: oklch(0.88 0.005 260);
+  --ring: oklch(0.7 0.16 85);
+}
+
+/* ─── Color themes (override --primary, --ring, --chart-1, --destructive) ─── */
+:root[data-color="orange"] {
+  --primary: oklch(0.7 0.22 25);
   --ring: oklch(0.7 0.22 25);
-  --radius: 0.625rem;
   --chart-1: oklch(0.7 0.22 25);
+  --destructive: oklch(0.58 0.22 25);
+}
+:root[data-color="yellow"] {
+  --primary: oklch(0.78 0.16 85);
+  --ring: oklch(0.78 0.16 85);
+  --chart-1: oklch(0.78 0.16 85);
+  --destructive: oklch(0.58 0.22 25);
+}
+:root[data-color="blue"] {
+  --primary: oklch(0.6 0.2 250);
+  --ring: oklch(0.6 0.2 250);
+  --chart-1: oklch(0.6 0.2 250);
+  --destructive: oklch(0.58 0.22 25);
+}
+:root[data-color="green"] {
+  --primary: oklch(0.65 0.2 150);
+  --ring: oklch(0.65 0.2 150);
+  --chart-1: oklch(0.65 0.2 150);
+  --destructive: oklch(0.58 0.22 25);
+}
+:root[data-color="purple"] {
+  --primary: oklch(0.6 0.2 300);
+  --ring: oklch(0.6 0.2 300);
+  --chart-1: oklch(0.6 0.2 300);
+  --destructive: oklch(0.58 0.22 25);
+}
+:root[data-color="red"] {
+  --primary: oklch(0.6 0.24 25);
+  --ring: oklch(0.6 0.24 25);
+  --chart-1: oklch(0.6 0.24 25);
+  --destructive: oklch(0.55 0.24 25);
+}
+
+:root {
+  --radius: 0.625rem;
+  --chart-1: oklch(0.78 0.16 85);
   --chart-2: oklch(0.65 0.2 150);
   --chart-3: oklch(0.6 0.18 250);
   --chart-4: oklch(0.65 0.2 300);
   --chart-5: oklch(0.7 0.22 80);
-
   --cat-burgers: oklch(0.7 0.2 25);
   --cat-pizza: oklch(0.7 0.2 50);
   --cat-chicken: oklch(0.7 0.18 80);
@@ -105,12 +193,40 @@
   @apply border-border;
 }
 
+html {
+  font-size: 16px;
+  text-rendering: optimizeLegibility;
+  -webkit-text-size-adjust: 100%;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
 body {
   @apply bg-background text-foreground;
-  font-family: 'Tajawal', sans-serif;
+  font-family: 'Tajawal', 'Noto Sans Arabic', sans-serif;
+  font-size: 1rem;
+  font-weight: 400;
+  line-height: 1.5;
+  letter-spacing: 0;
   margin: 0;
   overflow: hidden;
-  -webkit-font-smoothing: antialiased;
+  -webkit-font-smoothing: auto;
+  -moz-osx-font-smoothing: auto;
+  font-synthesis: none;
+  font-kerning: normal;
+}
+
+body,
+button,
+input,
+textarea,
+select {
+  text-rendering: optimizeLegibility;
 }
 
 /* Theme-aware scrollbars */
@@ -127,8 +243,9 @@ body {
 .touch-target { min-height: 44px; min-width: 44px; }
 .touch-input { min-height: 48px; font-size: 1rem; }
 
-/* Native date inputs: dark calendar + clickable */
+/* Native date inputs: theme-aware calendar + clickable */
 input[type="date"] { color-scheme: dark; cursor: pointer; }
+:root.light input[type="date"] { color-scheme: light; }
 input[type="date"]::-webkit-calendar-picker-indicator { cursor: pointer; opacity: 0.7; }
 
 .animate-slide-up { animation: slideUp 0.3s ease-out both; }

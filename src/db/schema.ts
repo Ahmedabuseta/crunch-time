@@ -91,8 +91,8 @@ export const orders = sqliteTable('orders', {
   id: text('id').primaryKey(),
   status: text('status').notNull().default('COMPLETED'),
   // COMPLETED | CANCELLED | REFUNDED
-  orderType: text('order_type').notNull(), // 'delivery' | 'dine-in'
-  tableNumber: text('table_number'),
+  orderType: text('order_type').notNull(), // 'delivery' | 'dine-in' | 'takeaway'
+  tableNumber: text('table_number'), // kept for legacy data
   customerName: text('customer_name'),
   customerPhone: text('customer_phone'),
   customerAddress: text('customer_address'),
@@ -104,6 +104,14 @@ export const orders = sqliteTable('orders', {
   deliveryZoneId: text('delivery_zone_id').references(() => deliveryZones.id),
   deliveryZoneName: text('delivery_zone_name'),
   deliveryNote: text('delivery_note'),
+  deliveryProfileId: text('delivery_profile_id').references(() => deliveryProfiles.id),
+  deliveryProfileName: text('delivery_profile_name'),
+  // Delivery workflow only — separate from `status` so cancel/refund/revenue
+  // logic (which filters on `status`) never sees these values.
+  // 'unassigned' = no driver yet (kitchen starts, customer receipt withheld)
+  // 'assigned'   = driver set → customer receipt may be printed
+  // null         = not a delivery order
+  driverStatus: text('driver_status'),
   discountCode: text('discount_code'),
   discountAmount: real('discount_amount').notNull().default(0),
   total: real('total').notNull(),
@@ -220,13 +228,31 @@ export const settings = sqliteTable('settings', {
   id: text('id').primaryKey(),
   deliveryFee: real('delivery_fee').notNull().default(25),
   taxRate: real('tax_rate').notNull().default(0.14),
-  restaurantName: text('restaurant_name').notNull().default('فاست فود'),
+  restaurantName: text('restaurant_name').notNull().default('Crunch Time'),
   currency: text('currency').notNull().default('EGP'),
   receiptPrinter: text('receipt_printer'),
   receiptWidth: text('receipt_width').notNull().default('80mm'), // '80mm' | '58mm'
   autoPrintReceipt: integer('auto_print_receipt', { mode: 'boolean' }).notNull().default(true),
   autoPrintKitchen: integer('auto_print_kitchen', { mode: 'boolean' }).notNull().default(true),
   kitchenCopies: integer('kitchen_copies').notNull().default(1),
+  receiptCopies: integer('receipt_copies').notNull().default(1),
+
+  // ─── Receipt branding (professional letterhead/footer) ───
+  storeTagline: text('store_tagline'),
+  storeLogo: text('store_logo'), // data URL, downscaled on upload
+  storePhone: text('store_phone'),
+  storePhone2: text('store_phone2'),
+  storeAddress: text('store_address'),
+  taxNumber: text('tax_number'), // سجل تجاري
+  vatNumber: text('vat_number'), // الرقم الضريبي
+  receiptFooter: text('receipt_footer').notNull().default('شكراً لزيارتكم'),
+  receiptTerms: text('receipt_terms'),
+  receiptSocial: text('receipt_social'),
+  currencyLabel: text('currency_label').notNull().default('ج.م'),
+  showLogo: integer('show_logo', { mode: 'boolean' }).notNull().default(true),
+  showCashier: integer('show_cashier', { mode: 'boolean' }).notNull().default(true),
+  showOrderId: integer('show_order_id', { mode: 'boolean' }).notNull().default(true),
+  showTax: integer('show_tax', { mode: 'boolean' }).notNull().default(true),
 })
 
 // ─── Kitchen Stations (print routing: categories → printer) ────
@@ -250,6 +276,14 @@ export const deliveryZones = sqliteTable('delivery_zones', {
   name: text('name').notNull(),
   fee: real('fee').notNull().default(0),
   sortOrder: integer('sort_order').notNull().default(0),
+  active: integer('active', { mode: 'boolean' }).notNull().default(true),
+})
+
+// ─── Delivery Profiles (delivery boys) ─────────────────────────
+export const deliveryProfiles = sqliteTable('delivery_profiles', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  phone: text('phone'),
   active: integer('active', { mode: 'boolean' }).notNull().default(true),
 })
 

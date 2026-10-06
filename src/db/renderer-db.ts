@@ -15,13 +15,36 @@ const T = {
   users: new Table(), shifts: new Table(), orders: new Table(), orderItems: new Table(),
   payments: new Table(), ingredients: new Table(), recipes: new Table(),
   inventoryTransactions: new Table(), cashMovements: new Table(),
-  settings: new Table(), discountCodes: new Table(), deliveryZones: new Table(), expenses: new Table(),
+  settings: new Table(), discountCodes: new Table(), deliveryZones: new Table(), deliveryProfiles: new Table(), expenses: new Table(),
   kitchenStations: new Table(), stationCategories: new Table(),
   addonRecipes: new Table(), modifierRecipes: new Table(), customers: new Table(),
+  subRecipes: new Table(), subRecipeIngredients: new Table(),
 }
 
 const uuid = () => crypto.randomUUID()
 const now = () => new Date().toISOString()
+
+// Soft-delete by default; admins can request permanent removal with { hard: true }.
+type DeleteOpts = { hard?: boolean }
+
+// Mirrors the main-process hardDelete: permanently removes the row plus its link
+// rows, refusing when historical data still points at it so reports stay intact.
+function hardDelete(
+  table: Table,
+  id: string,
+  checks: { table: Table; where: (r: Row) => boolean; label: string }[] = [],
+  linkDeletions: { table: Table; where: (r: Row) => boolean }[] = [],
+): { ok: boolean; error?: string } {
+  if (!table.get(r => r.id === id)) return { ok: false, error: 'العنصر غير موجود' }
+  for (const c of checks) {
+    if (c.table.select(c.where).length > 0) {
+      return { ok: false, error: `لا يمكن الحذف النهائي — العنصر مرتبط بـ ${c.label}. عطّله بدل حذفه للحفاظ على سجل الطلبات.` }
+    }
+  }
+  for (const d of linkDeletions) d.table.delete(d.where)
+  table.delete(r => r.id === id)
+  return { ok: true }
+}
 
 // ─── Helpers ────────────────────────────────────────────────
 function getSettings() { return T.settings.get(r => r.id === 'settings') || { deliveryFee: 25, taxRate: 0.14 } }
@@ -126,7 +149,7 @@ function deductInventory(orderId: string) {
 
 function seed() {
   // Settings
-  T.settings.insert({ id: 'settings', deliveryFee: 25, taxRate: 0.14, restaurantName: 'فاست فود', currency: 'EGP' })
+  T.settings.insert({ id: 'settings', deliveryFee: 25, taxRate: 0.14, restaurantName: 'Crunch Time', currency: 'EGP', receiptWidth: '80mm', receiptCopies: 1, receiptFooter: 'شكراً لزيارتكم', currencyLabel: 'ج.م', showLogo: true, showCashier: true, showOrderId: true, showTax: true })
 
   // Delivery zones
   T.deliveryZones.insert({ id: 'dz-near', name: 'قريب', fee: 25, sortOrder: 0, active: true })
@@ -360,6 +383,10 @@ seed()
 // API
 // ═══════════════════════════════════════════════════════════════
 export const rendererApi = {
+  session: {
+    setUser: () => {},
+    clearUser: () => {},
+  },
   settings: {
     get: () => getSettings(),
     update: (data: any) => { T.settings.update(r => r.id === 'settings', data); return { ok: true } },
@@ -368,7 +395,13 @@ export const rendererApi = {
     list: () => T.discountCodes.select(),
     create: (data: any) => { const id = uuid(); T.discountCodes.insert({ id, ...data, active: true, usedCount: 0 }); return { id } },
     update: (id: string, data: any) => { T.discountCodes.update(r => r.id === id, data); return { ok: true } },
-    delete: (id: string) => { T.discountCodes.delete(r => r.id === id); return { ok: true } },
+    delete: (id: string, opts?: DeleteOpts) => {
+      if (opts?.hard) return hardDelete(T.discountCodes, id)
+      const row = T.discountCodes.get(r => r.id === id)
+      if (!row) return { ok: false, error: 'كود الخصم غير موجود' }
+      T.discountCodes.update(r => r.id === id, { active: false })
+      return { ok: true }
+    },
     validate: (code: string) => {
       const dc = T.discountCodes.get(r => r.code.toUpperCase() === code.toUpperCase() && r.active)
       if (!dc) return { valid: false, error: 'كود غير صالح' }
@@ -386,35 +419,111 @@ export const rendererApi = {
       return { id }
     },
     update: (id: string, data: any) => { T.deliveryZones.update(r => r.id === id, data); return { ok: true } },
-    delete: (id: string) => { T.deliveryZones.update(r => r.id === id, { active: false }); return { ok: true } },
+    delete: (id: string, opts?: DeleteOpts) => {
+      if (opts?.hard) return hardDelete(T.deliveryZones, id, [{ table: T.orders, where: r => r.deliveryZoneId === id, label: 'طلبات سابقة' }])
+      const row = T.deliveryZones.get(r => r.id === id)
+      if (!row) return { ok: false, error: 'منطقة التوصيل غير موجودة' }
+      T.deliveryZones.update(r => r.id === id, { active: false })
+      return { ok: true }
+    },
     reorder: (ids: string[]) => { ids.forEach((zid, i) => T.deliveryZones.update(r => r.id === zid, { sortOrder: i })); return { ok: true } },
+  },
+  deliveryProfile: {
+    list: (includeInactive?: boolean) => includeInactive ? T.deliveryProfiles.select() : T.deliveryProfiles.select(r => r.active),
+    create: (data: any) => { const id = uuid(); T.deliveryProfiles.insert({ id, name: data.name, phone: data.phone || null, active: true }); return { id } },
+    update: (id: string, data: any) => { T.deliveryProfiles.update(r => r.id === id, data); return { ok: true } },
+    delete: (id: string, opts?: DeleteOpts) => {
+      if (opts?.hard) return hardDelete(T.deliveryProfiles, id, [{ table: T.orders, where: r => r.deliveryProfileId === id, label: 'طلبات سابقة' }])
+      const row = T.deliveryProfiles.get(r => r.id === id)
+      if (!row) return { ok: false, error: 'مندوب التوصيل غير موجود' }
+      T.deliveryProfiles.update(r => r.id === id, { active: false })
+      return { ok: true }
+    },
   },
   expense: {
     list: () => T.expenses.select(r => r.active),
     create: (data: any) => { const id = uuid(); T.expenses.insert({ id, ...data, active: true }); return { id } },
     update: (id: string, data: any) => { T.expenses.update(r => r.id === id, data); return { ok: true } },
-    delete: (id: string) => { T.expenses.update(r => r.id === id, { active: false }); return { ok: true } },
+    delete: (id: string, opts?: DeleteOpts) => {
+      if (opts?.hard) return hardDelete(T.expenses, id)
+      const row = T.expenses.get(r => r.id === id)
+      if (!row) return { ok: false, error: 'المصروف غير موجود' }
+      T.expenses.update(r => r.id === id, { active: false })
+      return { ok: true }
+    },
     totalMonthly: () => T.expenses.select(r => r.active && r.type === 'monthly').reduce((s, e) => s + e.amount, 0),
   },
   category: {
-    list: () => T.categories.select(r => r.active).sort((a, b) => a.sortOrder - b.sortOrder),
-    create: (data: any) => { const id = uuid(); T.categories.insert({ id, ...data, active: true }); return { id } },
+    list: () => T.categories.select(r => r.active).sort((a, b) => ((a.sortOrder ?? 0) - (b.sortOrder ?? 0)) || a.name.localeCompare(b.name)),
+    create: (data: any) => {
+      const id = uuid()
+      const maxOrder = Math.max(0, ...T.categories.select().map(c => c.sortOrder ?? 0))
+      const sortOrder = typeof data.sortOrder === 'number' && !isNaN(data.sortOrder) ? data.sortOrder : maxOrder + 1
+      T.categories.insert({ id, ...data, sortOrder, active: true })
+      return { id }
+    },
     update: (id: string, data: any) => { T.categories.update(r => r.id === id, data); return { ok: true } },
-    delete: (id: string) => { T.categories.update(r => r.id === id, { active: false }); return { ok: true } },
-    reorder: (ids: string[]) => { ids.forEach((id, i) => T.categories.update(r => r.id === id, { sortOrder: i })); return { ok: true } },
+    delete: (id: string, opts?: DeleteOpts) => {
+      if (opts?.hard) {
+        return hardDelete(
+          T.categories, id,
+          [{ table: T.products, where: r => r.categoryId === id, label: 'منتجات' }],
+          [{ table: T.stationCategories, where: r => r.categoryId === id }],
+        )
+      }
+      const row = T.categories.get(r => r.id === id)
+      if (!row) return { ok: false, error: 'القسم غير موجود' }
+      const activeProducts = T.products.select(r => r.categoryId === id && r.active)
+      if (activeProducts.length > 0) return { ok: false, error: 'لا يمكن تعطيل القسم وفيه منتجات نشطة. عطّل المنتجات أولاً.' }
+      T.categories.update(r => r.id === id, { active: false })
+      T.stationCategories.delete(r => r.categoryId === id)
+      return { ok: true }
+    },
+    reorder: (ids: string[]) => { ids.forEach((id, i) => T.categories.update(r => r.id === id, { sortOrder: i + 1 })); return { ok: true } },
   },
   product: {
     list: (categoryId?: string) => categoryId ? T.products.select(r => r.active && r.categoryId === categoryId) : T.products.select(r => r.active),
     getById: (id: string) => T.products.get(r => r.id === id) || null,
     create: (data: any) => { const id = uuid(); T.products.insert({ id, ...data, active: true }); return { id } },
     update: (id: string, data: any) => { T.products.update(r => r.id === id, data); return { ok: true } },
-    delete: (id: string) => { T.products.update(r => r.id === id, { active: false }); return { ok: true } },
+    delete: (id: string, opts?: DeleteOpts) => {
+      if (opts?.hard) {
+        return hardDelete(
+          T.products, id,
+          [{ table: T.orderItems, where: r => r.productId === id, label: 'طلبات سابقة' }],
+          [
+            { table: T.productAddons, where: r => r.productId === id },
+            { table: T.productModifierGroups, where: r => r.productId === id },
+            { table: T.recipes, where: r => r.productId === id },
+          ],
+        )
+      }
+      const row = T.products.get(r => r.id === id)
+      if (!row) return { ok: false, error: 'المنتج غير موجود' }
+      T.products.update(r => r.id === id, { active: false })
+      T.productAddons.delete(r => r.productId === id)
+      T.productModifierGroups.delete(r => r.productId === id)
+      return { ok: true }
+    },
   },
   addon: {
     list: () => T.addons.select(r => r.active),
     create: (data: any) => { const id = uuid(); T.addons.insert({ id, ...data, active: true }); return { id } },
     update: (id: string, data: any) => { T.addons.update(r => r.id === id, data); return { ok: true } },
-    delete: (id: string) => { T.addons.update(r => r.id === id, { active: false }); return { ok: true } },
+    delete: (id: string, opts?: DeleteOpts) => {
+      if (opts?.hard) {
+        return hardDelete(
+          T.addons, id,
+          [{ table: T.addonRecipes, where: r => r.addonId === id, label: 'وصفات' }],
+          [{ table: T.productAddons, where: r => r.addonId === id }],
+        )
+      }
+      const row = T.addons.get(r => r.id === id)
+      if (!row) return { ok: false, error: 'الإضافة غير موجودة' }
+      T.addons.update(r => r.id === id, { active: false })
+      T.productAddons.delete(r => r.addonId === id)
+      return { ok: true }
+    },
     listByProduct: (productId: string) => T.productAddons.select(r => r.productId === productId).map(l => T.addons.get(a => a.id === l.addonId)).filter(Boolean),
     linkToProduct: (productId: string, addonId: string) => { T.productAddons.insert({ productId, addonId }); return { ok: true } },
     setProductLinks: (productId: string, addonIds: string[]) => { T.productAddons.delete(r => r.productId === productId); addonIds.forEach(id => T.productAddons.insert({ productId, addonId: id })); return { ok: true } },
@@ -423,17 +532,42 @@ export const rendererApi = {
       if (data.id) { T.addonRecipes.update(r => r.id === data.id, { ingredientId: data.ingredientId, quantityPerUnit: data.quantityPerUnit }); return { id: data.id } }
       const id = uuid(); T.addonRecipes.insert({ id, addonId: data.addonId, ingredientId: data.ingredientId, quantityPerUnit: data.quantityPerUnit }); return { id }
     },
-    deleteRecipe: (id: string) => { T.addonRecipes.delete(r => r.id === id); return { ok: true } },
+    deleteRecipe: (id: string) => { if (!T.addonRecipes.get(r => r.id === id)) return { ok: false, error: 'ارتباط الوصفة غير موجود' }; T.addonRecipes.delete(r => r.id === id); return { ok: true } },
   },
   modifier: {
     listGroups: () => T.modifierGroups.select(r => r.active).sort((a, b) => a.sortOrder - b.sortOrder),
     createGroup: (data: any) => { const id = uuid(); T.modifierGroups.insert({ id, ...data, active: true }); return { id } },
     updateGroup: (id: string, data: any) => { T.modifierGroups.update(r => r.id === id, data); return { ok: true } },
-    deleteGroup: (id: string) => { T.modifierGroups.update(r => r.id === id, { active: false }); return { ok: true } },
+    deleteGroup: (id: string, opts?: DeleteOpts) => {
+      if (opts?.hard) {
+        if (!T.modifierGroups.get(r => r.id === id)) return { ok: false, error: 'مجموعة الخيارات غير موجودة' }
+        const groupModifierIds = new Set(T.modifiers.select(r => r.modifierGroupId === id).map(m => m.id))
+        if (T.modifierRecipes.select(r => groupModifierIds.has(r.modifierId)).length > 0) {
+          return { ok: false, error: 'لا يمكن الحذف النهائي — المجموعة مرتبطة بوصفات خيارات. احذف الوصفات أولاً.' }
+        }
+        T.modifierRecipes.delete(r => groupModifierIds.has(r.modifierId))
+        T.modifiers.delete(r => r.modifierGroupId === id)
+        T.productModifierGroups.delete(r => r.modifierGroupId === id)
+        T.modifierGroups.delete(r => r.id === id)
+        return { ok: true }
+      }
+      const row = T.modifierGroups.get(r => r.id === id)
+      if (!row) return { ok: false, error: 'مجموعة الخيارات غير موجودة' }
+      T.modifierGroups.update(r => r.id === id, { active: false })
+      T.modifiers.update(r => r.modifierGroupId === id, { active: false })
+      T.productModifierGroups.delete(r => r.modifierGroupId === id)
+      return { ok: true }
+    },
     listByGroup: (groupId: string) => T.modifiers.select(r => r.active && r.modifierGroupId === groupId).sort((a, b) => a.sortOrder - b.sortOrder),
     createModifier: (data: any) => { const id = uuid(); T.modifiers.insert({ id, ...data, active: true }); return { id } },
     updateModifier: (id: string, data: any) => { T.modifiers.update(r => r.id === id, data); return { ok: true } },
-    deleteModifier: (id: string) => { T.modifiers.update(r => r.id === id, { active: false }); return { ok: true } },
+    deleteModifier: (id: string, opts?: DeleteOpts) => {
+      if (opts?.hard) return hardDelete(T.modifiers, id, [{ table: T.modifierRecipes, where: r => r.modifierId === id, label: 'وصفات' }])
+      const row = T.modifiers.get(r => r.id === id)
+      if (!row) return { ok: false, error: 'الخيار غير موجود' }
+      T.modifiers.update(r => r.id === id, { active: false })
+      return { ok: true }
+    },
     listByProduct: (productId: string) => {
       const links = T.productModifierGroups.select(r => r.productId === productId)
       return links.map(l => { const g = T.modifierGroups.get(g => g.id === l.modifierGroupId); if (!g) return null; return { ...g, modifiers: T.modifiers.select(r => r.active && r.modifierGroupId === g.id).sort((a, b) => a.sortOrder - b.sortOrder) } }).filter(Boolean)
@@ -445,7 +579,7 @@ export const rendererApi = {
       if (data.id) { T.modifierRecipes.update(r => r.id === data.id, { ingredientId: data.ingredientId, quantityPerUnit: data.quantityPerUnit }); return { id: data.id } }
       const id = uuid(); T.modifierRecipes.insert({ id, modifierId: data.modifierId, ingredientId: data.ingredientId, quantityPerUnit: data.quantityPerUnit }); return { id }
     },
-    deleteRecipe: (id: string) => { T.modifierRecipes.delete(r => r.id === id); return { ok: true } },
+    deleteRecipe: (id: string) => { if (!T.modifierRecipes.get(r => r.id === id)) return { ok: false, error: 'ارتباط الوصفة غير موجود' }; T.modifierRecipes.delete(r => r.id === id); return { ok: true } },
   },
   order: {
     create: (data: any) => {
@@ -463,15 +597,25 @@ export const rendererApi = {
         : `#${Date.now().toString().slice(-6)}${Math.floor(Math.random() * 90 + 10)}`
 
       T.orders.insert({
-        id, status: 'COMPLETED', orderType: data.orderType, tableNumber: data.tableNumber || null,
+        id, status: 'COMPLETED', orderType: data.orderType,
         customerName: data.customerName || null, customerPhone: data.customerPhone || null, customerAddress: data.customerAddress || null,
-        subtotal: data.subtotal, tax: data.tax, deliveryFee,
+        // Money is always whole pounds — the mock never persists a float total.
+        subtotal: Math.round(Number(data.subtotal) || 0),
+        tax: Math.round(Number(data.tax) || 0),
+        deliveryFee: Math.round(Number(deliveryFee) || 0),
         deliveryZoneId: data.deliveryZoneId || null,
         deliveryZoneName: data.deliveryZoneName
           || T.deliveryZones.get(r => r.id === data.deliveryZoneId)?.name || null,
         deliveryNote: (data.deliveryNote || '').trim() || null,
-        discountCode: data.discountCode || null, discountAmount: data.discountAmount || 0,
-        total: data.total, paymentType: data.paymentType || 'cash',
+        deliveryProfileId: data.deliveryProfileId || null,
+        deliveryProfileName: data.deliveryProfileName || null,
+        // Same derivation as the Electron handler: the client can't claim a
+        // driver it never sent, and non-delivery orders never enter the flow.
+        driverStatus: data.orderType === 'delivery'
+          ? (data.deliveryProfileId ? 'assigned' : 'unassigned')
+          : null,
+        discountCode: data.discountCode || null, discountAmount: Math.round(Number(data.discountAmount) || 0),
+        total: Math.round(Number(data.total) || 0), paymentType: data.paymentType || 'cash',
         userId: data.userId || null, shiftId,
         cashierName: data.cashierName || null, note: (data.note || '').trim() || null, statusReason: null,
         createdAt: ts, updatedAt: ts,
@@ -573,6 +717,60 @@ export const rendererApi = {
       T.orders.update(r => r.id === id, { status, statusReason: reason || null, updatedAt: ts })
       return { ok: true }
     },
+    // Delivery workflow (see the Electron `order:assignDriver` handler).
+    assignDriver: (orderId: string, profileId: string) => {
+      const order = T.orders.get(r => r.id === orderId)
+      if (!order) return { ok: false, error: 'الطلب غير موجود' }
+      if (order.orderType !== 'delivery') return { ok: false, error: 'التعيين متاح لطلبات التوصيل فقط' }
+      if (order.status === 'CANCELLED' || order.status === 'REFUNDED') {
+        return { ok: false, error: 'الطلب ملغى أو مسترد — مفيش سبب لتعيين سائق' }
+      }
+      const profile = T.deliveryProfiles.get(r => r.id === profileId)
+      if (!profile) return { ok: false, error: 'الديلفري غير موجود' }
+      if (!profile.active) return { ok: false, error: 'الديلفري معطل — اختار واحد تاني' }
+      T.orders.update(r => r.id === orderId, {
+        deliveryProfileId: profile.id,
+        deliveryProfileName: profile.name,
+        driverStatus: 'assigned',
+        updatedAt: now(),
+      })
+      return { ok: true, receiptReady: true }
+    },
+    // Today's unresolved delivery orders — feeds the الديلفري tab badge.
+    // NULL on a delivery order means the same as 'unassigned' (mirrors the
+    // Electron handler: rows written outside order:create still count).
+    unassignedCount: () => {
+      const todayStr = new Date().toISOString().slice(0, 10)
+      return T.orders.select(r =>
+        r.orderType === 'delivery' &&
+        (r.driverStatus ?? 'unassigned') === 'unassigned' &&
+        r.status !== 'CANCELLED' &&
+        r.status !== 'REFUNDED' &&
+        (r.createdAt || '') >= todayStr
+      ).length
+    },
+    delete: (id: string) => {
+      const order = T.orders.get(r => r.id === id)
+      if (!order) return { ok: false, error: 'الطلب غير موجود' }
+      if (order.status === 'COMPLETED') rollbackInventory(id)
+      T.inventoryTransactions.delete(r => r.referenceOrderId === id)
+      T.payments.delete(r => r.orderId === id)
+      T.orderItems.delete(r => r.orderId === id)
+      if (order.shiftId) {
+        T.cashMovements.delete(r => r.shiftId === order.shiftId && String(r.note || '').includes(`طلب ${id}`))
+      }
+      T.orders.delete(r => r.id === id)
+      if (order.customerPhone) {
+        const customerPhone = String(order.customerPhone).replace(/\D/g, '')
+        const customer = T.customers.get(r => r.phone === customerPhone)
+        if (customer) {
+          const remaining = T.orders.select(r => String(r.customerPhone || '').replace(/\D/g, '') === customerPhone)
+          const latest = remaining.reduce((result, current) => !result || current.createdAt > result.createdAt ? current : result, null as Row | null)
+          T.customers.update(r => r.id === customer.id, { orderCount: remaining.length, lastOrderAt: latest?.createdAt || null })
+        }
+      }
+      return { ok: true }
+    },
   },
   payment: {
     create: (data: any) => { const id = uuid(); T.payments.insert({ id, ...data, createdAt: now() }); return { id } },
@@ -583,7 +781,23 @@ export const rendererApi = {
     list: () => T.users.select(r => r.active).map(({ pin, ...u }) => u),
     create: (data: any) => { const id = uuid(); T.users.insert({ id, ...data, active: true, createdAt: now() }); return { id } },
     update: (id: string, data: any) => { T.users.update(r => r.id === id, data); return { ok: true } },
-    delete: (id: string) => { T.users.update(r => r.id === id, { active: false }); return { ok: true } },
+    delete: (id: string, opts?: DeleteOpts) => {
+      if (opts?.hard) {
+        return hardDelete(T.users, id, [
+          { table: T.orders, where: r => r.userId === id, label: 'طلبات سابقة' },
+          { table: T.shifts, where: r => r.userId === id, label: 'ورديات' },
+        ])
+      }
+      const row = T.users.get(r => r.id === id)
+      if (!row) return { ok: false, error: 'المستخدم غير موجود' }
+      if (!row.active) return { ok: false, error: 'المستخدم معطل بالفعل' }
+      if (row.role === 'admin') {
+        const activeAdmins = T.users.select(r => r.active && r.role === 'admin')
+        if (activeAdmins.length <= 1) return { ok: false, error: 'لا يمكن حذف آخر مدير في النظام' }
+      }
+      T.users.update(r => r.id === id, { active: false })
+      return { ok: true }
+    },
     verifyPin: (id: string, pin: string) => {
       const user = T.users.get(r => r.id === id && r.active)
       if (!user) return { ok: false, error: 'المستخدم غير موجود' }
@@ -656,10 +870,36 @@ export const rendererApi = {
     listIngredients: () => T.ingredients.select(r => r.active),
     createIngredient: (data: any) => { const id = uuid(); T.ingredients.insert({ id, ...data, active: true }); return { id } },
     updateIngredient: (id: string, data: any) => { T.ingredients.update(r => r.id === id, data); return { ok: true } },
-    deleteIngredient: (id: string) => { T.ingredients.update(r => r.id === id, { active: false }); return { ok: true } },
+    deleteIngredient: (id: string, opts?: DeleteOpts) => {
+      const row = T.ingredients.get(r => r.id === id)
+      if (!row) return { ok: false, error: 'المادة غير موجودة' }
+
+      if (opts?.hard) {
+        return hardDelete(T.ingredients, id, [
+          { table: T.inventoryTransactions, where: r => r.ingredientId === id, label: 'حركات مخزون' },
+          { table: T.recipes, where: r => r.ingredientId === id, label: 'وصفات منتجات' },
+          { table: T.subRecipeIngredients, where: r => r.ingredientId === id, label: 'وصفات فرعية' },
+          { table: T.addonRecipes, where: r => r.ingredientId === id, label: 'وصفات إضافات' },
+          { table: T.modifierRecipes, where: r => r.ingredientId === id, label: 'وصفات خيارات' },
+        ])
+      }
+      if (!row.active) return { ok: false, error: 'المادة معطلة بالفعل' }
+      const used = T.recipes.select(r => r.ingredientId === id).length > 0
+        || T.subRecipeIngredients.select(r => r.ingredientId === id).length > 0
+        || T.addonRecipes.select(r => r.ingredientId === id).length > 0
+        || T.modifierRecipes.select(r => r.ingredientId === id).length > 0
+      if (used) return { ok: false, error: 'لا يمكن تعطيل المادة لأنها مستخدمة في وصفات. احذف الارتباطات أولاً.' }
+      T.ingredients.update(r => r.id === id, { active: false })
+      return { ok: true }
+    },
     listRecipes: (productId: string) => T.recipes.select(r => r.productId === productId),
     upsertRecipe: (data: any) => { if (data.id) { T.recipes.update(r => r.id === data.id, { quantityPerUnit: data.quantityPerUnit }); return { id: data.id } } const id = uuid(); T.recipes.insert({ id, ...data }); return { id } },
-    deleteRecipe: (id: string) => { T.recipes.delete(r => r.id === id); return { ok: true } },
+    deleteRecipe: (id: string) => {
+      const row = T.recipes.get(r => r.id === id)
+      if (!row) return { ok: false, error: 'ارتباط الوصفة غير موجود' }
+      T.recipes.delete(r => r.id === id)
+      return { ok: true }
+    },
     getAlerts: () => T.ingredients.select(r => r.active && r.stockQuantity <= r.minStock),
     restock: (ingredientId: string, qty: number, note?: string) => {
       const ing = T.ingredients.get(r => r.id === ingredientId); if (ing) ing.stockQuantity += qty
@@ -704,6 +944,69 @@ export const rendererApi = {
     },
   },
   report: {
+    // End-of-day delivery settlement — groups delivery orders by driver; the
+    // cash column is COD money the driver hands over (mirrors `report:driverSummary`).
+    driverSummary: (opts?: { from?: string; to?: string }) => {
+      const from = (opts?.from || new Date().toISOString().slice(0, 10)).slice(0, 10)
+      const to = (opts?.to || from).slice(0, 10)
+      const rows = T.orders.select(r =>
+        r.orderType === 'delivery' &&
+        r.status !== 'CANCELLED' && r.status !== 'REFUNDED' &&
+        (r.createdAt || '') >= from && (r.createdAt || '') <= to + '\uffff')
+      const profiles = T.deliveryProfiles.select()
+
+      const bucket = () => ({ orderCount: 0, cashTotal: 0, visaTotal: 0, deliveryFee: 0, total: 0 })
+      const groups = new Map<string | null, ReturnType<typeof bucket>>()
+      for (const o of rows) {
+        const key = o.driverStatus === 'assigned' && o.deliveryProfileId ? o.deliveryProfileId : null
+        if (!groups.has(key)) groups.set(key, bucket())
+        const b = groups.get(key)!
+        b.orderCount++
+        b.deliveryFee += Number(o.deliveryFee) || 0
+        b.total += Number(o.total) || 0
+        if (o.paymentType === 'cash') b.cashTotal += Number(o.total) || 0
+        else b.visaTotal += Number(o.total) || 0
+      }
+      const named = [...groups.entries()].map(([profileId, b]) => {
+        const p = profileId ? profiles.find(x => x.id === profileId) : null
+        const sample = rows.find(o => (o.deliveryProfileId || null) === profileId)
+        return {
+          profileId,
+          name: p?.name || (profileId ? sample?.deliveryProfileName : 'بدون سائق') || 'ديلفري محذوف',
+          phone: p?.phone || null,
+          active: p ? p.active : false,
+          orderCount: b.orderCount,
+          cashTotal: Math.round(b.cashTotal),
+          visaTotal: Math.round(b.visaTotal),
+          deliveryFee: Math.round(b.deliveryFee),
+          total: Math.round(b.total),
+        }
+      })
+      const all = bucket()
+      for (const o of rows) {
+        all.orderCount++
+        all.deliveryFee += Number(o.deliveryFee) || 0
+        all.total += Number(o.total) || 0
+        if (o.paymentType === 'cash') all.cashTotal += Number(o.total) || 0
+        else all.visaTotal += Number(o.total) || 0
+      }
+      return {
+        from,
+        to,
+        drivers: named.filter(d => d.profileId !== null).sort((a, b) => b.total - a.total),
+        unassigned: named.find(d => d.profileId === null) || {
+          profileId: null, name: 'بدون سائق', phone: null, active: false,
+          orderCount: 0, cashTotal: 0, visaTotal: 0, deliveryFee: 0, total: 0,
+        },
+        totals: {
+          orderCount: all.orderCount,
+          cashTotal: Math.round(all.cashTotal),
+          visaTotal: Math.round(all.visaTotal),
+          deliveryFee: Math.round(all.deliveryFee),
+          total: Math.round(all.total),
+        },
+      }
+    },
     dailySummary: (date?: string) => {
       const d = date || new Date().toISOString().slice(0, 10)
       const all = T.orders.select()
@@ -892,7 +1195,15 @@ if (to && o.createdAt > to + '\uffff') return false
       }
       return { ok: true }
     },
-    delete: (id: string) => { T.kitchenStations.update(r => r.id === id, { active: false }); return { ok: true } },
+    delete: (id: string, opts?: DeleteOpts) => {
+      if (opts?.hard) {
+        return hardDelete(T.kitchenStations, id, [], [{ table: T.stationCategories, where: r => r.stationId === id }])
+      }
+      const row = T.kitchenStations.get(r => r.id === id)
+      if (!row) return { ok: false, error: 'محطة المطبخ غير موجودة' }
+      T.kitchenStations.update(r => r.id === id, { active: false })
+      return { ok: true }
+    },
     routeOrder: (orderId: string) => {
       const items = T.orderItems.select(r => r.orderId === orderId)
       const pMap = new Map(T.products.select().map(p => [p.id, p]))
@@ -911,6 +1222,50 @@ if (to && o.createdAt > to + '\uffff') return false
         else unrouted.push(enriched)
       }
       return { routes: routes.filter(r => r.items.length > 0), unrouted }
+    },
+  },
+  subRecipe: {
+    listAll: () => T.subRecipes.select().map(s => ({
+      ...s,
+      ingredientCount: T.subRecipeIngredients.select(r => r.subRecipeId === s.id).length,
+    })),
+    upsert: (data: any) => {
+      if (data.id) { T.subRecipes.update(r => r.id === data.id, { name: data.name, unit: data.unit }); return { id: data.id } }
+      const id = uuid(); T.subRecipes.insert({ id, name: data.name, unit: data.unit, active: true }); return { id }
+    },
+    delete: (id: string, opts?: DeleteOpts) => {
+      const row = T.subRecipes.get(r => r.id === id)
+      if (!row) return { ok: false, error: 'الوصفة الفرعية غير موجودة' }
+
+      if (opts?.hard) {
+        return hardDelete(
+          T.subRecipes, id,
+          [
+            { table: T.recipes, where: r => r.subRecipeId === id, label: 'وصفات منتجات' },
+            { table: T.addonRecipes, where: r => r.subRecipeId === id, label: 'وصفات إضافات' },
+            { table: T.modifierRecipes, where: r => r.subRecipeId === id, label: 'وصفات خيارات' },
+          ],
+          [{ table: T.subRecipeIngredients, where: r => r.subRecipeId === id }],
+        )
+      }
+      if (!row.active) return { ok: false, error: 'الوصفة الفرعية معطلة بالفعل' }
+      const used = T.recipes.select(r => r.subRecipeId === id).length > 0
+        || T.addonRecipes.select(r => r.subRecipeId === id).length > 0
+        || T.modifierRecipes.select(r => r.subRecipeId === id).length > 0
+      if (used) return { ok: false, error: 'لا يمكن تعطيل الوصفة الفرعية لأنها مرتبطة بمنتجات/إضافات/خيارات.' }
+      T.subRecipes.update(r => r.id === id, { active: false })
+      return { ok: true }
+    },
+    listIngredients: (subRecipeId: string) => T.subRecipeIngredients.select(r => r.subRecipeId === subRecipeId),
+    upsertIngredient: (data: any) => {
+      if (data.id) { T.subRecipeIngredients.update(r => r.id === data.id, { ingredientId: data.ingredientId, quantityPerUnit: data.quantityPerUnit }); return { id: data.id } }
+      const id = uuid(); T.subRecipeIngredients.insert({ id, subRecipeId: data.subRecipeId, ingredientId: data.ingredientId, quantityPerUnit: data.quantityPerUnit }); return { id }
+    },
+    deleteIngredient: (id: string) => {
+      const row = T.subRecipeIngredients.get(r => r.id === id)
+      if (!row) return { ok: false, error: 'ارتباط المادة غير موجود' }
+      T.subRecipeIngredients.delete(r => r.id === id)
+      return { ok: true }
     },
   },
   backup: { trigger: () => ({ ok: true }), getStatus: () => ({ lastBackup: null, backupCount: 0 }) },

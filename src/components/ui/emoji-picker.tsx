@@ -62,7 +62,7 @@ export function EmojiPicker({ value, onChange, className }: EmojiPickerProps) {
       </button>
 
       {open && (
-        <div className="absolute z-50 bottom-full mb-2 right-0 w-[320px] bg-card border-2 rounded-2xl shadow-xl overflow-hidden animate-slide-up">
+        <div className="absolute z-50 top-full mt-2 right-0 w-[320px] bg-card border-2 rounded-2xl shadow-xl overflow-hidden animate-slide-up">
           {/* Category tabs */}
           <div className="flex overflow-x-auto border-b px-2 pt-2 gap-1">
             {EMOJI_CATEGORIES.map((cat, i) => (

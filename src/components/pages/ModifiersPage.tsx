@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useState } from 'react'
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select'
 import { useModifierStore } from '@/services/modifier/modifier.store'
 import { useInventoryStore } from '@/services/inventory/inventory.store'
 import { RecipePanel } from './RecipePanel'
@@ -12,9 +13,11 @@ import { toast } from '@/components/ui/toast'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { fmtMoney } from '@/lib/format'
 import type { ViewMode } from '@/components/ui/view-toggle'
+import { useIsAdmin } from '@/lib/use-is-admin'
 
 export function ModifiersPage() {
   const groups = useModifierStore((s) => s.groups)
+  const isAdmin = useIsAdmin()
   const fetchGroups = useModifierStore((s) => s.fetchGroups)
   const createGroup = useModifierStore((s) => s.createGroup)
   const updateGroup = useModifierStore((s) => s.updateGroup)
@@ -119,10 +122,15 @@ export function ModifiersPage() {
         <div className="mx-5 mt-4 p-4 border-2 rounded-2xl bg-card space-y-3 animate-slide-up">
           <div className="grid grid-cols-2 gap-3">
             <input value={groupForm.name} onChange={e => setGroupForm(f => ({ ...f, name: e.target.value }))} placeholder="اسم المجموعة" className="px-3 py-2 rounded-xl bg-secondary text-sm border-0 focus:ring-1 focus:ring-primary focus:outline-none" dir="rtl" />
-            <select value={groupForm.type} onChange={e => setGroupForm(f => ({ ...f, type: e.target.value }))} className="px-3 py-2 rounded-xl bg-secondary text-sm border-0 focus:ring-1 focus:ring-primary focus:outline-none">
-              <option value="single-select">اختيار واحد</option>
-              <option value="multi-select">اختيار متعدد</option>
-            </select>
+            <Select value={groupForm.type} onValueChange={v => setGroupForm(f => ({ ...f, type: v }))}>
+              <SelectTrigger className="rounded-xl">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="single-select">اختيار واحد</SelectItem>
+                <SelectItem value="multi-select">اختيار متعدد</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
           <div className="flex gap-2">
             <Button className="flex-1 rounded-xl" onClick={editGroupId ? handleUpdateGroup : handleCreateGroup}>{editGroupId ? 'تحديث' : 'إضافة'}</Button>
@@ -242,11 +250,21 @@ export function ModifiersPage() {
       <ConfirmDialog
         open={!!pendingDelete}
         title={pendingDelete?.kind === 'group' ? 'حذف المجموعة' : 'حذف الخيار'}
-        description={pendingDelete ? `سيتم حذف «${pendingDelete.item.name}» نهائياً.` : undefined}
-        onConfirm={() => {
+        description={pendingDelete ? `سيتم تعطيل «${pendingDelete.item.name}» وإخفاءه من شاشة البيع.` : undefined}
+        allowHardDelete={isAdmin}
+        hardDeleteDescription="يحذف العنصر نهائياً من قاعدة البيانات. لن يمكن استرجاعه."
+        onConfirm={({ hard }) => {
           if (!pendingDelete) return
-          if (pendingDelete.kind === 'group') { removeGroup(pendingDelete.item.id); toast({ title: 'تم حذف المجموعة', variant: 'success' }) }
-          else { removeModifier(pendingDelete.item.id); toast({ title: 'تم حذف الخيار', variant: 'success' }) }
+          const opts = { hard }
+          if (pendingDelete.kind === 'group') {
+            removeGroup(pendingDelete.item.id, opts)
+              .then(() => toast({ title: hard ? 'تم الحذف النهائي للمجموعة' : 'تم حذف المجموعة', variant: 'success' }))
+              .catch((e: Error) => toast({ title: e.message, variant: 'error' }))
+          } else {
+            removeModifier(pendingDelete.item.id, opts)
+              .then(() => toast({ title: hard ? 'تم الحذف النهائي للخيار' : 'تم حذف الخيار', variant: 'success' }))
+              .catch((e: Error) => toast({ title: e.message, variant: 'error' }))
+          }
           setPendingDelete(null)
         }}
         onCancel={() => setPendingDelete(null)}

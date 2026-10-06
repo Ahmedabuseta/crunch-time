@@ -1,15 +1,14 @@
 import { useState, useRef, useEffect } from 'react'
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select'
 import { useCartStore } from '@/services/cart/cart.store'
 import { useCustomerStore } from '@/services/customer/customer.store'
-import { useDeliveryStore } from '@/services/delivery/delivery.store'
+import { useDeliveryStore, useProfileStore } from '@/services/delivery/delivery.store'
 import { cn } from '@/lib/utils'
-import { Truck, UtensilsCrossed, MapPin, Phone, User, Clock, StickyNote, ChevronDown } from 'lucide-react'
+import { Truck, UtensilsCrossed, ShoppingBag, MapPin, Phone, User, Clock, StickyNote } from 'lucide-react'
 
 export function OrderTypeSelector() {
   const orderType = useCartStore((s) => s.orderType)
   const setOrderType = useCartStore((s) => s.setOrderType)
-  const tableNumber = useCartStore((s) => s.tableNumber)
-  const setTableNumber = useCartStore((s) => s.setTableNumber)
   const deliveryAddress = useCartStore((s) => s.deliveryAddress)
   const setDeliveryAddress = useCartStore((s) => s.setDeliveryAddress)
   const deliveryPhone = useCartStore((s) => s.deliveryPhone)
@@ -20,8 +19,13 @@ export function OrderTypeSelector() {
   const setDeliveryZoneId = useCartStore((s) => s.setDeliveryZoneId)
   const deliveryNote = useCartStore((s) => s.deliveryNote)
   const setDeliveryNote = useCartStore((s) => s.setDeliveryNote)
+  const deliveryProfileId = useCartStore((s) => s.deliveryProfileId)
+  const setDeliveryProfileId = useCartStore((s) => s.setDeliveryProfileId)
+  const setDeliveryProfileName = useCartStore((s) => s.setDeliveryProfileName)
   const zones = useDeliveryStore((s) => s.zones)
   const fetchZones = useDeliveryStore((s) => s.fetch)
+  const profiles = useProfileStore((s) => s.profiles)
+  const fetchProfiles = useProfileStore((s) => s.fetch)
   const suggestions = useCustomerStore((s) => s.suggestions)
   const searchCustomers = useCustomerStore((s) => s.search)
   const clearSuggestions = useCustomerStore((s) => s.clearSuggestions)
@@ -29,13 +33,15 @@ export function OrderTypeSelector() {
   const [showSuggestions, setShowSuggestions] = useState(false)
   const phoneRef = useRef<HTMLDivElement>(null)
 
-  useEffect(() => { fetchZones() }, [])
+  useEffect(() => { fetchZones(); fetchProfiles() }, [])
   const activeZones = zones.filter((z) => z.active)
+  const activeProfiles = profiles.filter((p) => p.active)
   const selectedZone = activeZones.find((z) => z.id === deliveryZoneId)
 
   const types = [
     { id: 'delivery' as const, label: 'توصيل', icon: Truck },
     { id: 'dine-in' as const, label: 'صالة', icon: UtensilsCrossed },
+    { id: 'takeaway' as const, label: 'تيك أوي', icon: ShoppingBag },
   ]
 
   const handlePhoneChange = (value: string) => {
@@ -72,15 +78,28 @@ export function OrderTypeSelector() {
         ))}
       </div>
 
-      {orderType === 'dine-in' && (
-        <div className="animate-slide-up">
-          <input type="text" placeholder="رقم الطاولة" value={tableNumber} onChange={e => setTableNumber(e.target.value)}
-            className={inputCls} dir="rtl" />
-        </div>
-      )}
-
       {orderType === 'delivery' && (
         <div className="space-y-1.5 animate-slide-up">
+          {/* Delivery boy selector */}
+          {activeProfiles.length > 0 && (
+            <div className="relative">
+              <User className={iconCls} />
+              <Select value={deliveryProfileId} onValueChange={(id) => {
+                setDeliveryProfileId(id)
+                const p = activeProfiles.find(pr => pr.id === id)
+                if (p) setDeliveryProfileName(p.name)
+              }}>
+                <SelectTrigger className={cn(inputCls, !deliveryProfileId && "text-muted-foreground")}>
+                  <SelectValue placeholder="اختار الديلفري…" />
+                </SelectTrigger>
+                <SelectContent>
+                  {activeProfiles.map(p => (
+                    <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
           <div className="relative">
             <User className={iconCls} />
             <input type="text" placeholder="اسم العميل" value={customerName} onChange={e => setCustomerName(e.target.value)} autoComplete="name"
@@ -122,14 +141,16 @@ export function OrderTypeSelector() {
           {activeZones.length > 0 && (
             <div className="relative">
               <Truck className={iconCls} />
-              <select value={deliveryZoneId} onChange={e => setDeliveryZoneId(e.target.value)}
-                className={cn(inputCls, "appearance-none cursor-pointer", !deliveryZoneId && "text-muted-foreground")}>
-                <option value="">اختار المنطقة…</option>
-                {activeZones.map(z => (
-                  <option key={z.id} value={z.id}>{z.name} — {z.fee} ج.م</option>
-                ))}
-              </select>
-              <ChevronDown className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+              <Select value={deliveryZoneId} onValueChange={setDeliveryZoneId}>
+                <SelectTrigger className={cn(inputCls, !deliveryZoneId && "text-muted-foreground")}>
+                  <SelectValue placeholder="اختار المنطقة…" />
+                </SelectTrigger>
+                <SelectContent>
+                  {activeZones.map(z => (
+                    <SelectItem key={z.id} value={z.id}>{z.name} — {z.fee} ج.م</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           )}
           {selectedZone && (
@@ -143,6 +164,18 @@ export function OrderTypeSelector() {
             <input type="text" placeholder="ملاحظة للدليفري… (الاتصال قبل الوصول، الدور الثالث…)" value={deliveryNote} onChange={e => setDeliveryNote(e.target.value)}
               className={inputCls} dir="rtl" />
           </div>
+        </div>
+      )}
+
+      {orderType === 'dine-in' && (
+        <div className="animate-slide-up text-xs text-muted-foreground text-center py-2">
+          طلب صالة
+        </div>
+      )}
+
+      {orderType === 'takeaway' && (
+        <div className="animate-slide-up text-xs text-muted-foreground text-center py-2">
+          طلب تيك أوي — يتجهز ويتاخد
         </div>
       )}
     </div>

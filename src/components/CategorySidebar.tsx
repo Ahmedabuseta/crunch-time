@@ -1,3 +1,4 @@
+import { useMemo } from 'react'
 import { useCategoryStore } from '@/services/category/category.store'
 import { cn } from '@/lib/utils'
 
@@ -8,6 +9,10 @@ interface CategorySidebarProps {
 
 export function CategorySidebar({ selected, onSelect }: CategorySidebarProps) {
   const categories = useCategoryStore((s) => s.categories)
+  const sortedCategories = useMemo(
+    () => [...categories].sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0)),
+    [categories]
+  )
 
   return (
     <div className="flex shrink-0 bg-card border-l max-md:w-full max-md:border-l-0 max-md:border-b md:flex-col md:w-[170px]">
@@ -27,7 +32,7 @@ export function CategorySidebar({ selected, onSelect }: CategorySidebarProps) {
           <span className="text-lg sm:text-xl md:text-2xl">📋</span>
           <span className="max-[420px]:hidden">الكل</span>
         </button>
-        {categories.map((cat) => (
+        {sortedCategories.map((cat) => (
           <button
             key={cat.id}
             onClick={() => onSelect(cat.id)}

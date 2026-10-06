@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useUserStore } from '@/services/user/user.store'
 import { cn } from '@/lib/utils'
+import { Logo } from '@/components/Logo'
 import { Delete } from 'lucide-react'
 
 interface LoginPageProps {
@@ -56,6 +57,27 @@ export function LoginPage({ onLogin }: LoginPageProps) {
 
   useEffect(() => { fetchUsers() }, [])
 
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (loading) return
+      if (e.key >= '0' && e.key <= '9') { handleDigit(e.key); return }
+      if (e.key === 'Backspace') { handleDelete(); return }
+      if (e.key === 'Enter') { if (pin.length >= 4 && selectedUser) handleSubmit(); return }
+      // Arrow keys to switch user
+      if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && users.length > 0) {
+        const idx = users.findIndex(u => u.id === selectedUser)
+        const next = e.key === 'ArrowRight'
+          ? (idx + 1) % users.length
+          : (idx - 1 + users.length) % users.length
+        setSelectedUser(users[next].id)
+        setPin('')
+        setError('')
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [pin, selectedUser, loading, users])
+
   const handleDigit = (d: string) => {
     if (pin.length < 4) {
       setPin(pin + d)
@@ -78,9 +100,8 @@ export function LoginPage({ onLogin }: LoginPageProps) {
 
   return (
     <div
-      className="flex h-screen w-screen items-center justify-center relative overflow-hidden"
+      className="flex h-screen w-screen items-center justify-center relative overflow-hidden bg-background"
       dir="rtl"
-      style={{ backgroundColor: 'oklch(0.145 0.01 260)' }}
     >
       {/* WhatsApp-style patterned background */}
       <div
@@ -89,7 +110,7 @@ export function LoginPage({ onLogin }: LoginPageProps) {
           backgroundImage: `url("${encodedPattern}")`,
           backgroundRepeat: 'repeat',
           backgroundSize: '200px 200px',
-          color: 'oklch(0.6 0.02 260)',
+          color: 'var(--border)',
         }}
       />
 
@@ -99,11 +120,10 @@ export function LoginPage({ onLogin }: LoginPageProps) {
       {/* Content */}
       <div className="relative z-10 w-[380px] space-y-6">
         {/* Logo */}
-        <div className="text-center space-y-2">
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-3xl bg-primary/10 backdrop-blur-sm">
-            <span className="text-3xl">🍔</span>
+        <div className="text-center space-y-3">
+          <div className="flex w-full justify-center">
+            <Logo size="lg" />
           </div>
-          <h1 className="text-2xl font-black">فاست فود</h1>
           <p className="text-sm text-muted-foreground">سجل دخولك بالرقم السري</p>
         </div>
 

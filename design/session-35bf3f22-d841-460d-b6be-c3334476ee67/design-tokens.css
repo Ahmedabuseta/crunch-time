@@ -1,0 +1,63 @@
+/* ipw-theme:start */
+:root {
+  /* === Core Canvas === */
+  --ipw-color-bg: #ffffff;
+  --ipw-color-surface: #f9fafb;
+  --ipw-color-text: #111827;
+  --ipw-color-muted: #6b7280;
+  --ipw-color-border: #e5e7eb;
+
+  /* === Brand Palette (Committed — blue carries the surface) === */
+  --ipw-color-primary: #2563eb;
+  --ipw-color-primary-hover: #1d4ed8;
+  --ipw-color-secondary: #7c3aed;
+  --ipw-color-accent: #10b981;
+  --ipw-color-accent-hover: #059669;
+
+  /* === Semantic === */
+  --ipw-color-success: #10b981;
+  --ipw-color-warning: #f59e0b;
+  --ipw-color-error: #ef4444;
+
+  /* === Gradients === */
+  --ipw-gradient-primary: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+  --ipw-gradient-hero: linear-gradient(135deg, #2563eb 0%, #7c3aed 100%);
+  --ipw-gradient-accent: linear-gradient(135deg, #10b981 0%, #059669 100%);
+
+  /* === Typography === */
+  --ipw-font-display: 'Syne', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --ipw-font-body: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif;
+  --ipw-font-size-xs: 0.75rem;
+  --ipw-font-size-sm: 0.875rem;
+  --ipw-font-size-base: 1rem;
+  --ipw-font-size-lg: 1.125rem;
+  --ipw-font-size-xl: 1.25rem;
+  --ipw-font-size-2xl: 1.5rem;
+  --ipw-font-size-3xl: 1.875rem;
+  --ipw-font-size-4xl: 2.25rem;
+  --ipw-font-size-5xl: 3rem;
+
+  /* === Layout === */
+  --ipw-content-width: 1240px;
+  --ipw-page-padding: 32px;
+  --ipw-section-space: 100px;
+  --ipw-section-space-sm: 72px;
+  --ipw-max-width-narrow: 720px;
+
+  /* === Surfaces === */
+  --ipw-card-bg: #ffffff;
+  --ipw-card-border: #e5e7eb;
+  --ipw-card-radius: 16px;
+  --ipw-card-radius-lg: 24px;
+  --ipw-card-shadow: 0 1px 3px rgb(0 0 0 / 8%), 0 1px 2px rgb(0 0 0 / 4%);
+  --ipw-card-shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 8%), 0 4px 6px -2px rgb(0 0 0 / 4%);
+  --ipw-card-shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 10%), 0 8px 10px -6px rgb(0 0 0 / 4%);
+
+  /* === Controls === */
+  --ipw-button-radius: 10px;
+  --ipw-button-height: 44px;
+
+  /* === Misc === */
+  --ipw-transition: all 0.25s ease;
+}
+/* ipw-theme:end */

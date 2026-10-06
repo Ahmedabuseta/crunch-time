@@ -7,7 +7,7 @@ interface AddonStore {
   fetch: () => Promise<void>
   create: (data: CreateAddonInput) => Promise<string>
   update: (id: string, data: UpdateAddonInput) => Promise<void>
-  remove: (id: string) => Promise<void>
+  remove: (id: string, opts?: { hard?: boolean }) => Promise<void>
 }
 
 export const useAddonStore = create<AddonStore>((set) => ({
@@ -31,8 +31,9 @@ export const useAddonStore = create<AddonStore>((set) => ({
     await useAddonStore.getState().fetch()
   },
 
-  remove: async (id) => {
-    await window.api.addon.delete(id)
+  remove: async (id, opts) => {
+    const result = await window.api.addon.delete(id, opts) as { ok: boolean; error?: string }
+    if (!result.ok) throw new Error(result.error || 'فشل حذف الإضافة')
     await useAddonStore.getState().fetch()
   },
 }))

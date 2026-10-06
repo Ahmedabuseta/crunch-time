@@ -20,7 +20,6 @@ export function CartItem({ item }: CartItemProps) {
   const modifierTotal = item.modifiers.reduce((s, m) => s + m.priceAdjustment, 0)
   const unitTotal = item.product.price + addonTotal + modifierTotal
   const lineTotal = unitTotal * item.quantity
-  const hasExtras = item.addons.length > 0 || item.modifiers.length > 0
 
   return (
     <div className="py-2 border-b border-border/40 last:border-0 animate-fade-in">
@@ -71,7 +70,7 @@ export function CartItem({ item }: CartItemProps) {
         </div>
       )}
 
-      {hasExtras && (
+      {(item.addons.length > 0 || item.quantity > 1) && (
         <div className="mt-1.5 mr-10 space-y-1.5 text-xs rounded-xl bg-secondary/40 p-2">
 
           {item.addons.map((addon) => (
@@ -95,23 +94,19 @@ export function CartItem({ item }: CartItemProps) {
             </div>
           ))}
 
-          {item.quantity > 1 ? (
-            <>
-              <div className="flex items-center justify-between border-t border-border/40 pt-1">
-                <span className="text-[11px] font-bold text-muted-foreground">المجموع (لكل قطعة)</span>
-                <span className="font-black">{fmtMoney(unitTotal)} ج.م</span>
-              </div>
-              <div className="flex items-center justify-between pb-1">
-                <span className="text-[11px] font-black">الإجمالي ×{item.quantity}</span>
-                <span className="font-black text-primary">{fmtMoney(lineTotal)} ج.م</span>
-              </div>
-            </>
-          ) : (
-            <div className="flex items-center justify-between border-t border-border/40 pt-1 pb-1">
-              <span className="text-[11px] font-black">الإجمالي</span>
-              <span className="font-black text-primary">{fmtMoney(lineTotal)} ج.م</span>
+          {item.quantity > 1 && (
+            <div className="flex items-center justify-between border-t border-border/40 pt-1">
+              <span className="text-[11px] font-bold text-muted-foreground">سعر القطعة</span>
+              <span className="font-black">{fmtMoney(unitTotal)} ج.م</span>
             </div>
           )}
+
+          <div className="flex items-center justify-between gap-2 rounded-lg bg-background/70 px-2 py-1.5">
+            <span className="text-[11px] font-black text-muted-foreground">
+              {item.quantity > 1 ? `الإجمالي ×${item.quantity}` : 'إجمالي الصنف'}
+            </span>
+            <span className="font-black text-primary text-sm">{fmtMoney(lineTotal)} ج.م</span>
+          </div>
         </div>
       )}
     </div>

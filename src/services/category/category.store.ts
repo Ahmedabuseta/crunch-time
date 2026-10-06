@@ -7,7 +7,7 @@ interface CategoryStore {
   fetch: () => Promise<void>
   create: (data: CreateCategoryInput) => Promise<string>
   update: (id: string, data: UpdateCategoryInput) => Promise<void>
-  remove: (id: string) => Promise<void>
+  remove: (id: string, opts?: { hard?: boolean }) => Promise<void>
   reorder: (ids: string[]) => Promise<void>
 }
 
@@ -17,8 +17,9 @@ export const useCategoryStore = create<CategoryStore>((set) => ({
 
   fetch: async () => {
     set({ loading: true })
-    const data = await window.api.category.list()
-    set({ categories: data as Category[], loading: false })
+    const data = await window.api.category.list() as Category[]
+    const sorted = [...data].sort((a, b) => ((a.sortOrder ?? 0) - (b.sortOrder ?? 0)))
+    set({ categories: sorted, loading: false })
   },
 
   create: async (data) => {
@@ -32,12 +33,25 @@ export const useCategoryStore = create<CategoryStore>((set) => ({
     await useCategoryStore.getState().fetch()
   },
 
-  remove: async (id) => {
-    await window.api.category.delete(id)
+  remove: async (id, opts) => {
+    const result = await window.api.category.delete(id, opts) as { ok: boolean; error?: string }
+    if (!result.ok) throw new Error(result.error || 'فشل حذف القسم')
     await useCategoryStore.getState().fetch()
   },
 
   reorder: async (ids) => {
+    const current = useCategoryStore.getState().categories
+    const idMap = new Map(current.map(c => [c.id, c]))
+    const newCategories: Category[] = []
+    ids.forEach((id, i) => {
+      const cat = idMap.get(id)
+      if (cat) newCategories.push({ ...cat, sortOrder: i + 1 })
+    })
+    current.forEach(c => {
+      if (!ids.includes(c.id)) newCategories.push(c)
+    })
+    set({ categories: newCategories })
+
     await window.api.category.reorder(ids)
     await useCategoryStore.getState().fetch()
   },

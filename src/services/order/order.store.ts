@@ -9,6 +9,9 @@ interface OrderStore {
   getById: (id: string) => Promise<OrderWithItems | null>
   create: (data: CreateOrderInput) => Promise<string>
   updateStatus: (id: string, status: OrderStatus, reason?: string) => Promise<void>
+  /** Assign/change a delivery driver. Cashier-accessible (no admin gate). */
+  assignDriver: (orderId: string, profileId: string) => Promise<void>
+  delete: (id: string) => Promise<void>
 }
 
 export const useOrderStore = create<OrderStore>((set) => ({
@@ -37,6 +40,18 @@ export const useOrderStore = create<OrderStore>((set) => ({
   updateStatus: async (id, status, reason?) => {
     const result = await window.api.order.updateStatus(id, status, reason) as { ok: boolean; error?: string; refundedAmount?: number }
     if (!result.ok) throw new Error(result.error || 'فشل تحديث حالة الطلب')
+    await useOrderStore.getState().fetch()
+  },
+
+  assignDriver: async (orderId, profileId) => {
+    const result = await window.api.order.assignDriver(orderId, profileId) as { ok: boolean; error?: string; receiptReady?: boolean }
+    if (!result.ok) throw new Error(result.error || 'فشل تعيين السائق')
+    await useOrderStore.getState().fetch()
+  },
+
+  delete: async (id) => {
+    const result = await window.api.order.delete(id)
+    if (!result.ok) throw new Error(result.error || 'فشل حذف الطلب')
     await useOrderStore.getState().fetch()
   },
 }))

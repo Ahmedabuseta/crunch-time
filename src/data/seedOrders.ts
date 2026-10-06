@@ -30,7 +30,7 @@ function calcTotal(items: CartItem[], isDelivery: boolean): number {
     const addonTotal = i.addons.reduce((s, a) => s + a.price, 0)
     return sum + (i.product.price + addonTotal) * i.quantity
   }, 0)
-  const tax = subtotal * 0.14
+  const tax = Math.round(subtotal * 0.14)
   const delivery = isDelivery ? 25 : 0
   return subtotal + tax + delivery
 }

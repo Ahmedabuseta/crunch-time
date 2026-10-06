@@ -12,6 +12,7 @@ import { ProductGrid } from '@/components/ProductGrid'
 import { Cart } from '@/components/Cart'
 import { CategorySidebar } from '@/components/CategorySidebar'
 import { OrderHistory } from '@/components/OrderHistory'
+import { DeliveryPage } from '@/components/pages/DeliveryPage'
 import { Reports } from '@/components/Reports'
 import { ProductsPage } from '@/components/pages/ProductsPage'
 import { CategoriesPage } from '@/components/pages/CategoriesPage'
@@ -23,9 +24,13 @@ import { ShiftsPage } from '@/components/pages/ShiftsPage'
 import { MyShiftPage } from '@/components/pages/MyShiftPage'
 import { CashDrawerPage } from '@/components/pages/CashDrawerPage'
 import { SettingsPage } from '@/components/pages/SettingsPage'
+import { Sun, Moon } from 'lucide-react'
+import { getThemeMode, setThemeMode, type ThemeMode } from '@/lib/theme'
+import { Logo } from '@/components/Logo'
 import { ShiftStatusChip } from '@/components/ShiftStatusChip'
+import { UpdateBanner } from '@/components/UpdateBanner'
 import { Toaster } from '@/components/ui/toast'
-import { LayoutGrid, Clock, Calendar, LogOut, ShoppingCart, X } from 'lucide-react'
+import { LayoutGrid, Clock, Calendar, LogOut, ShoppingCart, X, Truck } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 function App() {
@@ -34,13 +39,25 @@ function App() {
   const [page, setPage] = useState<Page>('menu')
   const [category, setCategory] = useState<string | null>(null)
   const [cartOpen, setCartOpen] = useState(false)
+  const [themeMode, setThemeModeLocal] = useState<ThemeMode>(getThemeMode)
   const cartCount = useCartStore((s) => s.itemCount)()
 
   const fetchCategories = useCategoryStore((s) => s.fetch)
   const fetchProducts = useProductStore((s) => s.fetch)
   const fetchAddons = useAddonStore((s) => s.fetch)
   const fetchOrders = useOrderStore((s) => s.fetch)
+  const orders = useOrderStore((s) => s.orders)
   const fetchAlerts = useInventoryStore((s) => s.fetchAlerts)
+  // Live count behind the الديلفري tab: today's delivery orders with no driver.
+  const [unassignedCount, setUnassignedCount] = useState(0)
+
+  const refreshUnassigned = async () => {
+    try {
+      setUnassignedCount(Number(await window.api.order.unassignedCount()) || 0)
+    } catch {
+      // The badge is cosmetic — never let it break the shell.
+    }
+  }
 
   useEffect(() => {
     if (currentUser) {
@@ -52,15 +69,26 @@ function App() {
     }
   }, [currentUser])
 
+  // Checkout, driver assignment and filtered refetches all replace `orders`,
+  // so this is the one place the badge needs to re-read its count from.
+  useEffect(() => {
+    if (currentUser) refreshUnassigned()
+  }, [orders, currentUser])
+
   if (!currentUser) {
     return <LoginPage onLogin={() => {}} />
   }
-
   const isAdmin = currentUser.role === 'admin'
+
+  const adminPages: Page[] = ['reports', 'products', 'categories', 'addons', 'modifiers', 'inventory', 'users', 'shifts', 'cash-drawer', 'settings']
+  if (!isAdmin && adminPages.includes(page)) {
+    setPage('menu')
+  }
 
   const topTabs: { id: Page; label: string; icon: typeof LayoutGrid }[] = [
     { id: 'menu', label: 'القائمة', icon: LayoutGrid },
     { id: 'orders', label: 'الطلبات', icon: Clock },
+    { id: 'delivery', label: 'الديلفري', icon: Truck },
     { id: 'my-shift', label: 'ورديتي', icon: Calendar },
   ]
 
@@ -74,6 +102,7 @@ function App() {
           </div>
         )
       case 'orders': return <OrderHistory />
+      case 'delivery': return <DeliveryPage onAssigned={refreshUnassigned} />
       case 'my-shift': return <MyShiftPage />
       case 'reports': return <Reports />
       case 'products': return <ProductsPage />
@@ -92,13 +121,11 @@ function App() {
   return (
     <div className="flex flex-col h-screen w-screen bg-background" dir="rtl">
       <Toaster />
+      <UpdateBanner />
       {/* Top Bar */}
       <div className="flex items-center justify-between gap-2 px-3 sm:px-5 py-2.5 border-b bg-card shrink-0">
         <div className="flex items-center gap-2 sm:gap-3 shrink-0">
-          <div className="w-8 h-8 rounded-xl bg-primary/10 flex items-center justify-center">
-            <span className="text-base">🍔</span>
-          </div>
-          <span className="text-sm font-black hidden min-[420px]:block">فاست فود</span>
+          <Logo size="sm" />
         </div>
 
         {/* Cashier nav tabs */}
@@ -116,6 +143,15 @@ function App() {
             >
               <Icon className="h-4 w-4" />
               <span className="max-sm:hidden">{label}</span>
+              {/* Red pill: delivery orders waiting for a driver right now */}
+              {id === 'delivery' && unassignedCount > 0 && (
+                <span className={cn(
+                  "min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-black flex items-center justify-center leading-none",
+                  page === id ? "bg-white/25 text-white" : "bg-red-500 text-white",
+                )}>
+                  {unassignedCount > 99 ? '99+' : unassignedCount}
+                </span>
+              )}
             </button>
           ))}
         </div>
@@ -143,6 +179,13 @@ function App() {
               )}
             </button>
           )}
+          <button
+            onClick={() => { const next: ThemeMode = themeMode === 'dark' ? 'light' : 'dark'; setThemeMode(next); setThemeModeLocal(next) }}
+            className="text-muted-foreground hover:text-foreground transition-colors cursor-pointer p-1"
+            title={themeMode === 'dark' ? 'الوضع الفاتح' : 'الوضع الداكن'}
+          >
+            {themeMode === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+          </button>
           <button onClick={logout} className="text-muted-foreground hover:text-destructive transition-colors cursor-pointer p-1">
             <LogOut className="h-4 w-4" />
           </button>

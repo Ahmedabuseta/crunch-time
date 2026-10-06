@@ -4,7 +4,7 @@ import { useCashDrawerStore } from '@/services/cash-drawer/cash-drawer.store'
 import { useUserStore } from '@/services/user/user.store'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { Plus, Lock, Unlock, AlertTriangle, CheckCircle, Wallet, TrendingDown, TrendingUp } from 'lucide-react'
+import { Plus, Lock, Unlock, AlertTriangle, CheckCircle, Wallet, TrendingDown, TrendingUp, ChevronDown, ChevronUp } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { fmtMoney } from '@/lib/format'
 import { ListToolbar } from '@/components/ui/list-toolbar'
@@ -37,6 +37,7 @@ export function ShiftsPage() {
   const [currentExpected, setCurrentExpected] = useState<{ expected: number; breakdown: Record<string, number> } | null>(null)
   const [openError, setOpenError] = useState('')
   const [closeWarning, setCloseWarning] = useState<{ type: 'short' | 'over'; amount: number } | null>(null)
+  const [currentShiftExpanded, setCurrentShiftExpanded] = useState(false)
 
   const loadShifts = useCallback(() => {
     const filters: Record<string, string> = {}
@@ -156,66 +157,79 @@ export function ShiftsPage() {
         )}
       </div>
 
-      {/* Current shift card */}
+      {/* Current shift card - collapsible */}
       {currentShift && (
-        <div className="mx-5 mt-4 p-4 border-2 border-green-500/30 bg-green-500/5 rounded-2xl space-y-3 animate-slide-up">
-          <div className="flex items-center gap-2">
-            <Unlock className="h-4 w-4 text-green-500" />
+        <div className="mx-5 mt-4 border-2 border-green-500/30 bg-green-500/5 rounded-2xl animate-slide-up overflow-hidden">
+          {/* Compact header - always visible */}
+          <button
+            className="w-full flex items-center gap-2 px-4 py-3 cursor-pointer hover:bg-green-500/10 transition-colors"
+            onClick={() => setCurrentShiftExpanded(!currentShiftExpanded)}
+          >
+            <Unlock className="h-4 w-4 text-green-500 shrink-0" />
             <h3 className="font-bold text-sm text-green-500">الوردية الحالية مفتوحة</h3>
-          </div>
-          <p className="text-xs text-muted-foreground">رصيد الافتتاح: <span className="font-bold text-foreground">{fmtMoney(currentShift.openingCash)} ج.م</span></p>
+            <span className="text-xs text-muted-foreground mr-auto">رصيد الافتتاح: <span className="font-bold text-foreground">{fmtMoney(currentShift.openingCash)} ج.م</span></span>
+            {currentExpected && (
+              <span className="text-xs font-bold text-blue-400">{currentExpected.expected.toFixed(0)} ج.م متوقع</span>
+            )}
+            {currentShiftExpanded ? <ChevronUp className="h-4 w-4 text-muted-foreground shrink-0" /> : <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" />}
+          </button>
 
-          {/* Expected cash display */}
-          {currentExpected && (
-            <div className="bg-blue-500/5 border border-blue-500/20 rounded-xl p-3 space-y-1">
-              <div className="flex items-center gap-1.5 text-blue-400">
-                <Wallet className="h-3.5 w-3.5" />
-                <span className="text-[11px] font-bold">المتوقع في الدرج</span>
-              </div>
-              <p className="text-lg font-black text-blue-400">{currentExpected.expected.toFixed(0)} ج.م</p>
-              {Object.keys(currentExpected.breakdown).length > 0 && (
-                <div className="text-[10px] text-muted-foreground space-y-0.5 mt-1">
-                  {Object.entries(currentExpected.breakdown).map(([type, amount]) => (
-                    <div key={type} className="flex justify-between">
-                      <span>{type === 'SALE' ? 'مبيعات' : type === 'REFUND' ? 'مرتجعات' : type === 'CASH_IN' ? 'إيداع' : type === 'CASH_OUT' ? 'سحب' : type}</span>
-                      <span className={cn("font-bold", (amount as number) >= 0 ? "text-green-400" : "text-red-400")}>
-                        {(amount as number) >= 0 ? '+' : ''}{(amount as number).toFixed(0)} ج.م
-                      </span>
+          {/* Expanded content */}
+          {currentShiftExpanded && (
+            <div className="px-4 pb-4 space-y-3 border-t border-green-500/20 pt-3">
+              {/* Expected cash display */}
+              {currentExpected && (
+                <div className="bg-blue-500/5 border border-blue-500/20 rounded-xl p-3 space-y-1">
+                  <div className="flex items-center gap-1.5 text-blue-400">
+                    <Wallet className="h-3.5 w-3.5" />
+                    <span className="text-[11px] font-bold">المتوقع في الدرج</span>
+                  </div>
+                  <p className="text-lg font-black text-blue-400">{currentExpected.expected.toFixed(0)} ج.م</p>
+                  {Object.keys(currentExpected.breakdown).length > 0 && (
+                    <div className="text-[10px] text-muted-foreground space-y-0.5 mt-1">
+                      {Object.entries(currentExpected.breakdown).map(([type, amount]) => (
+                        <div key={type} className="flex justify-between">
+                          <span>{type === 'SALE' ? 'مبيعات' : type === 'REFUND' ? 'مرتجعات' : type === 'CASH_IN' ? 'إيداع' : type === 'CASH_OUT' ? 'سحب' : type}</span>
+                          <span className={cn("font-bold", (amount as number) >= 0 ? "text-green-400" : "text-red-400")}>
+                            {(amount as number) >= 0 ? '+' : ''}{(amount as number).toFixed(0)} ج.م
+                          </span>
+                        </div>
+                      ))}
                     </div>
-                  ))}
+                  )}
                 </div>
               )}
-            </div>
-          )}
 
-          <div className="flex items-center gap-2">
-            <input type="number" value={closingCash} onChange={e => { setClosingCash(e.target.value); setCloseWarning(null) }} placeholder="رصيد الإغلاق (عد الكاش)"
-              className="flex-1 px-3 py-2 rounded-xl bg-secondary text-sm border-0 focus:ring-1 focus:ring-primary focus:outline-none" />
-            <Button variant="destructive" size="sm" className="rounded-xl gap-1" onClick={handleClose}>
-              <Lock className="h-3.5 w-3.5" /> إغلاق الوردية
-            </Button>
-          </div>
-
-          {/* Close warning: short/over detection */}
-          {closeWarning && (
-            <div className={cn("p-3 rounded-xl border-2 animate-slide-up space-y-2",
-              closeWarning.type === 'short' ? "bg-red-500/5 border-red-500/30" : "bg-blue-500/5 border-blue-500/30"
-            )}>
               <div className="flex items-center gap-2">
-                {closeWarning.type === 'short'
-                  ? <TrendingDown className="h-4 w-4 text-red-500" />
-                  : <TrendingUp className="h-4 w-4 text-blue-400" />}
-                <span className={cn("text-sm font-bold", closeWarning.type === 'short' ? "text-red-500" : "text-blue-400")}>
-                  {closeWarning.type === 'short' ? 'نقص في الكاش' : 'زيادة في الكاش'}
-                </span>
+                <input type="number" value={closingCash} onChange={e => { setClosingCash(e.target.value); setCloseWarning(null) }} placeholder="رصيد الإغلاق (عد الكاش)"
+                  className="flex-1 px-3 py-2 rounded-xl bg-secondary text-sm border-0 focus:ring-1 focus:ring-primary focus:outline-none" />
+                <Button variant="destructive" size="sm" className="rounded-xl gap-1" onClick={handleClose}>
+                  <Lock className="h-3.5 w-3.5" /> إغلاق الوردية
+                </Button>
               </div>
-              <p className={cn("text-lg font-black", closeWarning.type === 'short' ? "text-red-500" : "text-blue-400")}>
-                {closeWarning.type === 'short' ? '-' : '+'}{closeWarning.amount.toFixed(0)} ج.م
-              </p>
-              <div className="flex gap-2">
-                <Button variant="destructive" size="sm" className="rounded-xl flex-1" onClick={confirmClose}>تأكيد الإغلاق</Button>
-                <Button variant="ghost" size="sm" className="rounded-xl" onClick={() => setCloseWarning(null)}>إلغاء</Button>
-              </div>
+
+              {/* Close warning: short/over detection */}
+              {closeWarning && (
+                <div className={cn("p-3 rounded-xl border-2 animate-slide-up space-y-2",
+                  closeWarning.type === 'short' ? "bg-red-500/5 border-red-500/30" : "bg-blue-500/5 border-blue-500/30"
+                )}>
+                  <div className="flex items-center gap-2">
+                    {closeWarning.type === 'short'
+                      ? <TrendingDown className="h-4 w-4 text-red-500" />
+                      : <TrendingUp className="h-4 w-4 text-blue-400" />}
+                    <span className={cn("text-sm font-bold", closeWarning.type === 'short' ? "text-red-500" : "text-blue-400")}>
+                      {closeWarning.type === 'short' ? 'نقص في الكاش' : 'زيادة في الكاش'}
+                    </span>
+                  </div>
+                  <p className={cn("text-lg font-black", closeWarning.type === 'short' ? "text-red-500" : "text-blue-400")}>
+                    {closeWarning.type === 'short' ? '-' : '+'}{closeWarning.amount.toFixed(0)} ج.م
+                  </p>
+                  <div className="flex gap-2">
+                    <Button variant="destructive" size="sm" className="rounded-xl flex-1" onClick={confirmClose}>تأكيد الإغلاق</Button>
+                    <Button variant="ghost" size="sm" className="rounded-xl" onClick={() => setCloseWarning(null)}>إلغاء</Button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>

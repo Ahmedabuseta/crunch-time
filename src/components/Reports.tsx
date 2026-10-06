@@ -11,9 +11,9 @@ import {
 import type { LucideIcon } from 'lucide-react'
 import {
   TrendingUp, ShoppingBag, DollarSign, BarChart3, Package, ArrowDownRight, ArrowUpRight,
-  Receipt, Wallet, Hourglass, Layers, CreditCard, CalendarDays, Filter,
-  AlertTriangle, Users, Target, CalendarClock, Boxes, ShieldAlert, TrendingDown,
-  RefreshCw, ChevronLeft, ChevronRight, Lock, Unlock,
+  Receipt, Wallet, Hourglass, Layers, CreditCard, CalendarDays, Filter, Tag,
+  AlertTriangle, Users, Target, CalendarClock, Boxes, ShieldAlert, TrendingDown, Percent,
+  RefreshCw, ChevronLeft, ChevronRight, ChevronDown, Lock, Unlock,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -23,6 +23,13 @@ const today = () => fmtLocal(new Date())
 const daysAgo = (n: number) => { const d = new Date(); d.setDate(d.getDate() - n); return fmtLocal(d) }
 const monthStart = () => fmtLocal(new Date(new Date().getFullYear(), new Date().getMonth(), 1))
 const weekStart = () => { const d = new Date(); d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); return fmtLocal(d) }
+
+const formatDuration = (hours: number): string => {
+  if (hours < 1 / 60) return '0'
+  if (hours < 1) return `${Math.round(hours * 60)} دقيقة`
+  if (hours < 24) return `${Math.round(hours * 10) / 10} ساعة`
+  return `${Math.round(hours / 24 * 10) / 10} يوم`
+}
 
 type Range = { from?: string; to?: string }
 
@@ -36,18 +43,19 @@ const PRESETS: { id: string; label: string; days: number; range: () => Range }[]
   { id: 'all', label: 'الكل', days: 90, range: () => ({ from: undefined, to: undefined }) },
 ]
 
-const PAY_ICONS: Record<string, string> = { cash: '💵', card: '💳', visa: '💳', 'digital-wallet': '📱', 'other': '💲' }
+const PAY_ICONS: Record<string, string> = { cash: 'نقدي', card: 'بطاقة', visa: 'فيزا', 'digital-wallet': 'محفظة', 'other': 'أخرى' }
 const PAY_LABELS: Record<string, string> = { cash: 'نقدي', card: 'بطاقة', visa: 'فيزا', 'digital-wallet': 'محفظة إلكترونية' }
 const WEEKDAYS = ['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت']
 const PAGE_SIZE = 10
 
-type TabId = 'overview' | 'profit' | 'inventory' | 'staff' | 'log'
+type TabId = 'overview' | 'profit' | 'inventory' | 'staff' | 'discounts' | 'log'
 
 const TAB_ITEMS: { id: TabId; label: string; icon: LucideIcon }[] = [
   { id: 'overview', label: 'نظرة عامة', icon: BarChart3 },
   { id: 'profit', label: 'الأرباح', icon: Wallet },
   { id: 'inventory', label: 'المخزون', icon: Boxes },
   { id: 'staff', label: 'الموظفون', icon: Users },
+  { id: 'discounts', label: 'الخصومات', icon: Tag },
   { id: 'log', label: 'المعاملات', icon: Receipt },
 ]
 
@@ -69,7 +77,7 @@ export function Reports() {
   const {
     dashboard, hourly, topItems, categoryRevenue, addonStats, ticketDist, orderTypeSplit,
     revenueTrend, paymentMethods, profitSummary, transactions, shiftSummary, laborSummary, voidSummary,
-    abcXyz, turnover, ppv, salesTrend, daysOnHand, loading, refreshAll, refreshRevenueTrend, refreshSalesTrend,
+    abcXyz, turnover, ppv, salesTrend, daysOnHand, discountSummary, loading, refreshAll, refreshRevenueTrend, refreshSalesTrend,
   } = useReportStore()
 
   const [tab, setTab] = useState<TabId>('overview')
@@ -80,6 +88,7 @@ export function Reports() {
   const [customTo, setCustomTo] = useState('')
   const [txPage, setTxPage] = useState(0)
   const [txStatus, setTxStatus] = useState('')
+  const [reportMenuOpen, setReportMenuOpen] = useState(true)
 
   const load = (from?: string, to?: string, days = 7) => {
     refreshAll(from, to)
@@ -132,7 +141,7 @@ export function Reports() {
   const pageRows = filteredTransactions.slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE)
 
   /* ── chart palette & data ─────────────────────────────────────────── */
-  const primary = chartColor('--color-chart-1', 'oklch(0.7 0.22 25)')
+  const primary = chartColor('--color-chart-1', 'oklch(0.78 0.16 85)')
   const green = '#22c55e'
   const red = '#ef4444'
   const amber = '#eab308'
@@ -182,6 +191,7 @@ export function Reports() {
     ? [
         { name: 'توصيل', value: orderTypeSplit.delivery.count, revenue: orderTypeSplit.delivery.revenue, pct: orderTypeSplit.delivery.percentage, c: primary },
         { name: 'صالة', value: orderTypeSplit.dineIn.count, revenue: orderTypeSplit.dineIn.revenue, pct: orderTypeSplit.dineIn.percentage, c: sky },
+        ...(orderTypeSplit.takeaway?.count > 0 ? [{ name: 'تيك أوي', value: orderTypeSplit.takeaway.count, revenue: orderTypeSplit.takeaway.revenue, pct: orderTypeSplit.takeaway.percentage, c: green }] : []),
       ]
     : []
   const otTotal = otData.reduce((s, x) => s + x.value, 0) || 1
@@ -196,6 +206,64 @@ export function Reports() {
 
   const hasInventory = !!(abcXyz?.products.length || turnover?.rows.length || ppv?.rows.length || daysOnHand?.rows.length)
   const hasStaff = !!(shiftSummary?.totalShifts || laborSummary?.staff.length || voidSummary && (voidSummary.cancelCount || voidSummary.refundCount || voidSummary.discountCount))
+
+  // Profit chart data
+  const profitData = profitSummary ? [
+    { name: 'إيراد', value: profitSummary.revenue, c: green },
+    { name: 'تكلفة', value: profitSummary.costOfGoods, c: red },
+    { name: 'ربح', value: Math.max(0, profitSummary.grossProfit), c: primary },
+    { name: 'مصروفات', value: profitSummary.totalExpenses, c: amber },
+    { name: 'صافي', value: profitSummary.netProfit, c: profitSummary.netProfit >= 0 ? green : red },
+  ].filter(d => d.value > 0) : []
+
+  // Employee sales chart data
+  const staffSalesData = laborSummary?.staff?.length
+    ? laborSummary.staff.map((s: any) => ({
+        name: shortName(s.name),
+        sales: s.sales,
+        orders: s.orderCount,
+        c: s.sales > 0 ? primary : mutedBar,
+      }))
+    : []
+
+  // Void breakdown pie data
+  const voidPieData = voidSummary && (voidSummary.cancelCount > 0 || voidSummary.refundCount > 0 || voidSummary.discountCount > 0)
+    ? [
+        { name: 'ملغاة', value: voidSummary.cancelCount, c: red },
+        { name: 'مستردة', value: voidSummary.refundCount, c: amber },
+        { name: 'بخصم', value: voidSummary.discountCount, c: sky },
+      ].filter(d => d.value > 0)
+    : []
+
+  // Transaction status pie data
+  const txStatusData = transactions.length > 0
+    ? [
+        { name: 'مكتملة', value: transactions.filter(t => t.status === 'COMPLETED').length, c: green },
+        { name: 'مستردة', value: transactions.filter(t => t.status === 'REFUNDED').length, c: amber },
+        { name: 'ملغاة', value: transactions.filter(t => t.status === 'CANCELLED').length, c: red },
+      ].filter(d => d.value > 0)
+    : []
+  const txTotal = txStatusData.reduce((s, x) => s + x.value, 0) || 1
+
+  // Transaction payment method bar data
+  const txPayData = transactions.length > 0
+    ? (() => {
+        const byPay: Record<string, { count: number; total: number }> = {}
+        for (const t of transactions) {
+          if (t.status === 'CANCELLED') continue
+          const key = t.paymentType || 'cash'
+          if (!byPay[key]) byPay[key] = { count: 0, total: 0 }
+          byPay[key].count++
+          byPay[key].total += t.total
+        }
+        return Object.entries(byPay).map(([method, d], i) => ({
+          name: PAY_LABELS[method] || method,
+          count: d.count,
+          total: d.total,
+          c: pal[i % pal.length],
+        }))
+      })()
+    : []
 
   return (
     <ScrollArea className="h-full">
@@ -221,18 +289,29 @@ export function Reports() {
                     ? (range.from === range.to ? range.from : `${range.from} ← ${range.to}`)
                     : 'كل الفترات'}
                 </span>
-                <button
-                  onClick={() => load(range.from, range.to, trendDays)}
-                  title="تحديث البيانات"
-                  className="w-9 h-9 rounded-xl bg-card border border-border flex items-center justify-center text-muted-foreground hover:text-primary hover:border-primary/40 transition-colors cursor-pointer"
-                >
-                  <RefreshCw className="h-4 w-4" />
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => load(range.from, range.to, trendDays)}
+                    title="تحديث البيانات"
+                    className="w-9 h-9 rounded-xl bg-card border border-border flex items-center justify-center text-muted-foreground hover:text-primary hover:border-primary/40 transition-colors cursor-pointer"
+                  >
+                    <RefreshCw className="h-4 w-4" />
+                  </button>
+                  <button
+                    onClick={() => setReportMenuOpen(open => !open)}
+                    title={reportMenuOpen ? 'طي خيارات التقارير' : 'فتح خيارات التقارير'}
+                    aria-expanded={reportMenuOpen}
+                    className="w-9 h-9 rounded-xl bg-card border border-border flex items-center justify-center text-muted-foreground hover:text-primary hover:border-primary/40 transition-colors cursor-pointer"
+                  >
+                    <ChevronDown className={cn('h-4 w-4 transition-transform', reportMenuOpen && 'rotate-180')} />
+                  </button>
+                </div>
               </div>
             </div>
 
+            {reportMenuOpen && <>
             {/* Section navigation */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-1 rounded-xl border border-border bg-card p-1">
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-1 rounded-xl border border-border bg-card p-1">
               {TAB_ITEMS.map(t => (
                 <button
                   key={t.id}
@@ -313,6 +392,7 @@ export function Reports() {
                 </button>
               ))}
             </div>
+            </>}
           </div>
         </div>
 
@@ -440,9 +520,9 @@ export function Reports() {
                           <div className="flex-1 min-w-0">
                             <div className="flex justify-between text-xs">
                               <span className="font-bold truncate">{it.name}</span>
-                              <span className={cn("font-black flex items-center gap-0.5", it.trend >= 1 ? "text-green-400" : it.trend < 1 ? "text-red-400" : "text-muted-foreground")}>
-                                {it.trend >= 1 ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
-                                {it.trend.toFixed(2)}×
+                              <span className={cn("font-black flex items-center gap-0.5", it.trend > 0 ? "text-green-400" : it.trend < 0 ? "text-red-400" : "text-muted-foreground")}>
+                                {it.trend > 0 ? <TrendingUp className="h-3 w-3" /> : it.trend < 0 ? <TrendingDown className="h-3 w-3" /> : null}
+                                {it.trend > 0 ? '+' : ''}{Math.round(it.trend)}%
                               </span>
                             </div>
                             <div className="text-[10px] text-muted-foreground font-medium mt-0.5">
@@ -615,6 +695,21 @@ export function Reports() {
           <>
             {profitSummary ? (
               <Section icon={<Wallet className="h-4 w-4 text-primary" />} title="تحليل الأرباح">
+                {profitData.length > 0 && (
+                  <div className="h-48 mb-4">
+                    <ChartContainer className="h-full">
+                      <BarChart data={profitData} margin={{ top: 5, right: 5, left: 0, bottom: 0 }}>
+                        <CartesianGrid stroke={GRID_STROKE} vertical={false} strokeDasharray="3 3" />
+                        <XAxis dataKey="name" tick={AXI_TICK} axisLine={false} tickLine={false} reversed />
+                        <YAxis tick={AXI_TICK} axisLine={false} tickLine={false} width={44} tickFormatter={(v: number) => `${v}`} />
+                        <Tooltip cursor={{ fill: CURSOR_FILL }} content={<ChartTooltip kind="currency" />} />
+                        <Bar dataKey="value" radius={[4, 4, 0, 0]}>
+                          {profitData.map((d, i) => <Cell key={i} fill={d.c} />)}
+                        </Bar>
+                      </BarChart>
+                    </ChartContainer>
+                  </div>
+                )}
                 <div className="space-y-3">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
@@ -1086,21 +1181,36 @@ export function Reports() {
 
                 {/* Labor */}
                 {laborSummary && laborSummary.staff.length > 0 && (
-                  <Section icon={<Users className="h-4 w-4 text-primary" />} title="تكلفة العمالة وأداء الموظفين">
+                  <Section icon={<Users className="h-4 w-4 text-primary" />} title="أداء الموظفين">
                     <div className="grid grid-cols-3 gap-3">
                       <div className="bg-secondary/60 rounded-xl p-3 text-center">
-                        <p className="text-[10px] text-muted-foreground mb-0.5">إجمالي تكلفة العمالة</p>
-                        <p className="text-xl font-black text-primary">{laborSummary.totalLaborCost.toFixed(0)} <span className="text-xs">ج.م</span></p>
+                        <p className="text-[10px] text-muted-foreground mb-0.5">إجمالي المبيعات</p>
+                        <p className="text-xl font-black text-green-400">{laborSummary.staff.reduce((s: number, u: any) => s + u.sales, 0).toFixed(0)} <span className="text-xs">ج.م</span></p>
                       </div>
-                      <div className={cn("rounded-xl p-3 text-center", laborSummary.laborCostPct > 30 ? "bg-red-500/10" : "bg-green-500/10")}>
-                        <p className="text-[10px] text-muted-foreground mb-0.5">نسبة تكلفة العمالة</p>
-                        <p className={cn("text-xl font-black", laborSummary.laborCostPct > 30 ? "text-red-500" : "text-green-400")}>{laborSummary.laborCostPct.toFixed(1)}%</p>
+                      <div className="bg-secondary/60 rounded-xl p-3 text-center">
+                        <p className="text-[10px] text-muted-foreground mb-0.5">إجمالي الطلبات</p>
+                        <p className="text-xl font-black text-primary">{laborSummary.staff.reduce((s: number, u: any) => s + u.orderCount, 0)}</p>
                       </div>
                       <div className="bg-secondary/60 rounded-xl p-3 text-center">
                         <p className="text-[10px] text-muted-foreground mb-0.5">عدد الموظفين</p>
                         <p className="text-xl font-black text-blue-400">{laborSummary.staff.length}</p>
                       </div>
                     </div>
+                    {staffSalesData.length > 1 && (
+                      <div className="h-44 mt-3">
+                        <ChartContainer className="h-full">
+                          <BarChart data={staffSalesData} margin={{ top: 5, right: 5, left: 0, bottom: 0 }}>
+                            <CartesianGrid stroke={GRID_STROKE} vertical={false} strokeDasharray="3 3" />
+                            <XAxis dataKey="name" tick={AXI_TICK} axisLine={false} tickLine={false} reversed />
+                            <YAxis tick={AXI_TICK} axisLine={false} tickLine={false} width={44} tickFormatter={(v: number) => `${v}`} />
+                            <Tooltip cursor={{ fill: CURSOR_FILL }} content={<ChartTooltip kind="currency" labelFormatter={l => `${l}`} nameFormatter={() => 'المبيعات'} />} />
+                            <Bar dataKey="sales" radius={[4, 4, 0, 0]}>
+                              {staffSalesData.map((d: any, i: number) => <Cell key={i} fill={d.c} />)}
+                            </Bar>
+                          </BarChart>
+                        </ChartContainer>
+                      </div>
+                    )}
                     <div className="mt-3 space-y-2">
                       {laborSummary.staff.map((s: any) => (
                         <div key={s.id} className="bg-secondary/40 rounded-xl px-3 py-2.5">
@@ -1110,16 +1220,9 @@ export function Reports() {
                           </div>
                           <div className="flex items-center gap-3 text-[10px] text-muted-foreground mt-1">
                             <span>{s.orderCount} طلب</span>
-                            <span>{s.hoursWorked} ساعة</span>
+                            <span>{formatDuration(s.hoursWorked)}</span>
                             <span>{s.shiftCount} وردية</span>
-                            {s.laborCost > 0 && <span className="font-bold text-foreground">تكلفة {s.laborCost} ج.م</span>}
                           </div>
-                          {(s.wage > 0 || s.commission > 0) && (
-                            <div className="flex items-center gap-3 text-[10px] mt-0.5">
-                              {s.wage > 0 && <span className="text-muted-foreground">أجر {s.wage} ج.م</span>}
-                              {s.commission > 0 && <span className="text-yellow-400 font-bold">عمولة {s.commission} ج.م</span>}
-                            </div>
-                          )}
                         </div>
                       ))}
                     </div>
@@ -1147,6 +1250,30 @@ export function Reports() {
                           <p className="text-[9px] text-muted-foreground">{voidSummary.discountAmount.toFixed(0)} ج.م</p>
                         </div>
                       </div>
+
+                      {voidPieData.length > 0 && (
+                        <div className="flex items-center gap-4">
+                          <div className="h-36 w-36 shrink-0">
+                            <ChartContainer className="h-full">
+                              <PieChart>
+                                <Pie data={voidPieData} dataKey="value" nameKey="name" innerRadius={34} outerRadius={56} paddingAngle={3}>
+                                  {voidPieData.map((e, i) => <Cell key={i} fill={e.c} />)}
+                                </Pie>
+                                <Tooltip content={<ChartTooltip kind="number" labelFormatter={l => `${l}`} />} />
+                              </PieChart>
+                            </ChartContainer>
+                          </div>
+                          <div className="space-y-1.5">
+                            {voidPieData.map(e => (
+                              <div key={e.name} className="flex items-center gap-2 text-[11px]">
+                                <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: e.c }} />
+                                <span className="font-bold">{e.name}</span>
+                                <span className="text-muted-foreground font-medium">{e.value}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
 
                       {voidSummary.voidByUser.length > 0 && (
                         <div className="space-y-2">
@@ -1201,9 +1328,182 @@ export function Reports() {
         )}
 
         {/* ════════════════ TAB: المعاملات ════════════════ */}
+        {tab === 'discounts' && (
+          <>
+            {discountSummary && discountSummary.summary.totalDiscountOrders > 0 ? (
+              <>
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                  <StatCard icon={<Tag className="h-5 w-5" />} label="طلبات بخصم" value={String(discountSummary.summary.totalDiscountOrders)} color="bg-sky-500/15 text-sky-400" />
+                  <StatCard icon={<DollarSign className="h-5 w-5" />} label="إجمالي الخصومات" value={`${discountSummary.summary.totalDiscountAmount.toFixed(0)} ج.م`} color="bg-red-500/15 text-red-400" />
+                  <StatCard icon={<Percent className="h-5 w-5" />} label="نسبة استخدام الخصم" value={`${discountSummary.summary.discountRate.toFixed(1)}%`} color="bg-amber-500/15 text-amber-400" />
+                  <StatCard icon={<TrendingDown className="h-5 w-5" />} label="نسبة الخصم من الإيراد" value={`${discountSummary.summary.discountToRevenueRatio.toFixed(1)}%`} color="bg-purple-500/15 text-purple-400" />
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+                  {/* Bar chart — discount by code */}
+                  {discountSummary.codes.length > 0 && (
+                    <Section icon={<BarChart3 className="h-4 w-4 text-primary" />} title="الخصم حسب الكود">
+                      <div className="h-52">
+                        <ChartContainer className="h-full">
+                          <BarChart data={discountSummary.codes.map((c: any) => ({ name: c.code, discount: Math.round(c.totalDiscount), c: primary }))} margin={{ top: 5, right: 5, left: 0, bottom: 0 }}>
+                            <CartesianGrid stroke={GRID_STROKE} vertical={false} strokeDasharray="3 3" />
+                            <XAxis dataKey="name" tick={AXI_TICK} axisLine={false} tickLine={false} reversed />
+                            <YAxis tick={AXI_TICK} axisLine={false} tickLine={false} width={44} tickFormatter={(v: number) => `${v}`} />
+                            <Tooltip cursor={{ fill: CURSOR_FILL }} content={<ChartTooltip kind="currency" labelFormatter={l => `${l}`} nameFormatter={() => 'الخصم'} />} />
+                            <Bar dataKey="discount" radius={[4, 4, 0, 0]}>
+                              {discountSummary.codes.map((_: any, i: number) => <Cell key={i} fill={pal[i % pal.length]} />)}
+                            </Bar>
+                          </BarChart>
+                        </ChartContainer>
+                      </div>
+                    </Section>
+                  )}
+
+                  {/* Pie — with vs without discount */}
+                  <Section icon={<Receipt className="h-4 w-4 text-primary" />} title="الطلبات مع/بدون خصم">
+                    <div className="h-44">
+                      <ChartContainer className="h-full">
+                        <PieChart>
+                          <Pie
+                            data={[
+                              { name: 'بخصم', value: discountSummary.summary.totalDiscountOrders, c: primary },
+                              { name: 'بدون خصم', value: discountSummary.summary.totalNoDiscountOrders, c: mutedBar },
+                            ]}
+                            dataKey="value" nameKey="name" innerRadius={48} outerRadius={72} paddingAngle={3}
+                          >
+                            <Cell fill={primary} />
+                            <Cell fill={mutedBar} />
+                          </Pie>
+                          <Tooltip content={<ChartTooltip kind="number" labelFormatter={l => `${l}`} nameFormatter={n => n || ''} />} />
+                        </PieChart>
+                      </ChartContainer>
+                    </div>
+                    <div className="mt-2 space-y-2">
+                      <div className="flex items-center gap-2 text-[11px]">
+                        <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: primary }} />
+                        <span className="font-bold flex-1">بخصم ({discountSummary.summary.totalDiscountOrders})</span>
+                        <span className="text-muted-foreground font-medium">{discountSummary.summary.totalDiscountOrders > 0 ? `${discountSummary.summary.avgOrderWithDiscount.toFixed(0)} ج.م متوسط` : '—'}</span>
+                      </div>
+                      <div className="flex items-center gap-2 text-[11px]">
+                        <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: mutedBar }} />
+                        <span className="font-bold flex-1">بدون خصم ({discountSummary.summary.totalNoDiscountOrders})</span>
+                        <span className="text-muted-foreground font-medium">{discountSummary.summary.totalNoDiscountOrders > 0 ? `${discountSummary.summary.avgOrderWithoutDiscount.toFixed(0)} ج.م متوسط` : '—'}</span>
+                      </div>
+                    </div>
+                  </Section>
+                </div>
+
+                {/* Code breakdown table */}
+                <Section icon={<Tag className="h-4 w-4 text-primary" />} title="تفاصيل أكواد الخصم">
+                  <div className="space-y-2">
+                    {discountSummary.codes.map((c: any, i: number) => (
+                      <div key={c.code} className="flex items-center gap-3 bg-secondary/60 rounded-xl p-3">
+                        <div className="w-10 h-10 rounded-xl flex items-center justify-center font-black text-xs" style={{ background: pal[i % pal.length] + '22', color: pal[i % pal.length] }}>
+                          {c.code.slice(0, 3)}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-black font-mono">{c.code}</span>
+                            <span className={cn("text-[9px] font-bold px-2 py-0.5 rounded-full",
+                              c.type === 'percentage' ? "bg-sky-500/10 text-sky-400" : "bg-amber-500/10 text-amber-400"
+                            )}>
+                              {c.type === 'percentage' ? `${c.value}%` : `${c.value} ج.م`}
+                            </span>
+                          </div>
+                          <p className="text-[10px] text-muted-foreground mt-0.5">
+                            {c.count} استخدام · متوسط {c.avgDiscount.toFixed(0)} ج.م · إيراد {c.totalRevenue.toFixed(0)} ج.م
+                          </p>
+                        </div>
+                        <div className="text-left">
+                          <p className="text-sm font-black text-red-400">-{c.totalDiscount.toFixed(0)} ج.م</p>
+                          {c.maxUses > 0 && (
+                            <p className="text-[10px] text-muted-foreground">
+                              {c.remaining !== null && c.remaining > 0
+                                ? `متبقي ${c.remaining} / ${c.maxUses}`
+                                : 'نفذ الاستخدام'}
+                            </p>
+                          )}
+                          {c.maxUses === 0 && <p className="text-[10px] text-muted-foreground">بلا حد</p>}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </Section>
+
+                {/* Summary mini-stats */}
+                <Section icon={<DollarSign className="h-4 w-4 text-primary" />} title="ملخص مالي">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    <MiniStat label="متوسط الخصم/طلب" value={`${discountSummary.summary.avgDiscountPerOrder.toFixed(0)} ج.م`} />
+                    <MiniStat label="إيراد بخصم" value={`${discountSummary.summary.totalDiscountRevenue.toFixed(0)} ج.م`} />
+                    <MiniStat label="إيراد بدون خصم" value={`${discountSummary.summary.totalNoDiscountRevenue.toFixed(0)} ج.م`} />
+                    <MiniStat label="إجمالي الإيراد" value={`${discountSummary.summary.totalRevenue.toFixed(0)} ج.م`} />
+                  </div>
+                </Section>
+              </>
+            ) : (
+              <TabEmpty icon={Tag} title="لا توجد خصومات في هذه الفترة" sub="استخدم أكواد الخصم لتتبع تأثيرها هنا" />
+            )}
+          </>
+        )}
+
         {tab === 'log' && (
           <>
             {transactions.length > 0 ? (
+              <>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+                  {txStatusData.length > 0 && (
+                    <Section icon={<Receipt className="h-4 w-4 text-primary" />} title="توزيع الحالات">
+                      <div className="h-44">
+                        <ChartContainer className="h-full">
+                          <PieChart>
+                            <Pie data={txStatusData} dataKey="value" nameKey="name" innerRadius={48} outerRadius={72} paddingAngle={3}>
+                              {txStatusData.map((e, i) => <Cell key={i} fill={e.c} />)}
+                            </Pie>
+                            <Tooltip content={<ChartTooltip kind="number" labelFormatter={l => `${l}`} nameFormatter={n => `معاملات ${n}`} />} />
+                          </PieChart>
+                        </ChartContainer>
+                      </div>
+                      <div className="mt-2 space-y-2">
+                        {txStatusData.map(e => (
+                          <div key={e.name} className="flex items-center gap-2 text-[11px]">
+                            <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: e.c }} />
+                            <span className="font-bold flex-1">{e.name} ({e.value})</span>
+                            <span className="text-muted-foreground font-medium">{((e.value / txTotal) * 100).toFixed(0)}%</span>
+                          </div>
+                        ))}
+                        <p className="text-[10px] text-muted-foreground font-bold">إجمالي {txTotal} معاملة</p>
+                      </div>
+                    </Section>
+                  )}
+
+                  {txPayData.length > 0 && (
+                    <Section icon={<CreditCard className="h-4 w-4 text-primary" />} title="حسب طريقة الدفع">
+                      <div className="h-44">
+                        <ChartContainer className="h-full">
+                          <BarChart data={txPayData} margin={{ top: 5, right: 5, left: 0, bottom: 0 }}>
+                            <CartesianGrid stroke={GRID_STROKE} vertical={false} strokeDasharray="3 3" />
+                            <XAxis dataKey="name" tick={AXI_TICK} axisLine={false} tickLine={false} reversed />
+                            <YAxis tick={AXI_TICK} axisLine={false} tickLine={false} width={44} tickFormatter={(v: number) => `${v}`} />
+                            <Tooltip cursor={{ fill: CURSOR_FILL }} content={<ChartTooltip kind="currency" labelFormatter={l => `${l}`} nameFormatter={() => 'الإيراد'} />} />
+                            <Bar dataKey="total" radius={[4, 4, 0, 0]}>
+                              {txPayData.map((d, i) => <Cell key={i} fill={d.c} />)}
+                            </Bar>
+                          </BarChart>
+                        </ChartContainer>
+                      </div>
+                      <div className="mt-2 space-y-1.5">
+                        {txPayData.map(e => (
+                          <div key={e.name} className="flex items-center gap-2 text-[11px]">
+                            <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: e.c }} />
+                            <span className="font-bold flex-1">{e.name} ({e.count})</span>
+                            <span className="text-muted-foreground font-medium">{e.total.toFixed(0)} ج.م</span>
+                          </div>
+                        ))}
+                      </div>
+                    </Section>
+                  )}
+                </div>
+
               <Section icon={<Receipt className="h-4 w-4 text-primary" />} title="سجل المعاملات"
                 action={
                   <div className="flex items-center gap-1.5">
@@ -1229,8 +1529,8 @@ export function Reports() {
                 <div className="divide-y divide-border -mx-4 -mb-4">
                   {pageRows.map(o => (
                     <div key={o.id} className="px-4 py-3 flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-xl bg-secondary/60 flex items-center justify-center text-base">
-                        {PAY_ICONS[o.paymentType] || '🧾'}
+                      <div className="w-10 h-10 rounded-xl bg-secondary/60 flex items-center justify-center text-[9px] font-bold text-muted-foreground">
+                        {PAY_ICONS[o.paymentType] || 'نقدي'}
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
@@ -1238,7 +1538,7 @@ export function Reports() {
                           {o.customerName && <span className="text-[10px] text-muted-foreground">{o.customerName}</span>}
                         </div>
                         <div className="text-[10px] text-muted-foreground font-medium mt-0.5">
-                          {new Date(o.createdAt).toLocaleString('ar-EG', { dateStyle: 'short', timeStyle: 'short' })} · {o.orderType === 'delivery' ? 'توصيل' : 'صالة'}
+                          {new Date(o.createdAt).toLocaleString('ar-EG', { dateStyle: 'short', timeStyle: 'short' })} · {o.orderType === 'delivery' ? 'توصيل' : o.orderType === 'takeaway' ? 'تيك أوي' : 'صالة'}
                         </div>
                       </div>
                       <span className={cn(
@@ -1280,6 +1580,7 @@ export function Reports() {
                   </div>
                 )}
               </Section>
+              </>
             ) : (
               <TabEmpty icon={Receipt} title="لا توجد معاملات في هذه الفترة" sub="أنشئ طلبات جديدة لعرض السجل هنا" />
             )}

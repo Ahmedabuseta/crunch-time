@@ -22,6 +22,7 @@ interface ReportStore {
   ppv: PpvReport | null
   salesTrend: SalesTrendReport | null
   daysOnHand: DaysOnHandReport | null
+  discountSummary: any
   loading: boolean
   dateRange: { from: string; to: string }
   refreshDashboard: (date?: string) => Promise<void>
@@ -52,6 +53,7 @@ export const useReportStore = create<ReportStore>((set) => ({
   ppv: null,
   salesTrend: null,
   daysOnHand: null,
+  discountSummary: null,
   loading: false,
   dateRange: { from: new Date().toISOString().slice(0, 10), to: new Date().toISOString().slice(0, 10) },
 
@@ -66,7 +68,7 @@ export const useReportStore = create<ReportStore>((set) => ({
 
   refreshAll: async (from?, to?) => {
     set({ loading: true })
-    const [summary, hourly, topItems, catRev, addonStats, ticketDist, split, payMethods, invAlerts, profit, transactions, shiftData, laborData, voidData, abcXyz, turnover, ppv, daysOnHand] = await Promise.all([
+    const [summary, hourly, topItems, catRev, addonStats, ticketDist, split, payMethods, invAlerts, profit, transactions, shiftData, laborData, voidData, abcXyz, turnover, ppv, daysOnHand, discountData] = await Promise.all([
       window.api.report.periodSummary(from, to),
       window.api.report.hourlyBreakdown(from),
       window.api.report.topItems(10, from, to),
@@ -85,6 +87,7 @@ export const useReportStore = create<ReportStore>((set) => ({
       window.api.report.inventoryTurnover(from, to),
       window.api.report.purchasePriceVariance(from, to),
       window.api.report.daysOnHand(),
+      window.api.report.discountSummary(from, to),
     ])
     set({
       dashboard: summary as DailySummary,
@@ -105,6 +108,7 @@ export const useReportStore = create<ReportStore>((set) => ({
       turnover: turnover as InventoryTurnoverReport,
       ppv: ppv as PpvReport,
       daysOnHand: daysOnHand as DaysOnHandReport,
+      discountSummary: discountData,
       loading: false,
     })
   },

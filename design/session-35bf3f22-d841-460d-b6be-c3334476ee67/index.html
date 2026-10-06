@@ -1,0 +1,489 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>CourseForge — The All-in-One LMS for Course Creators</title><meta name="description" content="CourseForge is the all-in-one LMS that helps course creators build, sell, and scale profitable online courses — no code, no developers, no limits."><link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&display=swap" rel="stylesheet"><link rel="stylesheet" href="design-tokens.css" data-ipw-design-tokens><style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-font-smoothing:antialiased}
+body{min-height:100vh;background:var(--ipw-color-bg);color:var(--ipw-color-text);font-family:var(--ipw-font-body);font-size:var(--ipw-font-size-base);line-height:1.6}
+@media (prefers-reduced-motion:reduce){*{scroll-behavior:auto}}
+a{color:inherit;text-decoration:none}
+.container{width:100%;max-width:var(--ipw-content-width);margin:0 auto;padding:0 var(--ipw-page-padding)}
+section{padding:var(--ipw-section-space) 0}
+section:first-of-type{padding-top:var(--ipw-section-space-sm)}
+@media(max-width:768px){section{padding:var(--ipw-section-space-sm) 0}}
+
+/* Header */
+header{position:sticky;top:0;z-index:50;background:rgba(255,255,255,0.85);backdrop-filter:blur(12px);border-bottom:1px solid var(--ipw-color-border)}
+.header-inner{display:flex;align-items:center;justify-content:space-between;height:72px}
+.logo{font-family:var(--ipw-font-display);font-weight:800;font-size:var(--ipw-font-size-xl);color:var(--ipw-color-text)}
+.logo span{color:var(--ipw-color-primary)}
+.nav{display:flex;align-items:center;gap:2.5rem}
+.nav a{color:var(--ipw-color-muted);text-decoration:none;font-weight:500;font-size:var(--ipw-font-size-sm);transition:var(--ipw-transition)}
+.nav a:hover{color:var(--ipw-color-text)}
+
+/* Buttons */
+.btn{display:inline-flex;align-items:center;justify-content:center;border:none;cursor:pointer;font-family:inherit;font-weight:600;transition:var(--ipw-transition);border-radius:var(--ipw-button-radius);padding:12px 28px;font-size:0.95rem}
+.btn-primary{background:var(--ipw-color-primary);color:#fff}
+.btn-primary:hover{background:var(--ipw-color-primary-hover);box-shadow:var(--ipw-card-shadow-lg);transform:translateY(-1px)}
+.btn-outline{background:transparent;color:var(--ipw-color-text);border:1px solid var(--ipw-color-border)}
+.btn-outline:hover{background:var(--ipw-color-surface);box-shadow:var(--ipw-card-shadow)}
+.btn-cta{background:var(--ipw-gradient-hero);color:#fff;font-weight:700}
+.btn-cta:hover{box-shadow:var(--ipw-card-shadow-xl);transform:translateY(-1px)}
+.btn-lg{padding:16px 36px;font-size:1.05rem}
+
+/* Badge */
+.badge{display:inline-flex;align-items:center;gap:0.5rem;background:var(--ipw-color-primary);color:#fff;padding:6px 16px;border-radius:999px;font-size:0.75rem;font-weight:600}
+
+/* Typography / Section helpers */
+.section-header{text-align:center;margin-bottom:80px}
+.section-header h2{font-size:var(--ipw-font-size-4xl);font-family:var(--ipw-font-display);font-weight:700;margin-bottom:18px}
+.section-header p{max-width:720px;margin:0 auto;color:var(--ipw-color-muted);font-size:var(--ipw-font-size-lg)}
+h1{font-weight:800;line-height:1.02}
+h2{font-weight:700}
+h3{font-weight:700}
+
+/* Hero */
+.hero{display:grid;grid-template-columns:1fr 1fr;gap:64px;align-items:center}
+.hero-badge{margin-bottom:28px}
+.hero h1{font-size:var(--ipw-font-size-5xl);letter-spacing:-.03em}
+.hero p{font-size:var(--ipw-font-size-lg);max-width:580px;margin:28px 0;color:var(--ipw-color-muted)}
+.hero-ctas{display:flex;gap:16px;margin:36px 0}
+.hero-trust{display:flex;align-items:center;gap:16px;color:var(--ipw-color-muted);font-size:0.875rem;font-weight:500}
+.hero-trust .dot{width:4px;height:4px;border-radius:50%;background:var(--ipw-color-muted)}
+.hero-illustration{justify-self:end}
+.device-frame{background:var(--ipw-color-surface);border:1px solid var(--ipw-color-border);border-radius:var(--ipw-card-radius-lg);padding:20px;box-shadow:var(--ipw-card-shadow-xl)}
+
+/* Trust bar */
+.trust-bar{display:flex;justify-content:center;gap:40px;padding:24px 36px;background:var(--ipw-color-surface);border:1px solid var(--ipw-color-border);border-radius:var(--ipw-card-radius-lg);flex-wrap:wrap}
+.trust-item{text-align:center}
+.trust-item .value{font-weight:700;font-size:1.6rem;font-family:var(--ipw-font-display);color:var(--ipw-color-text)}
+.trust-item .label{font-size:0.8rem;color:var(--ipw-color-muted);margin-top:2px}
+
+/* Features — zigzag */
+.feature{display:grid;grid-template-columns:1fr 1.1fr;gap:48px;align-items:center;margin-bottom:72px}
+.feature.reverse{grid-template-areas:"img content"}
+.feature:not(.reverse){grid-template-areas:"content img"}
+.feature-content{grid-area:content}
+.feature-image{grid-area:img;justify-self:start}
+.feature-icon{width:64px;height:64px;border-radius:16px;background:var(--ipw-gradient-primary);display:flex;align-items:center;justify-content:center;margin-bottom:28px;flex-shrink:0}
+.feature-icon svg{width:32px;height:32px;fill:#fff}
+.feature h3{font-size:var(--ipw-font-size-2xl);margin-bottom:18px}
+.feature p{color:var(--ipw-color-muted);font-size:var(--ipw-font-size-lg);max-width:520px}
+.illustration-frame{background:var(--ipw-color-surface);border:1px solid var(--ipw-color-border);border-radius:var(--ipw-card-radius);padding:24px;box-shadow:var(--ipw-card-shadow-lg);max-width:360px}
+.illustration-frame svg{width:100%;height:auto;display:block}
+
+/* Steps */
+.steps{display:flex;gap:48px;text-align:center;flex-wrap:wrap}
+.step-number{width:64px;height:64px;border-radius:50%;background:var(--ipw-gradient-primary);color:#fff;font-size:var(--ipw-font-size-2xl);font-weight:700;display:flex;align-items:center;justify-content:center;margin:0 auto 28px;box-shadow:var(--ipw-card-shadow-lg)}
+.step{flex:1;min-width:200px}
+.step h3{font-size:var(--ipw-font-size-xl);font-weight:600;margin-bottom:14px}
+.step p{color:var(--ipw-color-muted);font-size:var(--ipw-font-size-sm)}
+
+/* Testimonial */
+.testimonial{max-width:820px;margin:0 auto;text-align:center}
+.testimonial .quote{font-family:var(--ipw-font-display);font-size:var(--ipw-font-size-xl);font-style:italic;line-height:1.45;margin-bottom:40px;position:relative;color:var(--ipw-color-text)}
+.testimonial .quote::before{content:'"';font-family:var(--ipw-font-display);font-size:clamp(3rem,8vw,5rem);position:absolute;top:-40px;left:-28px;color:var(--ipw-color-primary);opacity:0.10;line-height:1}
+.author{display:flex;align-items:center;justify-content:center;gap:20px}
+.author-info{text-align:left}
+.author-info .name{font-weight:700;font-size:1.1rem}
+.author-info .title{color:var(--ipw-color-muted);font-size:0.9rem}
+
+/* Pricing */
+.pricing{display:grid;grid-template-columns:repeat(3,1fr);gap:28px}
+.price-card{border:2px solid var(--ipw-color-border);border-radius:var(--ipw-card-radius-lg);padding:44px;text-align:center;transition:var(--ipw-transition);background:var(--ipw-card-bg);position:relative}
+.price-card.popular{border-color:var(--ipw-color-primary);box-shadow:var(--ipw-card-shadow-xl)}
+.price-card .popular-badge{background:var(--ipw-gradient-primary);color:#fff;padding:4px 14px;border-radius:999px;font-size:0.75rem;font-weight:600;position:absolute;top:-12px;left:50%;transform:translateX(-50%)}
+.price-card h3{font-size:var(--ipw-font-size-xl);font-weight:700;margin-bottom:6px}
+.price-card .subtitle{font-size:0.85rem;color:var(--ipw-color-muted);margin-bottom:24px}
+.price .amount{font-size:var(--ipw-font-size-4xl);font-weight:800;font-family:var(--ipw-font-display);display:inline-block}
+.price .unit{font-size:0.9rem;color:var(--ipw-color-muted)}
+.price-separator{color:var(--ipw-color-muted);font-weight:400;font-size:0.9rem}
+.price-features{list-style:none;padding:32px 0;text-align:left}
+.price-features li{display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--ipw-color-border)}
+.price-features li:last-child{border-bottom:none}
+.price-features .check{width:20px;height:20px;border-radius:50%;background:var(--ipw-color-accent);display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.price-features .check svg{width:12px;height:12px;fill:#fff}
+.price-features .x{width:20px;height:20px;border-radius:50%;background:rgba(239,68,68,0.1);display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.price-features .x svg{width:12px;height:12px;fill:var(--ipw-color-error)}
+.card-cta{margin-top:28px}
+
+/* CTA */
+.cta{text-align:center;background:var(--ipw-gradient-hero);color:#fff;border-radius:var(--ipw-card-radius-lg);padding:96px 40px;max-width:880px;margin:0 auto}
+.cta h2{font-size:var(--ipw-font-size-4xl);font-weight:700;margin-bottom:18px}
+.cta p{font-size:var(--ipw-font-size-lg);opacity:0.92;max-width:640px;margin:0 auto 36px}
+
+/* Footer */
+footer{background:var(--ipw-color-surface);border-top:1px solid var(--ipw-color-border);margin-top:60px}
+.footer-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:40px;padding:64px 0}
+.footer-col h4{font-size:0.8rem;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;margin-bottom:24px;color:var(--ipw-color-text)}
+.footer-col a{color:var(--ipw-color-muted);text-decoration:none;font-size:0.9rem;display:block;padding:10px 0;transition:var(--ipw-transition);font-weight:500}
+.footer-col a:hover{color:var(--ipw-color-text)}
+.footer-bottom{border-top:1px solid var(--ipw-color-border);padding:28px 0;font-size:0.875rem;color:var(--ipw-color-muted);display:flex;justify-content:space-between;align-items:center;gap:16px}
+.footer-tagline{font-style:italic;opacity:0.7}
+
+/* Responsive */
+@media(max-width:900px){.hero{grid-template-columns:1fr;gap:56px;text-align:center}.hero-illustration{justify-self:center}.hero h1{font-size:2.4rem}.hero-text{max-width:none;margin:0 auto}.section-header h2{font-size:2rem}.cta h2{font-size:2rem}}
+@media(max-width:768px){.container{padding:0 20px}.hero{gap:40px}.feature{grid-template-columns:1fr;grid-template-areas:none;text-align:center}.feature-content,.feature-image{grid-area:auto}.feature h3{font-size:1.5rem}.feature p{max-width:none}.steps{flex-direction:column}.pricing{grid-template-columns:1fr}.footer-grid{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:480px){.nav{display:none}.hero-ctas{flex-direction:column}.hero h1{font-size:2.1rem}.trust-bar{gap:16px}.footer-bottom{flex-direction:column;text-align:center}}
+</style></head><body data-ipw-theme-role="page">
+  <!-- Header -->
+  <header>
+    <div class="container header-inner">
+      <a href="#" class="logo">Course<span>Forge</span></a>
+      <nav class="nav">
+        <a href="#features">Features</a>
+        <a href="#how-it-works">How it works</a>
+        <a href="#pricing">Pricing</a>
+        <a href="#contact">Contact</a>
+      </nav>
+      <button class="btn btn-primary">Get Started</button>
+    </div>
+  </header>
+
+  <main>
+    <!-- Hero -->
+    <section>
+      <div class="container">
+        <div class="hero">
+          <div class="hero-text">
+            <div class="badge hero-badge">Trusted by 10,000+ course creators</div>
+            <h1>Turn your expertise into income.</h1>
+            <p>CourseForge is the all-in-one LMS that helps course creators build, sell, and scale profitable online courses — no code, no developers, no limits.</p>
+            <div class="hero-ctas">
+              <button class="btn btn-cta btn-lg">Get Started Free</button>
+              <button class="btn btn-outline btn-lg">Watch Demo</button>
+            </div>
+            <div class="hero-trust">
+              <span class="dot"></span><span>No credit card required</span>
+              <span class="dot"></span><span>14-day free trial</span>
+              <span class="dot"></span><span>Cancel anytime</span>
+            </div>
+          </div>
+          <div class="hero-illustration">
+            <div class="device-frame">
+              <svg viewBox="0 0 480 340" xmlns="http://www.w3.org/2000/svg" width="480" height="340">
+                <rect x="10" y="22" width="460" height="300" rx="16" fill="#ffffff" stroke="#e5e7eb" stroke-width="1"/>
+                <rect x="10" y="22" width="460" height="44" rx="16 16 0 0" fill="#f8fafc" stroke="#e5e7eb" stroke-width="1"/>
+                <circle cx="36" cy="46" r="6" fill="#ef4444"/>
+                <circle cx="56" cy="46" r="6" fill="#f59e0b"/>
+                <circle cx="76" cy="46" r="6" fill="#10b981"/>
+                <text x="36" y="92" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif" font-size="18" font-weight="700" fill="#111827">Course Dashboard</text>
+                <rect x="36" y="104" width="90" height="44" rx="10" fill="#f9fafb" stroke="#e5e7eb"/>
+                <text x="46" y="124" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif" font-size="18" font-weight="800" fill="#2563eb">2.4K</text>
+                <text x="46" y="140" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif" font-size="10" fill="#6b7280">This month</text>
+                <rect x="146" y="104" width="90" height="44" rx="10" fill="#f9fafb" stroke="#e5e7eb"/>
+                <text x="156" y="124" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif" font-size="18" font-weight="800" fill="#2563eb">3.4K</text>
+                <text x="156" y="140" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif" font-size="10" fill="#6b7280">Students</text>
+                <rect x="256" y="104" width="90" height="44" rx="10" fill="#f9fafb" stroke="#e5e7eb"/>
+                <text x="266" y="124" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif" font-size="18" font-weight="800" fill="#2563eb">92%</text>
+                <text x="266" y="140" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif" font-size="10" fill="#6b7280">Complete</text>
+                <rect x="36" y="168" width="404" height="4" rx="2" fill="#e5e7eb"/>
+                <rect x="36" y="182" width="16" height="86" rx="3" fill="#2563eb"/>
+                <rect x="64" y="208" width="16" height="60" rx="3" fill="#2563eb"/>
+                <rect x="92" y="178" width="16" height="70" rx="3" fill="#2563eb"/>
+                <rect x="120" y="190" width="16" height="58" rx="3" fill="#2563eb"/>
+                <rect x="148" y="182" width="16" height="66" rx="3" fill="#7c3aed"/>
+                <rect x="176" y="210" width="16" height="38" rx="3" fill="#7c3aed"/>
+                <rect x="204" y="196" width="16" height="52" rx="3" fill="#2563eb"/>
+                <rect x="232" y="182" width="16" height="66" rx="3" fill="#2563eb"/>
+                <rect x="260" y="210" width="16" height="38" rx="3" fill="#7c3aed"/>
+                <line x1="30" y1="270" x2="448" y2="270" stroke="#d1d5db" stroke-width="1"/>
+                <text x="36" y="282" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif" font-size="10" fill="#9ca3a4">Mon</text>
+                <text x="120" y="282" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif" font-size="10" fill="#9ca3a4">Tue</text>
+                <text x="210" y="282" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif" font-size="10" fill="#9ca3a4">Wed</text>
+                <text x="298" y="282" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif" font-size="10" fill="#9ca3a4">Thu</text>
+                <text x="388" y="282" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif" font-size="10" fill="#9ca3a4">Fri</text>
+                <rect x="370" y="168" width="96" height="84" rx="10" fill="#ecfdf5" stroke="#a7f3d0"/>
+                <rect x="380" y="184" width="76" height="8" rx="4" fill="#94a3b8"/>
+                <rect x="380" y="200" width="44" height="8" rx="4" fill="#94a3b8"/>
+                <circle cx="394" cy="222" r="4" fill="#9ca3a4"/>
+                <text x="404" y="226" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif" font-size="9" fill="#6b7280">Module 1</text>
+                <text x="466" y="226" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif" font-size="9" fill="#6b7280" text-anchor="end">12m</text>
+              </svg>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Trust Stats -->
+    <section>
+      <div class="container">
+        <div class="trust-bar">
+          <div class="trust-item"><div class="value">50,000+</div><div class="label">Courses built</div></div>
+          <div class="trust-item"><div class="value">10,000+</div><div class="label">Active creators</div></div>
+          <div class="trust-item"><div class="value">1M+</div><div class="label">Students enrolled</div></div>
+          <div class="trust-item"><div class="value">$50M+</div><div class="label">Paid to creators</div></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Features -->
+    <section id="features">
+      <div class="container">
+        <div class="section-header">
+          <h2>Everything you need to teach, sell, and scale.</h2>
+          <p>Our platform gives course creators the complete toolkit to build engaging learning experiences, monetize expertise, and grow an audience.</p>
+        </div>
+
+        <!-- Feature 1 -->
+        <div class="feature">
+          <div class="feature-content">
+            <div class="feature-icon">
+              <svg viewBox="0 0 24 24"><path d="M9 3h6a3 3 0 013 3v1h3a2 2 0 012 2v7a3 3 0 01-3 3H7a3 3 0 01-3-3V9a2 2 0 012-2h3V5a3 3 0 013-3zm0 2v2H9a1 1 0 00-1 1v5a1 1 0 001 1h6a1 1 0 001-1V7a1 1 0 00-1-1h-2V5a1 1 0 011-1z"/></svg>
+            </div>
+            <h3>Drag-and-Drop Course Builder</h3>
+            <p>Create beautiful, responsive courses in minutes. Add videos, quizzes, downloads, and coding exercises with our intuitive no-code builder.</p>
+          </div>
+          <div class="feature-image">
+            <div class="illustration-frame">
+              <svg viewBox="0 0 200 150" xmlns="http://www.w3.org/2000/svg">
+                <rect x="10" y="15" width="180" height="125" rx="10" fill="#f8fafc" stroke="#e5e7eb"/>
+                <rect x="20" y="25" width="160" height="22" rx="6" fill="#2563eb"/>
+                <rect x="20" y="57" width="160" height="16" rx="4" fill="#f3f4f6"/>
+                <rect x="20" y="83" width="120" height="16" rx="4" fill="#f3f4f6"/>
+                <rect x="20" y="109" width="160" height="16" rx="4" fill="#f3f4f6"/>
+                <rect x="20" y="135" width="90" height="10" rx="3" fill="#f3f4f6"/>
+                <g transform="translate(160,30)">
+                  <circle cx="0" cy="0" r="3" fill="#9ca3a4"/>
+                  <circle cx="8" cy="0" r="3" fill="#9ca3a4"/>
+                  <circle cx="0" cy="8" r="3" fill="#9ca3a4"/>
+                  <circle cx="8" cy="8" r="3" fill="#9ca3a4"/>
+                </g>
+              </svg>
+            </div>
+          </div>
+        </div>
+
+        <!-- Feature 2 -->
+        <div class="feature reverse">
+          <div class="feature-content">
+            <div class="feature-icon">
+              <svg viewBox="0 0 24 24"><path fill="#fff" d="M3 6h18v12a3 3 0 01-3 3H6a3 3 0 01-3-3V6a3 3 0 013-3h12a3 3 0 013 3zm-1 0a1 1 0 00-1 1v10a1 1 0 001 1h12a1 1 0 001-1V7a1 1 0 00-1-1H6a1 1 0 00-1 1z"/><path fill="#fff" d="M7 10h10v2H7zm0 4h10v2H7z"/></svg>
+            </div>
+            <h3>Monetization Suite</h3>
+            <p>Sell subscriptions, one-time payments, memberships, and bundles. Built-in payment processing, tax calculation, and coupon management — you keep 100% of revenue.</p>
+          </div>
+          <div class="feature-image">
+            <div class="illustration-frame">
+              <svg viewBox="0 0 200 150" xmlns="http://www.w3.org/2000/svg">
+                <rect x="10" y="15" width="180" height="125" rx="10" fill="#f8fafc" stroke="#e5e7eb"/>
+                <rect x="20" y="25" width="160" height="22" rx="6" fill="#10b981"/>
+                <rect x="20" y="57" width="60" height="34" rx="6" fill="#ecfdf5" stroke="#a7f3d0"/>
+                <text x="30" y="78" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif" font-size="12" font-weight="700" fill="#059669">$4.2K</text>
+                <text x="30" y="92" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif" font-size="8" fill="#059669">MTD revenue</text>
+                <rect x="95" y="57" width="85" height="34" rx="6" fill="#f3f4f6"/>
+                <rect x="20" y="101" width="160" height="28" rx="8" fill="#2563eb" opacity="0.1"/>
+                <text x="50" y="120" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif" font-size="9" fill="#2563eb" text-anchor="middle">Checkout</text>
+              </svg>
+            </div>
+          </div>
+        </div>
+
+        <!-- Feature 3 -->
+        <div class="feature">
+          <div class="feature-content">
+            <div class="feature-icon">
+              <svg viewBox="0 0 24 24"><path fill="#fff" d="M12 3a9 9 0 00-5 15.36V20a1 1 0 001.5.87l2-1.14a5 5 0 11-.82-.82l-3.3 5.7a1 1 0 01-1.3-.34l-.4-1.5a1 1 0 01.37-1.24l1.5-.6a1 1 0 00-.55-1.43 5.9 5.9 0 016.32-8.71 1 1 0 001.2-1.5 7 7 0 00-3.7-3.7z"/><path fill="#fff" d="M10 8a2 2 0 100 4 2 2 0 000-4zm4 2a2 2 0 100 4 2 2 0 000-4z"/></svg>
+            </div>
+            <h3>Engagement Tools</h3>
+            <p>Keep students motivated with gamified quizzes, certificates, discussion forums, and drip-fed content that adapts to each learner's pace.</p>
+          </div>
+          <div class="feature-image">
+            <div class="illustration-frame">
+              <svg viewBox="0 0 200 150" xmlns="http://www.w3.org/2000/svg">
+                <rect x="10" y="15" width="180" height="125" rx="10" fill="#f8fafc" stroke="#e5e7eb"/>
+                <rect x="20" y="25" width="160" height="22" rx="6" fill="#7c3aed"/>
+                <rect x="28" y="108" width="90" height="22" rx="12" fill="#2563eb"/>
+                <rect x="18" y="82" width="50" height="22" rx="12" fill="#f3f4f6"/>
+                <rect x="82" y="82" width="98" height="22" rx="12" fill="#dcfcf9" stroke="#a7f3d0"/>
+                <circle cx="180" cy="100" r="16" fill="#fffbeb" stroke="#fbbf24"/>
+                <path d="M176 98l4 4 6-6" stroke="#f59e0b" stroke-width="2" fill="none" stroke-linecap="round"/>
+                <circle cx="180" cy="124" r="16" fill="#f3f4f6"/>
+                <rect x="172" y="118" width="16" height="2" rx="1" fill="#9ca3a4"/>
+                <rect x="172" y="124" width="16" height="2" rx="1" fill="#9ca3a4"/>
+              </svg>
+            </div>
+          </div>
+        </div>
+
+        <!-- Feature 4 -->
+        <div class="feature reverse">
+          <div class="feature-content">
+            <div class="feature-icon">
+              <svg viewBox="0 0 24 24"><path fill="#fff" d="M2 12l1.5-1.5a1 1 0 011.4 0L7 12l7.5-7.5a1 1 0 011.4 0L18 7l3 3v7a3 3 0 01-3 3H7a3 3 0 01-3-3V9.5a1 1 0 01.3-2.9L7 3v6l-2.5-2.5-1.5 1.5L2 12z"/><path fill="#fff" d="M10 12h4v6h-4zm6 0h4v6h-4z"/><path fill="#fff" d="M6 12h4v6H6z"/></svg>
+            </div>
+            <h3>Advanced Analytics</h3>
+            <p>Track revenue, student progress, and course performance with real-time dashboards. Spot drop-off points and optimize conversions with data-driven insights.</p>
+          </div>
+          <div class="feature-image">
+            <div class="illustration-frame">
+              <svg viewBox="0 0 200 150" xmlns="http://www.w3.org/2000/svg">
+                <rect x="10" y="15" width="180" height="125" rx="10" fill="#f8fafc" stroke="#e5e7eb"/>
+                <rect x="20" y="25" width="160" height="22" rx="6" fill="#10b981"/>
+                <rect x="20" y="57" width="70" height="34" rx="6" fill="#ecfdf5" stroke="#a7f3d0"/>
+                <text x="30" y="78" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif" font-size="12" font-weight="700" fill="#059669">96%</text>
+                <text x="30" y="90" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif" font-size="8" fill="#059669">Completion</text>
+                <polyline points="95,82 115,62 135,72 155,57 175,68 175,82" fill="none" stroke="#2563eb" stroke-width="2"/>
+                <circle cx="95" cy="82" r="3" fill="#2563eb"/>
+                <circle cx="115" cy="62" r="3" fill="#2563eb"/>
+                <circle cx="135" cy="72" r="3" fill="#2563eb"/>
+                <circle cx="155" cy="57" r="3" fill="#2563eb"/>
+                <circle cx="175" cy="68" r="3" fill="#2563eb"/>
+                <rect x="20" y="104" width="40" height="14" rx="4" fill="#f3f4f6"/>
+                <rect x="70" y="104" width="110" height="14" rx="4" fill="#f3f4f6"/>
+              </svg>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- How It Works -->
+    <section id="how-it-works">
+      <div class="container">
+        <div class="section-header">
+          <h2>Launch your course in three simple steps.</h2>
+          <p>From zero to published in less than a day — our guided workflow makes it effortless.</p>
+        </div>
+        <div class="steps">
+          <div class="step">
+            <div class="step-number">1</div>
+            <h3>Build Your Curriculum</h3>
+            <p>Design your course structure, add lessons, quizzes, and downloads with our drag-and-drop builder.</p>
+          </div>
+          <div class="step">
+            <div class="step-number">2</div>
+            <h3>Publish &amp; Monetize</h3>
+            <p>Set your price, configure payment processing, and publish your course with one click.</p>
+          </div>
+          <div class="step">
+            <div class="step-number">3</div>
+            <h3>Scale &amp; Analyze</h3>
+            <p>Grow your audience, track performance, and optimize based on real student data.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Testimonial -->
+    <section>
+      <div class="container">
+        <div class="testimonial">
+          <p class="quote">CourseForge let me turn my photography workshop into a 6-figure online business. The builder is intuitive and the analytics show exactly what's working. I went from idea to first payout in just two weeks.</p>
+          <div class="author">
+            <svg width="64" height="64" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="avatarGrad" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#2563eb"/><stop offset="1" stop-color="#7c3aed"/></linearGradient></defs><circle cx="32" cy="32" r="32" fill="url(#avatarGrad)"/><text x="32" y="44" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif" font-size="22" font-weight="700" fill="#fff" text-anchor="middle">SC</text></svg>
+            <div class="author-info">
+              <div class="name">Sarah Chen</div>
+              <div class="title">Photography Instructor · 50K+ students taught</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Pricing -->
+    <section id="pricing">
+      <div class="container">
+        <div class="section-header">
+          <h2>Simple, transparent pricing.</h2>
+          <p>Start for free. Upgrade as you grow. No hidden fees, ever.</p>
+        </div>
+        <div class="pricing">
+          <div class="price-card">
+            <h3>Starter</h3>
+            <p class="subtitle">For new creators testing the waters</p>
+            <div class="price"><span class="amount">$29</span><span class="price-separator">/</span><span class="unit">mo</span></div>
+            <ul class="price-features">
+              <li><span class="check"><svg viewBox="0 0 24 24"><path d="M9 16.17l-3.88-3.88L3 14.3l2 2 6 6 10-10-2-2z"/></svg></span><span>1 course</span></li>
+              <li><span class="check"><svg viewBox="0 0 24 24"><path d="M9 16.17l-3.88-3.88L3 14.3l2 2 6 6 10-10-2-2z"/></svg></span><span>Up to 100 students</span></li>
+              <li><span class="check"><svg viewBox="0 0 24 24"><path d="M9 16.17l-3.88-3.88L3 14.3l2 2 6 6 10-10-2-2z"/></svg></span><span>5 GB storage</span></li>
+              <li><span class="x"><svg viewBox="0 0 24 24"><path d="M18.3 5.71L12 12l6.3 6.29-1 1L11 13l-6.3 6.3-1-1L11 11 4.7 4.71l1-1L12 10.6l6.3-6.3 1 1z"/></svg></span><span>Advanced analytics</span></li>
+            </ul>
+            <button class="btn btn-outline card-cta">Get Started</button>
+          </div>
+
+          <div class="price-card popular">
+            <div class="popular-badge">Most Popular</div>
+            <h3>Growth</h3>
+            <p class="subtitle">For serious creators scaling their business</p>
+            <div class="price"><span class="amount">$79</span><span class="price-separator">/</span><span class="unit">mo</span></div>
+            <ul class="price-features">
+              <li><span class="check"><svg viewBox="0 0 24 24"><path d="M9 16.17l-3.88-3.88L3 14.3l2 2 6 6 10-10-2-2z"/></svg></span><span>Up to 10 courses</span></li>
+              <li><span class="check"><svg viewBox="0 0 24 24"><path d="M9 16.17l-3.88-3.88L3 14.3l2 2 6 6 10-10-2-2z"/></svg></span><span>Up to 1,000 students</span></li>
+              <li><span class="check"><svg viewBox="0 0 24 24"><path d="M9 16.17l-3.88-3.88L3 14.3l2 2 6 6 10-10-2-2z"/></svg></span><span>100 GB storage</span></li>
+              <li><span class="check"><svg viewBox="0 0 24 24"><path d="M9 16.17l-3.88-3.88L3 14.3l2 2 6 6 10-10-2-2z"/></svg></span><span>Certificates &amp; custom domain</span></li>
+              <li><span class="x"><svg viewBox="0 0 24 24"><path d="M12 5a7 7 0 016.93 8.37l1.75 4.38a1 1 0 01-.7 1.31l-4 1.5a1 1 0 01-1.25-.5l-1-2a1 1 0 00-1.5.01l-2.5 3.5a1 1 0 01-1.6-.6V9.5a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 002 0V11.5a1 1 0 011-1z"/></svg></span><span>White-label</span></li>
+            </ul>
+            <button class="btn btn-cta card-cta">Get Started</button>
+          </div>
+
+          <div class="price-card">
+            <h3>Business</h3>
+            <p class="subtitle">For teams and enterprises</p>
+            <div class="price"><span class="amount">$199</span><span class="price-separator">/</span><span class="unit">mo</span></div>
+            <ul class="price-features">
+              <li><span class="check"><svg viewBox="0 0 24 24"><path d="M9 16.17l-3.88-3.88L3 14.3l2 2 6 6 10-10-2-2z"/></svg></span><span>Unlimited courses</span></li>
+              <li><span class="check"><svg viewBox="0 0 24 24"><path d="M9 16.17l-3.88-3.88L3 14.3l2 2 6 6 10-10-2-2z"/></svg></span><span>Unlimited students</span></li>
+              <li><span class="check"><svg viewBox="0 0 24 24"><path d="M9 16.17l-3.88-3.88L3 14.3l2 2 6 6 10-10-2-2z"/></svg></span><span>White-label branding</span></li>
+              <li><span class="check"><svg viewBox="0 0 24 24"><path d="M9 16.17l-3.88-3.88L3 14.3l2 2 6 6 10-10-2-2z"/></svg></span><span>Advanced integrations</span></li>
+              <li><span class="check"><svg viewBox="0 0 24 24"><path d="M9 16.17l-3.88-3.88L3 14.3l2 2 6 6 10-10-2-2z"/></svg></span><span>Priority support</span></li>
+            </ul>
+            <button class="btn btn-outline card-cta">Contact Sales</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Final CTA -->
+    <section>
+      <div class="container">
+        <div class="cta">
+          <h2>Ready to launch your first course?</h2>
+          <p>Start your 14-day free trial today. No credit card required. Cancel anytime.</p>
+          <button class="btn btn-lg" style="background:#fff;color:var(--ipw-color-primary);font-weight:700">Start Free Trial</button>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Footer -->
+  <footer>
+    <div class="container">
+      <div class="footer-grid">
+        <div class="footer-col">
+          <a href="#" class="logo">Course<span>Forge</span></a>
+          <p style="color:var(--ipw-color-muted);font-size:0.9rem;margin-top:16px">The all-in-one LMS for course creators who turn expertise into income.</p>
+        </div>
+        <div class="footer-col">
+          <h4>Product</h4>
+          <a href="#features">Features</a>
+          <a href="#pricing">Pricing</a>
+          <a href="#how-it-works">How it works</a>
+          <a href="#resources">Resources</a>
+        </div>
+        <div class="footer-col">
+          <h4>Company</h4>
+          <a href="#about">About</a>
+          <a href="#careers">Careers</a>
+          <a href="#blog">Blog</a>
+        </div>
+        <div class="footer-col">
+          <h4>Support</h4>
+          <a href="#help">Help Center</a>
+          <a href="#contact">Contact</a>
+          <a href="#privacy">Privacy</a>
+          <a href="#terms">Terms</a>
+        </div>
+      </div>
+      <div class="footer-bottom">
+        <span>&copy; 2025 CourseForge. All rights reserved.</span>
+        <span class="footer-tagline">Built for creators, by creators.</span>
+      </div>
+    </div>
+  </footer>
+
+  <!-- Direction contract (per impeccable new-work.md §5) -->
+  <!-- THESIS: An LMS landing page that proves CourseForge's mechanism by showing the dashboard live in the hero, making the no-code builder tangible immediately. Refuses the generic "education stock-photo + gradient overlay" rut. -->
+  <!-- OWN-WORLD: Blue (#2563eb) + violet (#7c3aed) gradient primary, emerald (#10b981) for growth/success, Syne display + system body, 16–24px card radius, 1240px content width. -->
+  <!-- STORY: A creator lands, sees the dashboard in action, understands the value, and starts building immediately. -->
+  <!-- FIRST VIEWPORT: Eyebrow badge → H1 "Turn your expertise into income" → subhead + dual CTA → dashboard mockup on the right. -->
+  <!-- FORM: Committed blue-primary SaaS with emerald accent, clean surfaces, and a dashboard-centric visual language. -->
+</body></html>

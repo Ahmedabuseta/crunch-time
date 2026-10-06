@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select'
 import { useInventoryStore } from '@/services/inventory/inventory.store'
 import type { InventoryLedger } from '@/services/inventory/inventory.types'
 import { Button } from '@/components/ui/button'
@@ -247,13 +248,18 @@ export function InventoryPage() {
           <div className="grid grid-cols-2 gap-3">
             <input value={ingForm.name} onChange={e => setIngForm(f => ({ ...f, name: e.target.value }))} placeholder="اسم المادة" className="px-3 py-2 rounded-xl bg-secondary text-sm border-0 focus:ring-1 focus:ring-primary focus:outline-none" dir="rtl" />
             <EmojiPicker value={ingForm.emoji} onChange={emoji => setIngForm(f => ({ ...f, emoji }))} />
-            <select value={ingForm.unit} onChange={e => setIngForm(f => ({ ...f, unit: e.target.value }))} className="px-3 py-2 rounded-xl bg-secondary text-sm border-0 focus:ring-1 focus:ring-primary focus:outline-none">
-              <option value="g">جرام (g)</option>
-              <option value="kg">كيلو (kg)</option>
-              <option value="ml">مليلتر (ml)</option>
-              <option value="l">لتر (l)</option>
-              <option value="pcs">قطعة (pcs)</option>
-            </select>
+            <Select value={ingForm.unit} onValueChange={v => setIngForm(f => ({ ...f, unit: v }))}>
+              <SelectTrigger className="rounded-xl">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="g">جرام (g)</SelectItem>
+                <SelectItem value="kg">كيلو (kg)</SelectItem>
+                <SelectItem value="ml">مليلتر (ml)</SelectItem>
+                <SelectItem value="l">لتر (l)</SelectItem>
+                <SelectItem value="pcs">قطعة (pcs)</SelectItem>
+              </SelectContent>
+            </Select>
             <input type="number" value={ingForm.stockQuantity} onChange={e => setIngForm(f => ({ ...f, stockQuantity: e.target.value }))} placeholder="الكمية الحالية" className="px-3 py-2 rounded-xl bg-secondary text-sm border-0 focus:ring-1 focus:ring-primary focus:outline-none" disabled={!!editIngId} />
             <input type="number" value={ingForm.minStock} onChange={e => setIngForm(f => ({ ...f, minStock: e.target.value }))} placeholder="الحد الأدنى" className="px-3 py-2 rounded-xl bg-secondary text-sm border-0 focus:ring-1 focus:ring-primary focus:outline-none" />
             <input type="number" value={ingForm.costPerUnit} onChange={e => setIngForm(f => ({ ...f, costPerUnit: e.target.value }))} placeholder="التكلفة/الوحدة" className="px-3 py-2 rounded-xl bg-secondary text-sm border-0 focus:ring-1 focus:ring-primary focus:outline-none col-span-2" />
@@ -369,11 +375,15 @@ export function InventoryPage() {
               <div className="rounded-2xl border-2 border-border p-4 space-y-3">
                 <p className="text-xs font-bold">تسجيل حركة يدوية:</p>
                 <div className="flex gap-2">
-                  <select value={recType} onChange={e => setRecType(e.target.value as 'WASTE' | 'ADJUSTMENT')}
-                    className="h-12 px-3 rounded-xl bg-secondary text-sm font-bold border-0 focus:ring-1 focus:ring-primary focus:outline-none cursor-pointer">
-                    <option value="WASTE">تالف</option>
-                    <option value="ADJUSTMENT">تسوية</option>
-                  </select>
+                  <Select value={recType} onValueChange={v => setRecType(v as 'WASTE' | 'ADJUSTMENT')}>
+                    <SelectTrigger className="h-12 rounded-xl font-bold">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="WASTE">تالف</SelectItem>
+                      <SelectItem value="ADJUSTMENT">تسوية</SelectItem>
+                    </SelectContent>
+                  </Select>
                   <input type="number" value={recQty} onChange={e => setRecQty(e.target.value)} placeholder={recType === 'ADJUSTMENT' ? 'الكمية (±)' : 'الكمية'}
                     className="flex-1 h-12 px-3 rounded-xl bg-secondary text-sm border-0 focus:ring-1 focus:ring-primary focus:outline-none text-center" />
                   <Button className="rounded-xl h-12 px-5 text-sm font-bold" onClick={handleRecordMovement}>إضافة</Button>

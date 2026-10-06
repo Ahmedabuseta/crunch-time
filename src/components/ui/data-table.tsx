@@ -18,9 +18,10 @@ interface DataTableProps<T> {
   onRowClick?: (item: T) => void
   rowClassName?: (item: T) => string
   className?: string
+  renderExpanded?: (item: T) => React.ReactNode
 }
 
-export function DataTable<T>({ columns, data, keyExtractor, emptyText = 'لا توجد نتائج', onRowClick, rowClassName, className }: DataTableProps<T>) {
+export function DataTable<T>({ columns, data, keyExtractor, emptyText = 'لا توجد نتائج', onRowClick, rowClassName, className, renderExpanded }: DataTableProps<T>) {
   const visible = columns.filter((c) => !c.hide)
   if (visible.length === 0) return null
 
@@ -39,15 +40,23 @@ export function DataTable<T>({ columns, data, keyExtractor, emptyText = 'لا ت
           </thead>
           <tbody className="divide-y divide-border/60">
             {data.map((item) => (
-              <tr
-                key={keyExtractor(item)}
-                onClick={onRowClick ? () => onRowClick(item) : undefined}
-                className={cn("transition-colors", onRowClick && "cursor-pointer hover:bg-secondary/30", rowClassName?.(item))}
-              >
-                {visible.map((col) => (
-                  <td key={col.key} className={cn("px-4 py-2.5 align-middle", col.className)}>{col.render(item)}</td>
-                ))}
-              </tr>
+              <React.Fragment key={keyExtractor(item)}>
+                <tr
+                  onClick={onRowClick ? () => onRowClick(item) : undefined}
+                  className={cn("transition-colors", onRowClick && "cursor-pointer hover:bg-secondary/30", rowClassName?.(item))}
+                >
+                  {visible.map((col) => (
+                    <td key={col.key} className={cn("px-4 py-2.5 align-middle", col.className)}>{col.render(item)}</td>
+                  ))}
+                </tr>
+                {renderExpanded?.(item) ? (
+                  <tr>
+                    <td colSpan={visible.length} className="px-4 pb-4 pt-2 align-middle bg-secondary/20">
+                      {renderExpanded(item)}
+                    </td>
+                  </tr>
+                ) : null}
+              </React.Fragment>
             ))}
           </tbody>
         </table>

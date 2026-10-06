@@ -1,0 +1,49 @@
+{
+  "schemaVersion": 1,
+  "id": "ipollowork.deepseek-harness.design",
+  "version": "1.1.0",
+  "kind": "design",
+  "category": "site",
+  "subcategory": "saas",
+  "style": "clean-modern",
+  "tags": [
+    "lms",
+    "saas",
+    "course-creators",
+    "education",
+    "e-learning",
+    "deepseek-harness",
+    "studio"
+  ],
+  "surface": "design",
+  "title": "CourseForge — LMS for Course Creators",
+  "description": "Marketing website for CourseForge, an all-in-one LMS SaaS that helps course creators build, sell, and scale profitable online courses without code.",
+  "cover": "index.html",
+  "entry": "index.html",
+  "source": {
+    "name": "iPolloWork",
+    "license": "MIT"
+  },
+  "designSystem": {
+    "tokenVersion": 2,
+    "editableGroups": [
+      "theme",
+      "background",
+      "typography",
+      "components"
+    ],
+    "tokens": "design-tokens.css",
+    "variables": [
+      "lms",
+      "saas",
+      "professional",
+      "education"
+    ]
+  },
+  "applyChecklist": [
+    "Re-theme surface from placeholder to CourseForge LMS SaaS marketing website",
+    "Preserve the iDesign document structure (manifest + entry + tokens + brief)",
+    "Maintain the linked design-tokens.css contract with extended semantic tokens"
+  ],
+  "minimumAppVersion": "0.21.2"
+}

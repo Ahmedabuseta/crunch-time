@@ -57,7 +57,7 @@ export function ProductCard({ product, index }: ProductCardProps) {
         onClick={handleClick}
         style={{ animationDelay: `${index * 0.04}s` }}
         className={cn(
-          "relative flex flex-col items-center gap-1.5 sm:gap-3 rounded-2xl border-2 bg-card p-2.5 sm:p-5 transition-all cursor-pointer group animate-scale-in min-w-0",
+          "relative flex min-h-full min-w-0 flex-col items-center gap-1.5 sm:gap-3 rounded-2xl border-2 bg-card p-2.5 sm:p-5 transition-all cursor-pointer group animate-scale-in",
           "hover:border-primary/40 hover:shadow-xl hover:shadow-primary/10 hover:-translate-y-0.5 active:scale-[0.96]",
           inCartQty > 0 && "border-primary/50 bg-primary/5 shadow-lg shadow-primary/15"
         )}
@@ -73,9 +73,13 @@ export function ProductCard({ product, index }: ProductCardProps) {
           </span>
         )}
         <span className="text-3xl sm:text-5xl group-hover:scale-110 transition-transform duration-200">{product.emoji}</span>
-        <div className="text-center space-y-0.5 min-w-0 w-full">
-          <p className="text-[11px] sm:text-sm font-bold leading-tight truncate">{product.name}</p>
-          <p className="text-[11px] text-muted-foreground hidden md:block truncate">{product.description}</p>
+        <div className="flex w-full min-w-0 flex-1 flex-col items-center justify-start space-y-0.5 text-center">
+          <p className="w-full min-w-0 whitespace-normal break-words text-[11px] font-bold leading-snug sm:text-sm">
+            {product.name}
+          </p>
+          <p className="hidden w-full min-w-0 whitespace-normal break-words text-[11px] leading-snug text-muted-foreground md:block">
+            {product.description}
+          </p>
         </div>
         <span className="inline-flex items-center px-2 sm:px-3.5 py-1 sm:py-1.5 rounded-full bg-secondary text-[11px] sm:text-sm font-black text-primary whitespace-nowrap">
           {fmtMoney(product.price)} <span className="text-[9px] sm:text-[10px] font-medium mr-1">ج.م</span>

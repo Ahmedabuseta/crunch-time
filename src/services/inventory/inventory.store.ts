@@ -9,7 +9,7 @@ interface InventoryStore {
   fetchAlerts: () => Promise<void>
   createIngredient: (data: CreateIngredientInput) => Promise<string>
   updateIngredient: (id: string, data: UpdateIngredientInput) => Promise<void>
-  removeIngredient: (id: string) => Promise<void>
+  removeIngredient: (id: string, opts?: { hard?: boolean }) => Promise<void>
   restock: (ingredientId: string, qty: number, note?: string, opts?: { unitCost?: number; supplier?: string }) => Promise<{ ok: boolean; ppv?: number }>
   recordWaste: (ingredientId: string, qty: number, note?: string) => Promise<void>
   adjust: (ingredientId: string, delta: number, note?: string) => Promise<void>
@@ -56,8 +56,9 @@ export const useInventoryStore = create<InventoryStore>((set, get) => ({
     await get().fetchAlerts()
   },
 
-  removeIngredient: async (id) => {
-    await window.api.inventory.deleteIngredient(id)
+  removeIngredient: async (id, opts) => {
+    const result = await window.api.inventory.deleteIngredient(id, opts) as { ok: boolean; error?: string }
+    if (!result.ok) throw new Error(result.error || 'فشل تعطيل المادة')
     await get().fetchIngredients()
   },
 
@@ -93,7 +94,8 @@ restock: async (ingredientId, qty, note?, opts?) => {
   },
 
   deleteRecipe: async (id) => {
-    await window.api.inventory.deleteRecipe(id)
+    const result = await window.api.inventory.deleteRecipe(id) as { ok: boolean; error?: string }
+    if (!result.ok) throw new Error(result.error || 'فشل حذف الوصفة')
   },
 
   deductForOrder: async (orderId) => {

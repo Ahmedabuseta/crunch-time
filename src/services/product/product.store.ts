@@ -8,7 +8,7 @@ interface ProductStore {
   getById: (id: string) => Promise<Product | null>
   create: (data: CreateProductInput) => Promise<string>
   update: (id: string, data: UpdateProductInput) => Promise<void>
-  remove: (id: string) => Promise<void>
+  remove: (id: string, opts?: { hard?: boolean }) => Promise<void>
 }
 
 export const useProductStore = create<ProductStore>((set) => ({
@@ -36,8 +36,9 @@ export const useProductStore = create<ProductStore>((set) => ({
     await useProductStore.getState().fetch()
   },
 
-  remove: async (id) => {
-    await window.api.product.delete(id)
+  remove: async (id, opts) => {
+    const result = await window.api.product.delete(id, opts) as { ok: boolean; error?: string }
+    if (!result.ok) throw new Error(result.error || 'فشل حذف المنتج')
     await useProductStore.getState().fetch()
   },
 }))

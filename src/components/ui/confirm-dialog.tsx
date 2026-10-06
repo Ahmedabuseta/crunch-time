@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { AlertTriangle, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -8,7 +9,10 @@ interface ConfirmDialogProps {
   description?: string
   confirmLabel?: string
   cancelLabel?: string
-  onConfirm: () => void
+  // When set, the dialog offers soft delete (default) vs permanent removal.
+  allowHardDelete?: boolean
+  hardDeleteDescription?: string
+  onConfirm: (opts: { hard: boolean }) => void
   onCancel: () => void
 }
 
@@ -18,9 +22,17 @@ export function ConfirmDialog({
   description,
   confirmLabel = 'حذف',
   cancelLabel = 'إلغاء',
+  allowHardDelete = false,
+  hardDeleteDescription,
   onConfirm,
   onCancel,
 }: ConfirmDialogProps) {
+  const [hard, setHard] = useState(false)
+
+  useEffect(() => {
+    if (open) setHard(false)
+  }, [open])
+
   if (!open) return null
   return createPortal(
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={onCancel}>
@@ -42,10 +54,27 @@ export function ConfirmDialog({
             </Button>
           </div>
           {description && <p className="text-xs text-muted-foreground leading-relaxed">{description}</p>}
+          {allowHardDelete && (
+            <button
+              type="button"
+              onClick={() => setHard((v) => !v)}
+              className="w-full text-right rounded-2xl border-2 border-dashed border-destructive/40 hover:border-destructive/70 transition-colors px-4 py-3 space-y-1"
+            >
+              <span className="flex items-center gap-2 text-xs font-bold text-destructive">
+                <span className={`inline-flex h-4 w-7 items-center rounded-full p-0.5 transition-colors ${hard ? 'bg-destructive' : 'bg-muted'}`}>
+                  <span className={`h-3 w-3 rounded-full bg-card transition-transform ${hard ? '-translate-x-3' : 'translate-x-0'}`} />
+                </span>
+                حذف نهائي بدون رجعة
+              </span>
+              <span className="block text-[11px] text-muted-foreground leading-relaxed">
+                {hardDeleteDescription || 'يحذف العنصر من قاعدة البيانات نهائياً. متاح للمدير فقط.'}
+              </span>
+            </button>
+          )}
         </div>
         <div className="flex gap-2 p-5 pt-2">
-          <Button variant="destructive" className="flex-1 rounded-2xl h-12 text-base font-black" onClick={onConfirm}>
-            {confirmLabel}
+          <Button variant="destructive" className="flex-1 rounded-2xl h-12 text-base font-black" onClick={() => onConfirm({ hard })}>
+            {hard ? 'حذف نهائي' : confirmLabel}
           </Button>
           <Button variant="ghost" className="rounded-2xl h-12 px-5" onClick={onCancel}>
             {cancelLabel}

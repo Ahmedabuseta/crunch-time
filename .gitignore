@@ -1,9 +1,14 @@
 node_modules/
 dist/
 dist-electron/
+release/
 *.db
 *.db-journal
 *.db-wal
 backups/
 .commandcode/
 .vite/
+.dockerignore
+*.tsbuildinfo
+squashfs-root/
+.tmp-cdp.mjs

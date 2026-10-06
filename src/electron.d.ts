@@ -15,11 +15,15 @@ declare module 'electron' {
     constructor(opts?: any)
     static getAllWindows(): BrowserWindow[]
     loadURL(url: string): Promise<void>
+    loadFile(path: string): Promise<void>
     isDestroyed(): boolean
     close(): void
+    setBounds(bounds: { x?: number; y?: number; width?: number; height?: number }): void
     webContents: {
       print(opts: any, cb?: (success: boolean, reason: string) => void): void
       getPrintersAsync(): Promise<{ name: string; displayName?: string; isDefault?: boolean }[]>
+      executeJavaScript(code: string): Promise<any>
+      capturePage(): Promise<{ toPNG(): Buffer; getSize(): { width: number; height: number } }>
     }
   }
 }

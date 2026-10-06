@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { DeliveryZone, KitchenStation, OsPrinter } from './delivery.types'
+import type { DeliveryZone, DeliveryProfile, KitchenStation, OsPrinter } from './delivery.types'
 
 interface DeliveryStore {
   zones: DeliveryZone[]
@@ -7,7 +7,7 @@ interface DeliveryStore {
   fetch: (includeInactive?: boolean) => Promise<void>
   create: (data: { name: string; fee: number }) => Promise<void>
   update: (id: string, data: Partial<{ name: string; fee: number; active: boolean }>) => Promise<void>
-  remove: (id: string) => Promise<void>
+  remove: (id: string, opts?: { hard?: boolean }) => Promise<void>
 }
 
 export const useDeliveryStore = create<DeliveryStore>((set) => ({
@@ -30,9 +30,46 @@ export const useDeliveryStore = create<DeliveryStore>((set) => ({
     await useDeliveryStore.getState().fetch(true)
   },
 
-  remove: async (id) => {
-    await window.api.deliveryZone.delete(id)
+  remove: async (id, opts) => {
+    const result = await window.api.deliveryZone.delete(id, opts) as { ok: boolean; error?: string }
+    if (!result.ok) throw new Error(result.error || 'فشل تعطيل منطقة التوصيل')
     await useDeliveryStore.getState().fetch(true)
+  },
+}))
+
+interface ProfileStore {
+  profiles: DeliveryProfile[]
+  loading: boolean
+  fetch: (includeInactive?: boolean) => Promise<void>
+  create: (data: { name: string; phone?: string }) => Promise<void>
+  update: (id: string, data: Partial<{ name: string; phone: string; active: boolean }>) => Promise<void>
+  remove: (id: string, opts?: { hard?: boolean }) => Promise<void>
+}
+
+export const useProfileStore = create<ProfileStore>((set) => ({
+  profiles: [],
+  loading: false,
+
+  fetch: async (includeInactive) => {
+    set({ loading: true })
+    const data = await window.api.deliveryProfile.list(includeInactive)
+    set({ profiles: data as DeliveryProfile[], loading: false })
+  },
+
+  create: async (data) => {
+    await window.api.deliveryProfile.create(data)
+    await useProfileStore.getState().fetch(true)
+  },
+
+  update: async (id, data) => {
+    await window.api.deliveryProfile.update(id, data)
+    await useProfileStore.getState().fetch(true)
+  },
+
+  remove: async (id, opts) => {
+    const result = await window.api.deliveryProfile.delete(id, opts) as { ok: boolean; error?: string }
+    if (!result.ok) throw new Error(result.error || 'فشل تعطيل مندوب التوصيل')
+    await useProfileStore.getState().fetch(true)
   },
 }))
 
@@ -44,7 +81,7 @@ interface StationStore {
   fetchPrinters: () => Promise<void>
   create: (data: { name: string; printerName?: string; paperWidth?: string; categoryIds?: string[] }) => Promise<void>
   update: (id: string, data: Partial<{ name: string; printerName: string | null; paperWidth: string; active: boolean; categoryIds: string[] }>) => Promise<void>
-  remove: (id: string) => Promise<void>
+  remove: (id: string, opts?: { hard?: boolean }) => Promise<void>
 }
 
 export const useStationStore = create<StationStore>((set) => ({
@@ -77,8 +114,9 @@ export const useStationStore = create<StationStore>((set) => ({
     await useStationStore.getState().fetch(true)
   },
 
-  remove: async (id) => {
-    await window.api.station.delete(id)
+  remove: async (id, opts) => {
+    const result = await window.api.station.delete(id, opts) as { ok: boolean; error?: string }
+    if (!result.ok) throw new Error(result.error || 'فشل تعطيل محطة المطبخ')
     await useStationStore.getState().fetch(true)
   },
 }))

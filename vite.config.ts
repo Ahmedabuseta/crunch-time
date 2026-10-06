@@ -23,6 +23,10 @@ export default defineConfig({
     globals: true,
     environment: 'node',
     include: ['src/**/*.test.ts'],
+    // reseed-dev.test.ts wipes the real dev database. Opt in explicitly:
+    //   npx vitest run src/test/reseed-dev.test.ts
+    // (export-menu.test.ts guards itself with EXPORT_MENU=1)
+    exclude: ['**/node_modules/**', '**/.git/**', 'src/test/reseed-dev.test.ts'],
     testTimeout: 10000,
   },
 })
