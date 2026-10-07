@@ -44,12 +44,16 @@ jobs:
 
       # The check-run annotations API is readable without admin
       # rights, unlike the full logs — surface the failure there.
+      # electron-builder marks errors with ⨯; capture that block
+      # (message + stack head), not just the log tail.
       - name: Surface build error
         if: failure()
         shell: bash
         run: |
-          LOG=$(tail -40 build-output.log | tr '\n' ' ')
-          echo "::error::BUILD FAILED — ${LOG:0:6000}"
+          ERR=$(awk '/⨯/{f=1} f{print; n++} n>=12{exit}' build-output.log)
+          TAIL=$(tail -25 build-output.log | tr '\n' ' ')
+          MSG="${ERR:-no ⨯ marker found}"
+          echo "::error::BUILD FAILED — ${MSG} ... TAIL: ${TAIL:0:3000}"
 
       # The suite is verified green on Linux. It never blocks the
       # release; its log is uploaded either way so platform-specific
