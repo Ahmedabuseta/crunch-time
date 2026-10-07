@@ -2,16 +2,9 @@ import { getSqlite } from './client'
 import { randomUUID } from 'crypto'
 import argon2 from 'argon2'
 
-// Deterministic RNG so the demo data is repeatable on a fresh database.
-function mulberry32(seed: number) {
-  return function () {
-    seed |= 0; seed = (seed + 0x6d2b79f5) | 0
-    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed)
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
-  }
-}
-
+// Seeds ONLY the reference data a brand-new install needs to log in and sell:
+// staff, menu, stock, settings. No fabricated orders, shifts, customers or
+// purchase history — sales data comes from real use or a restored backup.
 export async function seedDatabase() {
   const db = getSqlite()
 
@@ -26,9 +19,6 @@ export async function seedDatabase() {
   if (hasCoreData.has_core_data) return
 
   const now = new Date().toISOString()
-  const rand = mulberry32(42)
-  const pick = <T,>(arr: T[]): T => arr[Math.floor(rand() * arr.length)]
-  const int = (min: number, max: number) => min + Math.floor(rand() * (max - min + 1))
 
   // ─── Settings ────────────────────────────────────────────────
   db.prepare('INSERT OR IGNORE INTO settings (id, delivery_fee, tax_rate, restaurant_name, currency) VALUES (?, ?, ?, ?, ?)')
@@ -74,11 +64,6 @@ export async function seedDatabase() {
   const cashierB = randomUUID()
   db.prepare('INSERT INTO users (id, name, pin_hash, role, active, created_at, hourly_rate, commission_rate) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
     .run(cashierB, 'مصطفى كريم', await argon2.hash('5678'), 'cashier', 1, now, 25, 2)
-  const cashiers = [
-    { id: cashierA, name: 'محمد علي' },
-    { id: cashierB, name: 'مصطفى كريم' },
-  ]
-
   // ─── Categories ─────────────────────────────────────────────
   // The real Crunch Time menu. Prices are seeded at 0 where the owner sets them
   // later; Sweets/Treat already carry their published prices.
@@ -198,22 +183,18 @@ export async function seedDatabase() {
 
   // ─── Products ───────────────────────────────────────────────
   const insertProd = db.prepare('INSERT OR IGNORE INTO products (id, name, price, cost_price, supports_rollback, category_id, emoji, description, active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)')
-  const prods: { id: string; name: string; price: number; cost: number; rollback: number; cat: string; emoji: string; desc: string }[] = []
   for (const c of CATALOG) {
     for (const it of c.items) {
       const emoji = it.emoji || c.emoji
       const desc = it.desc || it.name
       const rollback = it.rollback ?? (c.id === 'sweets' || c.id === 'treat' || c.id === 'drinks' ? 0 : 1)
       const row = { id: it.id, name: it.name, price: it.price, cost: 0, rollback, cat: c.id, emoji, desc }
-      prods.push(row)
       insertProd.run(row.id, row.name, row.price, row.cost, row.rollback, row.cat, row.emoji, row.desc)
     }
   }
-  const prodById = new Map(prods.map(p => [p.id, p]))
 
   // Flat id lists per category drive the recipe / modifier / addon wiring below.
   const idsOf = (...cats: string[]) => CATALOG.filter(c => cats.includes(c.id)).flatMap(c => c.items.map(i => i.id))
-  const drinksIds = idsOf('drinks')
   const meatIds = idsOf('meat_crepe')
   const breakfastIds = idsOf('breakfast')
   const bucketIds = idsOf('buckets')
@@ -257,7 +238,6 @@ export async function seedDatabase() {
   ]
   const insertAddon = db.prepare('INSERT OR IGNORE INTO addons (id, name, price, emoji, supports_rollback, active) VALUES (?, ?, ?, ?, ?, 1)')
   for (const a of addonData) insertAddon.run(a.id, a.name, a.price, a.emoji, a.rollback)
-  const addonById = new Map(addonData.map(a => [a.id, a]))
 
   // ─── Ingredients ────────────────────────────────────────────
   // The real kitchen stock, converted from كجم to grams because the app does no
@@ -412,282 +392,9 @@ export async function seedDatabase() {
   fill('d8', [['ing-spices', 1]])
   const insertRecipe = db.prepare('INSERT OR IGNORE INTO recipes (id, product_id, ingredient_id, quantity_per_unit) VALUES (?, ?, ?, ?)')
   for (const r of recipesData) insertRecipe.run(r[0], r[1], r[2], r[3])
-  const recipesByProduct = new Map<string, [string, number][]>()
-  for (const [, pid, iid, qty] of recipesData) {
-    if (!recipesByProduct.has(pid)) recipesByProduct.set(pid, [])
-    recipesByProduct.get(pid)!.push([iid, qty])
-  }
-
-  // Addons carry no ingredient recipes yet — the owner wires
-  // consumption per add-on from the inventory screen.
-  const addonRecipeById = new Map<string, [string, number][]>()
-
   // ─── Link addons to products ───
   // Every made-to-order department carries the full
   // topping/side list; drinks, sweets and treats stay addon-free.
   const insertPA = db.prepare('INSERT OR IGNORE INTO product_addons (product_id, addon_id) VALUES (?, ?)')
   for (const pid of [...crepeIds, ...bucketIds]) for (const a of addonData) insertPA.run(pid, a.id)
-
-  // ─── Customers pool ─────────────────────────────────────────
-  const customerPool = [
-    { name: 'أحمد محمد', phone: '01012345678', addr: 'شارع فيصل، الجيزة' },
-    { name: 'محمد إبراهيم', phone: '01123456789', addr: 'شارع الهرم، الجيزة' },
-    { name: 'مصطفى حسن', phone: '01234567890', addr: 'عباس العقاد، مدينة نصر' },
-    { name: 'كريم عادل', phone: '01512345678', addr: 'شارع 9، المعادي' },
-    { name: 'عمر فاروق', phone: '01098765432', addr: 'جامعة الدول، المهندسين' },
-    { name: 'يوسف سامي', phone: '01187654321', addr: 'طلعت حرب، وسط البلد' },
-    { name: 'محمود عبد الله', phone: '01276543210', addr: 'الخلفاوي، شبرا' },
-    { name: 'حسن علي', phone: '01587654321', addr: 'روكسي، مصر الجديدة' },
-    { name: 'إبراهيم سيد', phone: '01055556666', addr: 'حدائق القبة' },
-    { name: 'علي محمود', phone: '01144445555', addr: 'عين شمس' },
-    { name: 'سامح رضا', phone: '01233334444', addr: 'المطرية' },
-    { name: 'وليد ناصر', phone: '01522223333', addr: 'إمبابة' },
-    { name: 'هاني فؤاد', phone: '01011112222', addr: 'بولاق الدكرور' },
-    { name: 'تامر عادل', phone: '01199998888', addr: 'البحر الأعظم، الجيزة' },
-    { name: 'شريف كمال', phone: '01277776666', addr: 'فيصل، الطوابق' },
-    { name: 'رامي سعيد', phone: '01566665555', addr: 'الهرم، مشعل' },
-    { name: 'مينا جرجس', phone: '01088889999', addr: 'شبرا مصر' },
-    { name: 'فاطمة أحمد', phone: '01122223333', addr: 'مدينة نصر، مصطفى النحاس' },
-    { name: 'منى حسن', phone: '01211110000', addr: 'المعادي الجديدة' },
-    { name: 'سارة محمد', phone: '01500001111', addr: 'المهندسين، شهاب' },
-    { name: 'نورهان علي', phone: '01033334444', addr: 'الدقي' },
-    { name: 'مريم سامح', phone: '01155557777', addr: 'الزمالك' },
-    { name: 'هدى كريم', phone: '01266668888', addr: 'مصر الجديدة، الكوربة' },
-    { name: 'دينا فاروق', phone: '01577779999', addr: 'التجمع الخامس' },
-    { name: 'إسراء محمود', phone: '01044443333', addr: 'حلوان' },
-    { name: 'خالد مصطفى', phone: '01166667777', addr: '6 أكتوبر، الحصري' },
-    { name: 'سيد عبد الرحمن', phone: '01288889999', addr: 'الشيخ زايد' },
-    { name: 'سعيد مرزوق', phone: '01533332222', addr: 'المرج' },
-    { name: 'حامد الشيخ', phone: '01077776666', addr: 'عزبة النخل' },
-    { name: 'آية حسن', phone: '01100009999', addr: 'جسر السويس' },
-  ].slice(0, 8)
-  const insertCust = db.prepare('INSERT OR IGNORE INTO customers (id, phone, name, address, order_count, last_order_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
-  const custStats = new Map<string, { count: number; last: string }>()
-
-  // ─── A month of shifts + orders ─────────────────────────────
-  const insertShift = db.prepare('INSERT INTO shifts (id, number, user_id, started_at, ended_at, opening_cash, closing_cash, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
-  const insertOrder = db.prepare(`INSERT INTO orders (id, status, order_type, table_number, customer_name, customer_phone, customer_address,
-    delivery_address, delivery_phone, subtotal, tax, delivery_fee, delivery_zone_id, delivery_zone_name, delivery_note, discount_code, discount_amount, total,
-    payment_type, cashier_name, status_reason, driver_status, refunded_amount, user_id, shift_id, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-  const ZONE_FEES = [
-    { id: 'dz-near', name: 'قريب', fee: 25 },
-    { id: 'dz-mid', name: 'متوسط', fee: 35 },
-    { id: 'dz-far', name: 'بعيد', fee: 45 },
-  ]
-  const DELIVERY_NOTES = ['الاتصال قبل الوصول', 'الدور الثالث — بدون أسانسير', 'البوابة الخلفية', 'مستعجل لو سمحت']
-  const insertItem = db.prepare('INSERT INTO order_items (id, product_id, order_id, quantity, unit_price, item_discount, selected_modifiers_json, selected_addons_json) VALUES (?, ?, ?, ?, ?, 0, ?, ?)')
-  const insertPay = db.prepare('INSERT INTO payments (id, order_id, method, amount, created_at) VALUES (?, ?, ?, ?, ?)')
-  const insertMov = db.prepare('INSERT INTO cash_movements (id, shift_id, type, amount, note, created_at) VALUES (?, ?, ?, ?, ?, ?)')
-  const insertTxn = db.prepare('INSERT INTO inventory_transactions (id, ingredient_id, type, quantity, reference_order_id, note, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
-  const pendingTransactions: [string, string, string, number, string, string, string][] = []
-
-  // Popularity drives the demo mix: crepes and buckets sell most, desserts least.
-  // Zero-priced items are skipped so demo orders always have a real total.
-  const pricedProdIds = prods.filter(p => p.price > 0).map(p => p.id)
-  const CHEAP = drinksIds.concat(sweetsIds)
-  const CORE = [...crepeIds, ...bucketIds, ...mixIds, ...syrianIds]
-  const weights: Record<string, number> = {}
-  for (const pid of CHEAP) weights[pid] = 2
-  for (const pid of CORE) weights[pid] = 3
-  for (const pid of meatIds) weights[pid] = 2
-  for (const pid of breakfastIds) weights[pid] = 2
-  for (const pid of chickenIds) weights[pid] = 3
-  for (const pid of treatIds) weights[pid] = 1
-  const weightedBag: string[] = []
-  for (const pid of pricedProdIds) for (let k = 0; k < (weights[pid] || 1); k++) weightedBag.push(pid)
-
-  const CANCEL_REASONS = ['العميل طلب الإلغاء', 'خطأ في إدخال الطلب', 'تأخير التوصيل', 'مشكلة في جودة الطعام', 'العميل لم يستلم']
-  const DISC_POOL = [
-    { code: 'WELCOME10', type: 'percentage', value: 10 },
-    { code: 'SAVE20', type: 'fixed', value: 20 },
-    { code: 'FIVE', type: 'fixed', value: 5 },
-  ]
-  const discUse = new Map<string, number>()
-
-  const consume = (iid: string, qty: number, orderId: string, ts: string, label: string) => {
-    pendingTransactions.push([randomUUID(), iid, 'CONSUMPTION', -qty, orderId, label, ts])
-  }
-
-  const midnight = new Date()
-  midnight.setHours(0, 0, 0, 0)
-  const dayStart = midnight.getTime() - 6 * 86400000
-  const tsOf = (day: number, h: number, m: number) => new Date(dayStart + day * 86400000 + h * 3600000 + m * 60000).toISOString()
-
-  let orderSeq = 100001
-  let shiftNum = 0
-  const todayStr = new Date().toISOString().slice(0, 10)
-
-  for (let day = 0; day < 7; day++) {
-    for (let s = 0; s < 1; s++) {
-      const cashier = cashiers[day % 2]
-      const startH = 11
-      const endH = 20
-      const startTs = tsOf(day, startH, int(0, 20))
-      const isLastShift = day === 6
-      const endTs = isLastShift ? null : tsOf(day, Math.min(endH, 23), int(0, 50))
-      const openingCash = int(8, 15) * 100
-      const shiftId = randomUUID()
-      shiftNum++
-      // Orders reference their shift, so create the parent row first.
-      insertShift.run(shiftId, shiftNum, cashier.id, startTs, null, openingCash, null, 'open')
-
-      const orderCount = int(3, 6)
-      let expected = openingCash
-      const saleRows: { id: string; total: number; ts: string }[] = []
-
-      for (let n = 0; n < orderCount; n++) {
-        const oh = int(startH, Math.min(endH, 23))
-        const ots = tsOf(day, oh, int(0, 59))
-        const isDelivery = rand() < 0.45
-        const payCash = rand() < 0.7
-        const statusRoll = rand()
-        const status = statusRoll < 0.04 ? 'CANCELLED' : statusRoll < 0.07 ? 'REFUNDED' : 'COMPLETED'
-
-        // 1–3 items
-        const itemN = rand() < 0.55 ? 1 : rand() < 0.85 ? 2 : 3
-        const chosen: string[] = []
-        for (let k = 0; k < itemN; k++) chosen.push(pick(weightedBag))
-
-        let subtotal = 0
-        const orderId = `#${orderSeq++}`
-        const itemRows: { pid: string; qty: number; unit: number; mods: any[]; addonIds: string[] }[] = []
-
-        for (const pid of chosen) {
-          const prod = prodById.get(pid)!
-          const qty = rand() < 0.8 ? 1 : 2
-          const mods: any[] = []
-          let unit = prod.price
-          const addonIds: string[] = []
-          const addonPool = ['addon-fries', 'addon-ketchup', '768e0c71-4c9e-4ffa-a3e0-b446fa804577', 'c1f2c9a9-c13a-4674-a4d6-e5fee6318cd1', '23bcda2e-c93f-4e5a-9c7d-a93c43160c04']
-          if (rand() < 0.3) {
-            const aid = pick(addonPool)
-            const times = rand() < 0.85 ? 1 : 2
-            for (let t = 0; t < times; t++) addonIds.push(aid)
-            const ad = addonById.get(aid)!
-            unit += ad.price * times
-          }
-          subtotal += unit * qty
-          itemRows.push({ pid, qty, unit, mods, addonIds })
-
-          // Inventory consumption
-          for (const [iid, q] of recipesByProduct.get(pid) || []) consume(iid, q * qty, orderId, ots, `استهلاك منتج — طلب ${orderId}`)
-          const seenAddons = new Set(addonIds)
-          for (const aid of seenAddons) {
-            const times = addonIds.filter(x => x === aid).length
-            for (const [iid, q] of addonRecipeById.get(aid) || []) consume(iid, q * times * qty, orderId, ots, `استهلاك إضافة — طلب ${orderId}`)
-          }
-        }
-
-        const tax = Math.round(subtotal * 0.14)
-        const zone = isDelivery ? pick(ZONE_FEES) : null
-        const deliveryFee = zone ? zone.fee : 0
-        const deliveryNote = isDelivery && rand() < 0.3 ? pick(DELIVERY_NOTES) : null
-        let discountCode: string | null = null
-        let discountAmount = 0
-        if (status === 'COMPLETED' && rand() < 0.15) {
-          const d = pick(DISC_POOL)
-          discountCode = d.code
-          discountAmount = d.type === 'percentage' ? Math.round(subtotal * d.value / 100) : Math.min(d.value, subtotal)
-          discUse.set(d.code, (discUse.get(d.code) || 0) + 1)
-        }
-        const total = subtotal + tax + deliveryFee - discountAmount
-
-        let customer = null
-        if (isDelivery) {
-          customer = Math.floor(rand() * customerPool.length) < 24 ? pick(customerPool) : pick(customerPool)
-          const st = custStats.get(customer.phone) || { count: 0, last: ots }
-          custStats.set(customer.phone, { count: st.count + 1, last: ots })
-        }
-
-        let statusReason: string | null = null
-        let refundedAmount = 0
-        if (status === 'CANCELLED') {
-          statusReason = pick(CANCEL_REASONS)
-        } else if (status === 'REFUNDED') {
-          statusReason = pick(CANCEL_REASONS)
-          refundedAmount = Math.round(total * (0.5 + rand() * 0.5))
-        }
-
-        const tableNumber = !isDelivery && rand() < 0.6 ? String(int(1, 12)) : null
-        insertOrder.run(orderId, status, isDelivery ? 'delivery' : 'dine-in', tableNumber,
-          customer?.name || null, customer?.phone || null, customer?.addr || null,
-          customer?.addr || null, customer?.phone || null,
-          subtotal, tax, deliveryFee, zone?.id || null, zone?.name || null, deliveryNote,
-          discountCode, discountAmount, total,
-          payCash ? 'cash' : 'visa', cashier.name, statusReason, isDelivery ? 'unassigned' : null, refundedAmount,
-          cashier.id, shiftId, ots, ots)
-
-        for (const r of itemRows) {
-          insertItem.run(randomUUID(), r.pid, orderId, r.qty, r.unit,
-            r.mods.length ? JSON.stringify(r.mods) : null,
-            r.addonIds.length ? JSON.stringify(r.addonIds) : null)
-        }
-        insertPay.run(randomUUID(), orderId, payCash ? 'cash' : 'card', total, ots)
-        for (const txn of pendingTransactions.splice(0)) insertTxn.run(...txn)
-
-        if (status === 'COMPLETED' && payCash) {
-          saleRows.push({ id: orderId, total, ts: ots })
-          expected += total
-        }
-      }
-
-      // Cash movements for the shift
-      insertMov.run(randomUUID(), shiftId, 'OPENING', openingCash, 'رصيد افتتاحي', startTs)
-      for (const sRow of saleRows) insertMov.run(randomUUID(), shiftId, 'SALE', sRow.total, `طلب ${sRow.id}`, sRow.ts)
-
-      // Refunds need order context — re-derive: handled inline above is complex,
-      // so record refunds by scanning inserted orders of this shift
-      const shiftOrders = db.prepare('SELECT * FROM orders WHERE shift_id = ?').all(shiftId) as any[]
-      for (const o of shiftOrders) {
-        if ((o.status === 'CANCELLED' || o.status === 'REFUNDED') && o.payment_type === 'cash') {
-          const amt = o.status === 'CANCELLED' ? o.total : o.refunded_amount
-          if (amt > 0) {
-            insertMov.run(randomUUID(), shiftId, 'REFUND', amt, `${o.status === 'CANCELLED' ? 'إلغاء' : 'استرداد'} طلب ${o.id} — ${o.status_reason || ''}`, o.created_at)
-            expected -= amt
-          }
-        }
-      }
-
-      if (isLastShift) {
-        db.prepare('UPDATE shifts SET ended_at = NULL, closing_cash = NULL, status = ? WHERE id = ?').run('open', shiftId)
-      } else {
-        const noise = int(-40, 25)
-        const closingCash = Math.max(0, Math.round(expected + noise))
-        db.prepare('UPDATE shifts SET ended_at = ?, closing_cash = ?, status = ? WHERE id = ?').run(endTs, closingCash, 'closed', shiftId)
-        insertMov.run(randomUUID(), shiftId, 'CLOSING', closingCash, 'إغلاق الوردية', endTs)
-      }
-    }
-    void todayStr
-  }
-
-  // Persist customers
-  for (const c of customerPool) {
-    const st = custStats.get(c.phone)
-    if (!st) continue
-    insertCust.run(`seed-customer-${c.phone}`, c.phone, c.name, c.addr, st.count, st.last, st.last)
-  }
-
-  // Discount usage counts
-  for (const [code, n] of discUse) {
-    db.prepare('UPDATE discount_codes SET used_count = ? WHERE code = ?').run(n, code)
-  }
-
-  // Weekly purchases for the main consumables. Costs here are unknown, so the
-  // unit_cost matches the ingredient (0) and the owner records real prices
-  // via restock. Quantities are a top-up on top of the opening stock.
-  const insertPurch = db.prepare('INSERT INTO purchase_price_history (id, ingredient_id, supplier, unit_cost, quantity, purchased_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
-  const corePurchases: [string, string, number, number][] = [
-    ['ing-crispy-potato', 'سوق العبور', 0, 8000], ['ing-mozzarella', 'ألبان الريف', 0, 5000],
-    ['ing-cheddar', 'ألبان الريف', 0, 3000], ['ing-kofta', 'دواجن البركة', 0, 4000],
-    ['ing-sausage', 'دواجن البركة', 0, 5000], ['ing-shawarma-cold', 'لحمة الدقي', 0, 6000],
-    ['ing-shawarma-hot', 'لحمة الدقي', 0, 12000], ['ing-ketchup', 'شركة المشروبات', 0, 1000],
-  ]
-  for (let w = 0; w < 2; w++) {
-    const pday = tsOf(Math.min(6, w * 4 + 2), 9, 0)
-    for (const [iid, sup, cost, qty] of corePurchases) {
-      insertPurch.run(randomUUID(), iid, sup, cost, qty, pday.slice(0, 10), pday)
-      insertTxn.run(randomUUID(), iid, 'PURCHASE', qty, null, `شراء أسبوعي — ${sup}`, pday)
-    }
-  }
 }

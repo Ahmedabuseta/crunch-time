@@ -238,6 +238,8 @@ export interface ApiBridge {
   backup: {
     trigger: () => Promise<any>
     getStatus: () => Promise<any>
+    export: () => Promise<any>
+    restore: () => Promise<any>
   }
 }
 

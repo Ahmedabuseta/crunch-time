@@ -1,9 +1,15 @@
 declare module 'electron' {
   export const app: {
     getPath(name: string): string
+    relaunch(options?: any): void
+    exit(exitCode?: number): void
   }
   export const ipcMain: {
     handle(channel: string, handler: (event: any, ...args: any[]) => any): void
+  }
+  export const dialog: {
+    showSaveDialog(options?: any): Promise<{ canceled: boolean; filePath?: string }>
+    showOpenDialog(options?: any): Promise<{ canceled: boolean; filePaths: string[] }>
   }
   export const ipcRenderer: {
     invoke(channel: string, ...args: any[]): Promise<any>

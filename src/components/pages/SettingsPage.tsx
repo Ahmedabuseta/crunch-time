@@ -149,6 +149,7 @@ export function SettingsPage() {
   const [backupStatus, setBackupStatus] = useState<any>({ lastBackup: null, backupCount: 0 })
   const [backupBusy, setBackupBusy] = useState(false)
   const [backupMessage, setBackupMessage] = useState('')
+  const [confirmRestore, setConfirmRestore] = useState(false)
   const [pendingDelete, setPendingDelete] = useState<{ kind: 'discount' | 'expense' | 'zone' | 'station' | 'profile'; item: any } | null>(null)
   const [logoError, setLogoError] = useState('')
   const [logoBusy, setLogoBusy] = useState(false)
@@ -420,6 +421,42 @@ export function SettingsPage() {
       setBackupStatus(st || { lastBackup: null, backupCount: 0 })
     } catch (err: any) {
       setBackupMessage(err?.message || 'فشل النسخ الاحتياطي')
+    } finally {
+      setBackupBusy(false)
+    }
+  }
+
+  const handleExport = async () => {
+    setBackupBusy(true)
+    setBackupMessage('')
+    try {
+      const res = await window.api.backup.export()
+      setBackupMessage(
+        res?.ok
+          ? `تم التصدير: ${res.path}`
+          : (res?.canceled ? 'تم إلغاء التصدير' : (res?.error || 'فشل التصدير')),
+      )
+    } catch (err: any) {
+      setBackupMessage(err?.message || 'فشل التصدير')
+    } finally {
+      setBackupBusy(false)
+    }
+  }
+
+  const handleRestore = async () => {
+    setConfirmRestore(false)
+    setBackupBusy(true)
+    setBackupMessage('')
+    try {
+      const res = await window.api.backup.restore()
+      // On success the main process restarts the app right after this resolves.
+      setBackupMessage(
+        res?.ok
+          ? (res.message || 'تمت الاستعادة')
+          : (res?.canceled ? 'تم الإلغاء' : (res?.error || 'فشل الاستعادة')),
+      )
+    } catch (err: any) {
+      setBackupMessage(err?.message || 'فشل الاستعادة')
     } finally {
       setBackupBusy(false)
     }
@@ -1461,10 +1498,36 @@ export function SettingsPage() {
             {backupStatus?.lastBackup ? `آخر نسخة: ${backupStatus.lastBackup}` : 'آخر نسخة: لا توجد'}
             {backupStatus?.backupCount ? ` — عدد النسخ: ${backupStatus.backupCount}` : ''}
           </p>
-          <Button size="sm" className="rounded-xl" onClick={handleBackup} disabled={backupBusy}>
-            {backupBusy ? 'جارٍ النسخ...' : 'نسخ احتياطي الآن'}
-          </Button>
-          {backupMessage && <p className={cn("text-xs font-bold", backupMessage.includes('فشل') ? "text-red-400" : "text-green-400")}>{backupMessage}</p>}
+          <div className="flex flex-wrap gap-2">
+            <Button size="sm" className="rounded-xl" onClick={handleBackup} disabled={backupBusy}>
+              {backupBusy ? 'جارٍ...' : 'نسخ احتياطي الآن'}
+            </Button>
+            <Button size="sm" variant="outline" className="rounded-xl" onClick={handleExport} disabled={backupBusy}>
+              تصدير نسخة إلى ملف
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="rounded-xl text-destructive border-destructive/40 hover:bg-destructive/10"
+              onClick={() => setConfirmRestore(true)}
+              disabled={backupBusy}
+            >
+              استعادة من ملف
+            </Button>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            لنقل البيانات لجهاز تاني: صدّر النسخة على الفلاشة، افتح التطبيق على الجهاز التاني، واستعد من الملف.
+          </p>
+          {backupMessage && (
+            <p className={cn(
+              "text-xs font-bold",
+              backupMessage.includes('فشل') ? "text-red-400"
+                : backupMessage.includes('إلغاء') ? "text-muted-foreground"
+                : "text-green-400",
+            )}>
+              {backupMessage}
+            </p>
+          )}
         </div>
 
         {/* Sync */}
@@ -1507,6 +1570,16 @@ export function SettingsPage() {
           }
         }}
         onCancel={() => setPendingDelete(null)}
+      />
+
+      <ConfirmDialog
+        open={confirmRestore}
+        title="استعادة نسخة احتياطية"
+        description="سيتم استبدال كل البيانات الحالية (الطلبات، الورديات، القائمة) بمحتوى النسخة المختارة. هيتعمل نسخة احتياطية من البيانات الحالية قبل الاستعادة، والتطبيق هيعاد تشغيله."
+        confirmLabel="استعادة"
+        cancelLabel="إلغاء"
+        onConfirm={handleRestore}
+        onCancel={() => setConfirmRestore(false)}
       />
     </div>
   )

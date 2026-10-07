@@ -245,5 +245,7 @@ contextBridge.exposeInMainWorld('api', {
   backup: {
     trigger: () => invoke('backup:trigger'),
     getStatus: () => invoke('backup:getStatus'),
+    export: () => invoke('backup:export'),
+    restore: () => invoke('backup:restore'),
   },
 })

@@ -29,3 +29,18 @@ export function getDb() {
   }
   return db
 }
+
+// Release the connection so the database file itself can be replaced
+// (restore-from-backup). Checkpoints the WAL first so nothing is left
+// in side files; the next getSqlite() call reopens lazily.
+export function closeSqlite() {
+  if (!sqlite) return
+  try {
+    sqlite.pragma('wal_checkpoint(TRUNCATE)')
+  } catch {
+    // best effort — a failed checkpoint must not block the swap
+  }
+  sqlite.close()
+  sqlite = null
+  db = null
+}
