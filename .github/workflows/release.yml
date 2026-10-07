@@ -30,30 +30,38 @@ jobs:
         shell: bash
         run: npm version "${GITHUB_REF#refs/tags/v}" --no-git-tag-version --allow-same-version
 
-      # The release is the point of this workflow — build and publish
-      # first so nothing downstream can block it. Output is captured
-      # so a failure can be diagnosed from the annotation/artifact.
-      - name: Build + publish to GitHub Releases
+      # Package the installer without publishing — electron-builder's
+      # own GitHub publisher fails opaquely ("Cannot cleanup" with an
+      # empty message), so publishing is done by the standard release
+      # action below instead.
+      - name: Build installer
         shell: bash
-        run: npm run release 2>&1 | tee build-output.log; test ${PIPESTATUS[0]} -eq 0
+        run: npm run build && npx electron-builder --publish never 2>&1 | tee build-output.log; test ${PIPESTATUS[0]} -eq 0
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # No code-signing certificate: skip cert discovery so the
           # build cannot hang waiting for one.
           CSC_IDENTITY_AUTO_DISCOVERY: false
 
       # The check-run annotations API is readable without admin
       # rights, unlike the full logs — surface the failure there.
-      # electron-builder marks errors with ⨯; capture that block
-      # (message + stack head), not just the log tail.
       - name: Surface build error
         if: failure()
         shell: bash
         run: |
-          ERR=$(awk '/⨯/{f=1} f{print; n++} n>=12{exit}' build-output.log)
-          TAIL=$(tail -25 build-output.log | tr '\n' ' ')
-          MSG="${ERR:-no ⨯ marker found}"
-          echo "::error::BUILD FAILED — ${MSG} ... TAIL: ${TAIL:0:3000}"
+          ERR=$(grep -nE "⨯|HttpError|Error:|failed|Cannot" build-output.log | tail -15 | tr '\n' ' ')
+          echo "::error::BUILD FAILED — ${ERR:0:5000}"
+
+      # Create the GitHub release and attach the installer, its
+      # blockmap and the electron-updater metadata (latest.yml).
+      - name: Publish to GitHub Releases
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: Release ${{ github.ref_name }}
+          files: |
+            release/*.exe
+            release/*.blockmap
+            release/latest*.yml
 
       # The suite is verified green on Linux. It never blocks the
       # release; its log is uploaded either way so platform-specific
