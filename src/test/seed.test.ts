@@ -11,7 +11,7 @@ vi.mock('electron', () => ({
 }))
 
 const { seedDatabase } = await import('../db/seed')
-const { getSqlite } = await import('../db/client')
+const { getSqlite, closeSqlite } = await import('../db/client')
 const { runMigrations } = await import('../db/migrate')
 
 describe('seedDatabase — Crunch Time menu', () => {
@@ -24,6 +24,9 @@ describe('seedDatabase — Crunch Time menu', () => {
   })
 
   afterAll(() => {
+    // Windows locks open files — close the connection before
+    // the recursive delete or rmSync throws EPERM.
+    closeSqlite()
     fs.rmSync(tmpDir, { recursive: true, force: true })
   })
 
@@ -149,21 +152,17 @@ describe('seedDatabase — Crunch Time menu', () => {
     expect(modifierRows.c).toBe(0)
   })
 
-  it('generates demo orders with a non-zero total', () => {
-    const { count } = sqlite.prepare('SELECT COUNT(*) AS count FROM orders').get() as any
-    expect(count).toBeGreaterThan(0)
-
-    const zeroTotal = sqlite.prepare('SELECT COUNT(*) AS c FROM orders WHERE total <= 0').get() as any
-    expect(zeroTotal.c).toBe(0)
-  })
-
-  it('references only real products from order items', () => {
-    const dangling = sqlite.prepare(`
-      SELECT oi.id FROM order_items oi
-      LEFT JOIN products p ON p.id = oi.product_id
-      WHERE p.id IS NULL
-    `).all() as any[]
-    expect(dangling).toEqual([])
+  it('seeds no fabricated sales history', () => {
+    // Fresh installs get staff + menu only; orders, shifts, customers and
+    // purchase history must come from real use or a restored backup.
+    const count = (t: string) =>
+      (sqlite.prepare(`SELECT COUNT(*) AS c FROM ${t}`).get() as any).c as number
+    for (const table of [
+      'orders', 'order_items', 'payments', 'cash_movements', 'shifts',
+      'customers', 'purchase_price_history', 'inventory_transactions',
+    ]) {
+      expect(count(table), `${table} should start empty`).toBe(0)
+    }
   })
 
   it('is idempotent — a second run does not duplicate rows', () => {

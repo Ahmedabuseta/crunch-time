@@ -16,9 +16,12 @@ vi.mock('electron', () => ({
 }))
 
 const { runMigrations } = await import('../db/migrate')
-const { getSqlite } = await import('../db/client')
+const { getSqlite, closeSqlite } = await import('../db/client')
 
 afterAll(() => {
+  // Windows locks open files — close the connection before
+  // the recursive delete or rmSync throws EPERM.
+  closeSqlite()
   rmSync(tempDir, { recursive: true, force: true })
 })
 

@@ -21,9 +21,12 @@ vi.mock('electron', () => ({
 const { registerIpcHandlers } = await import('../ipc/main')
 const { runMigrations } = await import('../db/migrate')
 const { seedDatabase } = await import('../db/seed')
-const { getSqlite } = await import('../db/client')
+const { getSqlite, closeSqlite } = await import('../db/client')
 
 afterAll(() => {
+  // Windows locks open files — close the connection before
+  // the recursive delete or rmSync throws EPERM.
+  closeSqlite()
   rmSync(tempDir, { recursive: true, force: true })
 })
 
@@ -55,6 +58,14 @@ describe('hard delete never crashes on foreign keys', () => {
     `)
 
     // Pick real rows: a product with order history, one without.
+    // The seed no longer fabricates orders, so give one product a real
+    // order line first — deleting an order-backed product must be refused.
+    sqlite.exec(`
+      INSERT INTO orders (id, status, order_type, subtotal, tax, total, created_at, updated_at)
+      VALUES ('#fixture-1', 'COMPLETED', 'dine-in', 40, 6, 46, datetime('now'), datetime('now'));
+      INSERT INTO order_items (id, order_id, product_id, quantity, unit_price)
+      SELECT 'oi-fixture-1', '#fixture-1', id, 1, price FROM products LIMIT 1;
+    `)
     const withOrders = sqlite.prepare(
       'SELECT DISTINCT product_id FROM order_items LIMIT 1',
     ).get() as { product_id: string }

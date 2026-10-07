@@ -20,7 +20,7 @@ vi.mock('electron', () => ({
 const { registerIpcHandlers } = await import('../ipc/main')
 const { runMigrations } = await import('../db/migrate')
 const { seedDatabase } = await import('../db/seed')
-const { getSqlite } = await import('../db/client')
+const { getSqlite, closeSqlite } = await import('../db/client')
 
 const call = async (channel: string, ...args: any[]) => {
   const fn = handlers.get(channel)
@@ -77,6 +77,9 @@ beforeAll(async () => {
 })
 
 afterAll(() => {
+  // Windows locks open files — close the connection before
+  // the recursive delete or rmSync throws EPERM.
+  closeSqlite()
   rmSync(tempDir, { recursive: true, force: true })
 })
 
