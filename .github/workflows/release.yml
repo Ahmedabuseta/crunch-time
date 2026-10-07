@@ -31,20 +31,31 @@ jobs:
         run: npm version "${GITHUB_REF#refs/tags/v}" --no-git-tag-version --allow-same-version
 
       # The release is the point of this workflow — build and publish
-      # first so nothing downstream can block it.
+      # first so nothing downstream can block it. Output is captured
+      # so a failure can be diagnosed from the annotation/artifact.
       - name: Build + publish to GitHub Releases
-        run: npm run release
+        shell: bash
+        run: npm run release 2>&1 | tee build-output.log; test ${PIPESTATUS[0]} -eq 0
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # No code-signing certificate: skip cert discovery so the
           # build cannot hang waiting for one.
           CSC_IDENTITY_AUTO_DISCOVERY: false
 
-      # The suite is verified green on Linux. It runs after the build
-      # and never blocks the release; its log is uploaded either way
-      # so platform-specific failures (e.g. Windows-only) can be
-      # diagnosed from the "test-log" artifact.
+      # The check-run annotations API is readable without admin
+      # rights, unlike the full logs — surface the failure there.
+      - name: Surface build error
+        if: failure()
+        shell: bash
+        run: |
+          LOG=$(tail -40 build-output.log | tr '\n' ' ')
+          echo "::error::BUILD FAILED — ${LOG:0:6000}"
+
+      # The suite is verified green on Linux. It never blocks the
+      # release; its log is uploaded either way so platform-specific
+      # failures can be diagnosed from the "logs" artifact.
       - name: Run tests
+        if: always()
         continue-on-error: true
         shell: bash
         run: npm test 2>&1 | tee test-output.log; test ${PIPESTATUS[0]} -eq 0
@@ -52,8 +63,10 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: test-log
-          path: test-output.log
+          name: logs
+          path: |
+            build-output.log
+            test-output.log
           if-no-files-found: ignore
 
       # Fallback if publishing failed: the installer stays downloadable
