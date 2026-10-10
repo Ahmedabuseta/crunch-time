@@ -16,13 +16,18 @@ contextBridge.exposeInMainWorld('updater', {
   check: () => invoke('updater:check'),
   version: () => invoke('updater:version'),
   quitAndInstall: () => invoke('updater:quitAndInstall'),
-  onStatus: (cb: (s: { status: string; version?: string; percent?: number; message?: string }) => void) => {
+  onStatus: (cb: (s: UpdateStatusPayload) => void) => {
     if (!onIpc) return () => {}
-    const listener = (_e: unknown, payload: { status: string; version?: string; percent?: number; message?: string }) => cb(payload)
+    const listener = (_e: unknown, payload: UpdateStatusPayload) => cb(payload)
     onIpc('updater:status', listener)
     return () => offIpc?.('updater:status', listener)
   },
 })
+
+type UpdateStatusPayload = {
+  status: string; version?: string; percent?: number
+  transferred?: number; total?: number; bytesPerSecond?: number; message?: string
+}
 
 contextBridge.exposeInMainWorld('api', {
   // ─── Session ────────────────────────────────────────────────

@@ -1,6 +1,7 @@
 import * as React from 'react'
+import { ArrowDown, ArrowUp, ChevronsUpDown, Download } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { ArrowDown, ArrowUp, ChevronsUpDown } from 'lucide-react'
+import { toast } from '@/components/ui/toast'
 
 export type SortValue = string | number | boolean | null | undefined
 
@@ -33,6 +34,17 @@ export function sortRows<T>(rows: readonly T[], sort: SortState<T> | null | unde
 }
 
 const isEmpty = (v: SortValue) => v == null || v === ''
+
+// Pull the plain text out of a rendered cell (badges, spans
+// and formatted numbers included) so the export matches
+// what's on screen.
+function nodeToText(node: React.ReactNode): string {
+  if (node == null || typeof node === 'boolean') return ''
+  if (typeof node === 'string' || typeof node === 'number') return String(node)
+  if (Array.isArray(node)) return node.map(nodeToText).join('')
+  if (React.isValidElement(node)) return nodeToText((node.props as { children?: React.ReactNode }).children)
+  return ''
+}
 
 /** Header click cycle: unsorted → ascending → descending → unsorted. */
 export function nextSortDir<T>(
@@ -115,9 +127,11 @@ interface DataTableProps<T> {
   /** Controlled sort state — pair with useListControls' `sort`/`setSort` so sorting happens before pagination. */
   sort?: SortState<T> | null
   onSortChange?: (sort: SortState<T> | null) => void
+  /** Default filename for the Excel (CSV) export button. */
+  exportName?: string
 }
 
-export function DataTable<T>({ columns, data, keyExtractor, emptyText = 'لا توجد نتائج', onRowClick, rowClassName, className, renderExpanded, sort, onSortChange }: DataTableProps<T>) {
+export function DataTable<T>({ columns, data, keyExtractor, emptyText = 'لا توجد نتائج', onRowClick, rowClassName, className, renderExpanded, sort, onSortChange, exportName = 'table' }: DataTableProps<T>) {
   const visible = columns.filter((c) => !c.hide)
   if (visible.length === 0) return null
 
@@ -133,8 +147,26 @@ export function DataTable<T>({ columns, data, keyExtractor, emptyText = 'لا ت
     return null
   }
 
+  const doExport = async () => {
+    const rows: string[][] = [visible.map((c) => c.label)]
+    for (const item of data) rows.push(visible.map((c) => nodeToText(c.render(item))))
+    const result = await window.api.exportCsv(exportName, rows)
+    if (result?.ok) toast({ title: result.message || 'تم تصدير الجدول', variant: 'success' })
+    else if (!result?.canceled) toast({ title: result?.error || 'فشل التصدير', variant: 'error' })
+  }
+
   return (
     <div className={cn("border-2 rounded-2xl bg-card overflow-hidden", className)}>
+      <div className="flex items-center justify-end gap-1 border-b border-border bg-secondary/20 px-2 py-1">
+        <button
+          onClick={doExport}
+          title="تصدير الجدول إلى إكسل"
+          className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-bold text-muted-foreground transition-colors hover:bg-secondary/60 hover:text-foreground cursor-pointer"
+        >
+          <Download className="h-3.5 w-3.5" />
+          إكسل
+        </button>
+      </div>
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>

@@ -14,6 +14,9 @@ export interface UpdateStatus {
   status: 'checking' | 'available' | 'downloading' | 'downloaded' | 'up-to-date' | 'error'
   version?: string
   percent?: number
+  transferred?: number
+  total?: number
+  bytesPerSecond?: number
   message?: string
 }
 

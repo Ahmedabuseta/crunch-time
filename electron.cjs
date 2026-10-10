@@ -116,7 +116,12 @@ function setupAutoUpdates(win) {
   autoUpdater.on('checking-for-update', () => send('checking'))
   autoUpdater.on('update-available', (info) => send('available', { version: info?.version }))
   autoUpdater.on('update-not-available', () => send('up-to-date'))
-  autoUpdater.on('download-progress', (p) => send('downloading', { percent: Math.round(p?.percent || 0) }))
+  autoUpdater.on('download-progress', (p) => send('downloading', {
+    percent: Math.round(p?.percent || 0),
+    transferred: p?.transferred || 0,
+    total: p?.total || 0,
+    bytesPerSecond: p?.bytesPerSecond || 0,
+  }))
   autoUpdater.on('update-downloaded', (info) => send('downloaded', { version: info?.version }))
   autoUpdater.on('error', (err) => {
     console.error('[updater] error:', err?.message || err)

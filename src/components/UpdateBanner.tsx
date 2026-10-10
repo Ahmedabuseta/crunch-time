@@ -42,19 +42,40 @@ export function UpdateBanner() {
     )
   }
 
+  if (state.status === 'downloading') {
+    const pct = Math.min(100, Math.max(0, Math.round(state.percent ?? 0)))
+    const mb = (n?: number) => (n ? (n / 1048576).toFixed(1) : null)
+    const transferred = mb(state.transferred)
+    const total = mb(state.total)
+    const speed = state.bytesPerSecond ? `${(state.bytesPerSecond / 1048576).toFixed(1)} م.ب/ث` : null
+    return (
+      <div className="px-4 py-2.5 bg-primary/10 border-b border-primary/20 shrink-0" dir="rtl">
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-xs font-bold text-primary flex items-center gap-2">
+            <Download className="h-4 w-4 animate-bounce" />
+            جارٍ تحميل التحديث{state.version ? ` v${state.version}` : ''}…
+          </p>
+          <p className="text-xs font-black text-primary tabular-nums" dir="ltr">{pct}%</p>
+        </div>
+        <div className="mt-2 h-2 rounded-full bg-secondary overflow-hidden">
+          <div className="h-full bg-primary rounded-full transition-all duration-300" style={{ width: `${pct}%` }} />
+        </div>
+        {(transferred != null || speed) && (
+          <p className="mt-1 text-[11px] font-medium text-muted-foreground" dir="ltr">
+            {transferred != null && `${transferred} MB${total != null ? ` / ${total} MB` : ''}`}
+            {speed ? ` — ${speed}` : ''}
+          </p>
+        )}
+      </div>
+    )
+  }
+
   return (
     <div className="flex items-center justify-between gap-3 px-4 py-2 bg-primary/10 border-b border-primary/20 shrink-0" dir="rtl">
       <p className="text-xs font-bold text-primary flex items-center gap-2">
         <Download className="h-4 w-4 animate-bounce" />
-        {state.status === 'downloading'
-          ? `جارٍ تحميل التحديث… ${state.percent ?? 0}%`
-          : `يوجد تحديث جديد${state.version ? ` v${state.version}` : ''} — جارٍ التحميل في الخلفية…`}
+        يوجد تحديث جديد{state.version ? ` v${state.version}` : ''} — جارٍ التحميل…
       </p>
-      {state.status === 'downloading' && (
-        <div className="w-32 h-1.5 rounded-full bg-secondary overflow-hidden shrink-0">
-          <div className="h-full bg-primary rounded-full transition-all" style={{ width: `${state.percent ?? 0}%` }} />
-        </div>
-      )}
     </div>
   )
 }

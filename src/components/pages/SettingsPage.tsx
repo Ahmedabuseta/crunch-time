@@ -1604,6 +1604,9 @@ function UpdateCheckRow() {
   const [busy, setBusy] = useState(false)
   const [status, setStatus] = useState<string | null>(null)
   const [percent, setPercent] = useState<number | null>(null)
+  const [transferred, setTransferred] = useState<number | null>(null)
+  const [total, setTotal] = useState<number | null>(null)
+  const [speed, setSpeed] = useState<number | null>(null)
   const [current, setCurrent] = useState('')
 
   useEffect(() => {
@@ -1611,6 +1614,11 @@ function UpdateCheckRow() {
     return window.updater.onStatus((s) => {
       setStatus(s.status)
       if (typeof s.percent === 'number') setPercent(s.percent)
+      if (s.status === 'downloading') {
+        setTransferred(s.transferred ?? null)
+        setTotal(s.total ?? null)
+        setSpeed(s.bytesPerSecond ?? null)
+      }
       // A downloaded update replaces any stale "downloading…" message with
       // the restart button below.
       if (s.status === 'downloaded') setMsg('')
@@ -1668,6 +1676,20 @@ function UpdateCheckRow() {
       )}
       {(msg || live) && (
         <p className="text-xs font-bold text-muted-foreground">{msg || live}</p>
+      )}
+      {status === 'downloading' && (
+        <div className="w-full">
+          <div className="h-2 rounded-full bg-secondary overflow-hidden">
+            <div className="h-full bg-primary rounded-full transition-all duration-300" style={{ width: `${Math.min(100, Math.max(0, percent ?? 0))}%` }} />
+          </div>
+          {(transferred != null || speed) && (
+            <p className="mt-1 text-[11px] font-medium text-muted-foreground" dir="ltr">
+              {transferred != null && `${(transferred / 1048576).toFixed(1)} MB`}
+              {total ? ` / ${(total / 1048576).toFixed(1)} MB` : ''}
+              {speed ? ` — ${(speed / 1048576).toFixed(1)} MB/s` : ''}
+            </p>
+          )}
+        </div>
       )}
       {current && (
         <p className="text-xs text-muted-foreground">الإصدار الحالي: v{current}</p>
