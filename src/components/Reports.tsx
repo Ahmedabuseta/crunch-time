@@ -16,6 +16,7 @@ import {
   RefreshCw, ChevronLeft, ChevronRight, ChevronDown, Lock, Unlock,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { SortButton, sortRows, toggleSort, type SortState } from '@/components/ui/data-table'
 
 const pad = (n: number) => String(n).padStart(2, '0')
 const fmtLocal = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
@@ -84,6 +85,10 @@ export function Reports() {
   const [active, setActive] = useState<string>('7d')
   const [trendDays, setTrendDays] = useState(7)
   const [range, setRange] = useState<Range>({ from: daysAgo(6), to: today() })
+  const [abcSort, setAbcSort] = useState<SortState<any> | null>(null)
+  const [turnoverSort, setTurnoverSort] = useState<SortState<any> | null>(null)
+  const [ppvSort, setPpvSort] = useState<SortState<any> | null>(null)
+  const [dioSort, setDioSort] = useState<SortState<any> | null>(null)
   const [customFrom, setCustomFrom] = useState('')
   const [customTo, setCustomTo] = useState('')
   const [txPage, setTxPage] = useState(0)
@@ -843,16 +848,16 @@ export function Reports() {
                       <table className="w-full text-[11px]">
                         <thead>
                           <tr className="text-muted-foreground font-bold text-[10px]">
-                            <th className="text-right py-1.5 px-2">المنتج</th>
-                            <th className="text-right py-1.5 px-2">الإيرادات</th>
-                            <th className="text-right py-1.5 px-2">الكمية</th>
-                            <th className="text-right py-1.5 px-2">الحصة</th>
-                            <th className="text-right py-1.5 px-2">معامل التباين</th>
-                            <th className="text-right py-1.5 px-2">التصنيف</th>
+                            <th className="text-right py-1.5 px-2"><SortButton label="المنتج" dir={abcSort?.key === 'name' ? abcSort.dir : null} onSort={() => setAbcSort(toggleSort(abcSort, 'name', (p: any) => p.name))} /></th>
+                            <th className="text-right py-1.5 px-2"><SortButton label="الإيرادات" dir={abcSort?.key === 'revenue' ? abcSort.dir : null} onSort={() => setAbcSort(toggleSort(abcSort, 'revenue', (p: any) => p.revenue))} /></th>
+                            <th className="text-right py-1.5 px-2"><SortButton label="الكمية" dir={abcSort?.key === 'qty' ? abcSort.dir : null} onSort={() => setAbcSort(toggleSort(abcSort, 'qty', (p: any) => p.qty))} /></th>
+                            <th className="text-right py-1.5 px-2"><SortButton label="الحصة" dir={abcSort?.key === 'share' ? abcSort.dir : null} onSort={() => setAbcSort(toggleSort(abcSort, 'share', (p: any) => p.share))} /></th>
+                            <th className="text-right py-1.5 px-2"><SortButton label="معامل التباين" dir={abcSort?.key === 'cv' ? abcSort.dir : null} onSort={() => setAbcSort(toggleSort(abcSort, 'cv', (p: any) => p.cv))} /></th>
+                            <th className="text-right py-1.5 px-2"><SortButton label="التصنيف" dir={abcSort?.key === 'class' ? abcSort.dir : null} onSort={() => setAbcSort(toggleSort(abcSort, 'class', (p: any) => `${p.abc}${p.xyz}`))} /></th>
                           </tr>
                         </thead>
                         <tbody>
-                          {abcXyz.products.slice(0, 12).map(p => (
+                          {sortRows(abcXyz.products, abcSort).slice(0, 12).map(p => (
                             <tr key={p.productId} className="border-t border-border/60">
                               <td className="py-2 px-2 font-bold">{p.emoji} {p.name}</td>
                               <td className="py-2 px-2 font-black">{p.revenue.toFixed(0)} ج.م</td>
@@ -917,18 +922,18 @@ export function Reports() {
                           <table className="w-full text-[11px]">
                             <thead>
                               <tr className="text-muted-foreground font-bold text-[10px]">
-                                <th className="text-right py-1.5 px-2">المكوّن</th>
-                                <th className="text-right py-1.5 px-2">المورد</th>
-                                <th className="text-right py-1.5 px-2">سعر الوحدة</th>
-                                <th className="text-right py-1.5 px-2">الاستهلاك</th>
-                                <th className="text-right py-1.5 px-2">التكلفة (COGS)</th>
-                                <th className="text-right py-1.5 px-2">متوسط المخزون</th>
-                                <th className="text-right py-1.5 px-2">القيمة الحالية</th>
-                                <th className="text-right py-1.5 px-2">الدوران</th>
+                                <th className="text-right py-1.5 px-2"><SortButton label="المكوّن" dir={turnoverSort?.key === 'name' ? turnoverSort.dir : null} onSort={() => setTurnoverSort(toggleSort(turnoverSort, 'name', (r: any) => r.name))} /></th>
+                                <th className="text-right py-1.5 px-2"><SortButton label="المورد" dir={turnoverSort?.key === 'supplier' ? turnoverSort.dir : null} onSort={() => setTurnoverSort(toggleSort(turnoverSort, 'supplier', (r: any) => r.supplier || null))} /></th>
+                                <th className="text-right py-1.5 px-2"><SortButton label="سعر الوحدة" dir={turnoverSort?.key === 'unitCost' ? turnoverSort.dir : null} onSort={() => setTurnoverSort(toggleSort(turnoverSort, 'unitCost', (r: any) => r.unitCost))} /></th>
+                                <th className="text-right py-1.5 px-2"><SortButton label="الاستهلاك" dir={turnoverSort?.key === 'consumptionUnits' ? turnoverSort.dir : null} onSort={() => setTurnoverSort(toggleSort(turnoverSort, 'consumptionUnits', (r: any) => r.consumptionUnits))} /></th>
+                                <th className="text-right py-1.5 px-2"><SortButton label="التكلفة (COGS)" dir={turnoverSort?.key === 'cogsPeriod' ? turnoverSort.dir : null} onSort={() => setTurnoverSort(toggleSort(turnoverSort, 'cogsPeriod', (r: any) => r.cogsPeriod))} /></th>
+                                <th className="text-right py-1.5 px-2"><SortButton label="متوسط المخزون" dir={turnoverSort?.key === 'avgStockValue' ? turnoverSort.dir : null} onSort={() => setTurnoverSort(toggleSort(turnoverSort, 'avgStockValue', (r: any) => r.avgStockValue))} /></th>
+                                <th className="text-right py-1.5 px-2"><SortButton label="القيمة الحالية" dir={turnoverSort?.key === 'stockValueCurrent' ? turnoverSort.dir : null} onSort={() => setTurnoverSort(toggleSort(turnoverSort, 'stockValueCurrent', (r: any) => r.stockValueCurrent))} /></th>
+                                <th className="text-right py-1.5 px-2"><SortButton label="الدوران" dir={turnoverSort?.key === 'turnover' ? turnoverSort.dir : null} onSort={() => setTurnoverSort(toggleSort(turnoverSort, 'turnover', (r: any) => r.turnover))} /></th>
                               </tr>
                             </thead>
                             <tbody>
-                              {turnover.rows.map(r => (
+                              {sortRows(turnover.rows, turnoverSort).map(r => (
                                 <tr key={r.ingredientId} className="border-t border-border/60">
                                   <td className="py-2 px-2 font-bold">{r.name}</td>
                                   <td className="py-2 px-2">{r.supplier || '—'}</td>
@@ -995,19 +1000,19 @@ export function Reports() {
                           <table className="w-full text-[11px]">
                             <thead>
                               <tr className="text-muted-foreground font-bold text-[10px]">
-                                <th className="text-right py-1.5 px-2">المكوّن</th>
-                                <th className="text-right py-1.5 px-2">الخطة</th>
-                                <th className="text-right py-1.5 px-2">الحالي</th>
-                                <th className="text-right py-1.5 px-2">المعياري</th>
-                                <th className="text-right py-1.5 px-2">المشتريات</th>
-                                <th className="text-right py-1.5 px-2">الكمية</th>
-                                <th className="text-right py-1.5 px-2">الإنفاق</th>
-                                <th className="text-right py-1.5 px-2">الانحراف</th>
-                                <th className="text-right py-1.5 px-2">%</th>
+                                <th className="text-right py-1.5 px-2"><SortButton label="المكوّن" dir={ppvSort?.key === 'name' ? ppvSort.dir : null} onSort={() => setPpvSort(toggleSort(ppvSort, 'name', (r: any) => r.name))} /></th>
+                                <th className="text-right py-1.5 px-2"><SortButton label="الخطة" dir={ppvSort?.key === 'plannedCost' ? ppvSort.dir : null} onSort={() => setPpvSort(toggleSort(ppvSort, 'plannedCost', (r: any) => r.plannedCost))} /></th>
+                                <th className="text-right py-1.5 px-2"><SortButton label="الحالي" dir={ppvSort?.key === 'currentCost' ? ppvSort.dir : null} onSort={() => setPpvSort(toggleSort(ppvSort, 'currentCost', (r: any) => r.currentCost))} /></th>
+                                <th className="text-right py-1.5 px-2"><SortButton label="المعياري" dir={ppvSort?.key === 'standardCost' ? ppvSort.dir : null} onSort={() => setPpvSort(toggleSort(ppvSort, 'standardCost', (r: any) => r.standardCost))} /></th>
+                                <th className="text-right py-1.5 px-2"><SortButton label="المشتريات" dir={ppvSort?.key === 'purchases' ? ppvSort.dir : null} onSort={() => setPpvSort(toggleSort(ppvSort, 'purchases', (r: any) => r.purchases))} /></th>
+                                <th className="text-right py-1.5 px-2"><SortButton label="الكمية" dir={ppvSort?.key === 'qty' ? ppvSort.dir : null} onSort={() => setPpvSort(toggleSort(ppvSort, 'qty', (r: any) => Math.abs(r.qty)))} /></th>
+                                <th className="text-right py-1.5 px-2"><SortButton label="الإنفاق" dir={ppvSort?.key === 'spend' ? ppvSort.dir : null} onSort={() => setPpvSort(toggleSort(ppvSort, 'spend', (r: any) => r.spend))} /></th>
+                                <th className="text-right py-1.5 px-2"><SortButton label="الانحراف" dir={ppvSort?.key === 'ppv' ? ppvSort.dir : null} onSort={() => setPpvSort(toggleSort(ppvSort, 'ppv', (r: any) => r.ppv))} /></th>
+                                <th className="text-right py-1.5 px-2"><SortButton label="%" dir={ppvSort?.key === 'ppvPct' ? ppvSort.dir : null} onSort={() => setPpvSort(toggleSort(ppvSort, 'ppvPct', (r: any) => r.ppvPct))} /></th>
                               </tr>
                             </thead>
                             <tbody>
-                              {ppv.rows.slice(0, 15).map(r => (
+                              {sortRows(ppv.rows, ppvSort).slice(0, 15).map(r => (
                                 <tr key={r.ingredientId} className="border-t border-border/60">
                                   <td className="py-2 px-2 font-bold">{r.name}</td>
                                   <td className="py-2 px-2">{r.plannedCost.toFixed(2)}</td>
@@ -1059,17 +1064,17 @@ export function Reports() {
                           <table className="w-full text-[11px]">
                             <thead>
                               <tr className="text-muted-foreground font-bold text-[10px]">
-                                <th className="text-right py-1.5 px-2">المكوّن</th>
-                                <th className="text-right py-1.5 px-2">المورد</th>
-                                <th className="text-right py-1.5 px-2">المخزون</th>
-                                <th className="text-right py-1.5 px-2">الحد الأدنى</th>
-                                <th className="text-right py-1.5 px-2">الاستهلاك اليومي</th>
-                                <th className="text-right py-1.5 px-2">التغطية</th>
-                                <th className="text-right py-1.5 px-2">الحالة</th>
+                                <th className="text-right py-1.5 px-2"><SortButton label="المكوّن" dir={dioSort?.key === 'name' ? dioSort.dir : null} onSort={() => setDioSort(toggleSort(dioSort, 'name', (r: any) => r.name))} /></th>
+                                <th className="text-right py-1.5 px-2"><SortButton label="المورد" dir={dioSort?.key === 'supplier' ? dioSort.dir : null} onSort={() => setDioSort(toggleSort(dioSort, 'supplier', (r: any) => r.supplier || null))} /></th>
+                                <th className="text-right py-1.5 px-2"><SortButton label="المخزون" dir={dioSort?.key === 'stock' ? dioSort.dir : null} onSort={() => setDioSort(toggleSort(dioSort, 'stock', (r: any) => r.stock))} /></th>
+                                <th className="text-right py-1.5 px-2"><SortButton label="الحد الأدنى" dir={dioSort?.key === 'minStock' ? dioSort.dir : null} onSort={() => setDioSort(toggleSort(dioSort, 'minStock', (r: any) => r.minStock))} /></th>
+                                <th className="text-right py-1.5 px-2"><SortButton label="الاستهلاك اليومي" dir={dioSort?.key === 'avgDailyUse' ? dioSort.dir : null} onSort={() => setDioSort(toggleSort(dioSort, 'avgDailyUse', (r: any) => r.avgDailyUse))} /></th>
+                                <th className="text-right py-1.5 px-2"><SortButton label="التغطية" dir={dioSort?.key === 'dio' ? dioSort.dir : null} onSort={() => setDioSort(toggleSort(dioSort, 'dio', (r: any) => r.dio))} /></th>
+                                <th className="text-right py-1.5 px-2"><SortButton label="الحالة" dir={dioSort?.key === 'status' ? dioSort.dir : null} onSort={() => setDioSort(toggleSort(dioSort, 'status', (r: any) => ({ critical: 0, low: 1, good: 2 } as Record<string, number>)[r.status] ?? 3))} /></th>
                               </tr>
                             </thead>
                             <tbody>
-                              {daysOnHand.rows.map(r => {
+                              {sortRows(daysOnHand.rows, dioSort).map(r => {
                                 const risky = (r.supplierRatio ?? 0) > 0.7
                                 return (
                                   <tr key={r.ingredientId} className="border-t border-border/60">

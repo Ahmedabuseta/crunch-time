@@ -2,12 +2,12 @@ import { useEffect, useRef, useState } from 'react'
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { Database, Cloud, Settings, Tag, DollarSign, Receipt, Plus, Trash2, X, Truck, Printer, ChefHat, RefreshCw, Sun, Moon, Palette, User, Store, ImageUp, Pencil } from 'lucide-react'
+import { Database, Cloud, Settings, Tag, DollarSign, Receipt, Plus, Trash2, X, Truck, Printer, ChefHat, RefreshCw, Sun, Moon, Palette, User, Store, ImageUp, Pencil, RotateCcw } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { fmtMoney } from '@/lib/format'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { ListToolbar } from '@/components/ui/list-toolbar'
-import { DataTable } from '@/components/ui/data-table'
+import { DataTable, sortRows, type SortState } from '@/components/ui/data-table'
 import { Pagination } from '@/components/ui/pagination'
 import type { ViewMode } from '@/components/ui/view-toggle'
 import { useDeliveryStore, useStationStore, useProfileStore } from '@/services/delivery/delivery.store'
@@ -100,14 +100,17 @@ export function SettingsPage() {
   const [discountFilter, setDiscountFilter] = useState<string | null>(null)
   const [discountView, setDiscountView] = useState<ViewMode>('cards')
   const [discountPage, setDiscountPage] = useState(1)
+  const [discountSort, setDiscountSort] = useState<SortState<any> | null>(null)
   const [expenseSearch, setExpenseSearch] = useState('')
   const [expenseFilter, setExpenseFilter] = useState<string | null>(null)
   const [expenseView, setExpenseView] = useState<ViewMode>('cards')
   const [expensePage, setExpensePage] = useState(1)
+  const [expenseSort, setExpenseSort] = useState<SortState<any> | null>(null)
   const [zoneSearch, setZoneSearch] = useState('')
   const [zoneFilter, setZoneFilter] = useState<string | null>(null)
   const [zoneView, setZoneView] = useState<ViewMode>('cards')
   const [zonePage, setZonePage] = useState(1)
+  const [zoneSort, setZoneSort] = useState<SortState<any> | null>(null)
   const [settings, setSettings] = useState<any>({})
   const [discounts, setDiscounts] = useState<any[]>([])
   const [expenses, setExpenses] = useState<any[]>([])
@@ -165,7 +168,7 @@ export function SettingsPage() {
     return matchesSearch && matchesFilter
   })
   const discountPages = Math.max(1, Math.ceil(filteredDiscounts.length / settingsPageSize))
-  const visibleDiscounts = filteredDiscounts.slice((discountPage - 1) * settingsPageSize, discountPage * settingsPageSize)
+  const visibleDiscounts = sortRows(filteredDiscounts, discountSort).slice((discountPage - 1) * settingsPageSize, discountPage * settingsPageSize)
   const filteredExpenses = expenses.filter(e => {
     const query = expenseSearch.trim().toLowerCase()
     const matchesSearch = !query || `${e.name} ${e.category}`.toLowerCase().includes(query)
@@ -173,7 +176,7 @@ export function SettingsPage() {
     return matchesSearch && matchesFilter
   })
   const expensePages = Math.max(1, Math.ceil(filteredExpenses.length / settingsPageSize))
-  const visibleExpenses = filteredExpenses.slice((expensePage - 1) * settingsPageSize, expensePage * settingsPageSize)
+  const visibleExpenses = sortRows(filteredExpenses, expenseSort).slice((expensePage - 1) * settingsPageSize, expensePage * settingsPageSize)
   const filteredZones = zones.filter(z => {
     const query = zoneSearch.trim().toLowerCase()
     const matchesSearch = !query || String(z.name).toLowerCase().includes(query)
@@ -181,7 +184,7 @@ export function SettingsPage() {
     return matchesSearch && matchesFilter
   })
   const zonePages = Math.max(1, Math.ceil(filteredZones.length / settingsPageSize))
-  const visibleZones = filteredZones.slice((zonePage - 1) * settingsPageSize, zonePage * settingsPageSize)
+  const visibleZones = sortRows(filteredZones, zoneSort).slice((zonePage - 1) * settingsPageSize, zonePage * settingsPageSize)
 
   const availableKitchenPrinters = (currentStationId?: string) => {
     const taken = new Set(
@@ -808,6 +811,7 @@ export function SettingsPage() {
               </div>
               <div>
                 <p className="text-[11px] font-bold text-muted-foreground mb-1.5">الأصناف اللي تطبع في المحطة دي:</p>
+                <p className="text-[10px] text-muted-foreground mb-1.5">ممكن تختار نفس القسم في أكتر من محطة — هيطبع عند كلهم.</p>
                 <div className="flex flex-wrap gap-1.5">
                   {categories.map((c: any) => {
                     const on = stationForm.categoryIds.includes(c.id)
@@ -851,6 +855,7 @@ export function SettingsPage() {
                         </SelectContent>
                       </Select>
                     </div>
+                    <p className="text-[10px] text-muted-foreground">ممكن تختار نفس القسم في أكتر من محطة — هيطبع عند كلهم.</p>
                     <div className="flex flex-wrap gap-1.5">
                       {categories.map((c: any) => {
                         const on = (editingStation.categoryIds || []).includes(c.id)
@@ -1009,12 +1014,15 @@ export function SettingsPage() {
             <DataTable
               data={visibleZones}
               keyExtractor={z => z.id}
+              sort={zoneSort}
+              onSortChange={(s) => { setZoneSort(s); setZonePage(1) }}
               columns={[
                 { key: 'name', label: 'المنطقة', render: z => <span className="font-bold">{z.name}</span> },
                 { key: 'fee', label: 'الرسوم', render: z => `${fmtMoney(z.fee)} ج.م` },
                 {
                   key: 'status',
                   label: 'الحالة',
+                  sortValue: (z: any) => z.active,
                   render: z => (
                     <button
                       onClick={() => updateZone(z.id, { active: !z.active })}
@@ -1240,17 +1248,21 @@ export function SettingsPage() {
             <DataTable
               data={visibleDiscounts}
               keyExtractor={d => d.id}
+              sort={discountSort}
+              onSortChange={(s) => { setDiscountSort(s); setDiscountPage(1) }}
               columns={[
                 { key: 'code', label: 'الكود', render: d => <span className="font-mono font-bold">{d.code}</span> },
                 { key: 'value', label: 'القيمة', render: d => d.type === 'percentage' ? `${d.value}%` : `${d.value} ج.م` },
                 {
                   key: 'usage',
                   label: 'الاستخدام',
+                  sortValue: (d: any) => d.usedCount,
                   render: d => d.maxUses > 0 ? `${d.usedCount} / ${d.maxUses} (متبقي ${d.maxUses - d.usedCount})` : `${d.usedCount} (بلا حد)`
                 },
                 {
                   key: 'status',
                   label: 'الحالة',
+                  sortValue: (d: any) => d.active,
                   render: d => (
                     <button
                       onClick={() => handleToggleDiscountActive(d)}
@@ -1421,6 +1433,8 @@ export function SettingsPage() {
             <DataTable
               data={visibleExpenses}
               keyExtractor={e => e.id}
+              sort={expenseSort}
+              onSortChange={(s) => { setExpenseSort(s); setExpensePage(1) }}
               columns={[
                 { key: 'name', label: 'المصروف', render: e => <span className="font-bold">{e.name}</span> },
                 { key: 'category', label: 'الفئة', render: e => e.category },
@@ -1589,10 +1603,24 @@ function UpdateCheckRow() {
   const [msg, setMsg] = useState('')
   const [busy, setBusy] = useState(false)
   const [status, setStatus] = useState<string | null>(null)
+  const [percent, setPercent] = useState<number | null>(null)
+  const [current, setCurrent] = useState('')
 
   useEffect(() => {
     if (!window.updater?.onStatus) return
-    return window.updater.onStatus((s) => setStatus(s.status))
+    return window.updater.onStatus((s) => {
+      setStatus(s.status)
+      if (typeof s.percent === 'number') setPercent(s.percent)
+      // A downloaded update replaces any stale "downloading…" message with
+      // the restart button below.
+      if (s.status === 'downloaded') setMsg('')
+    })
+  }, [])
+
+  useEffect(() => {
+    window.updater?.version?.()
+      .then((r) => { if (r?.ok && r.version) setCurrent(r.version) })
+      .catch(() => {})
   }, [])
 
   const handleCheck = async () => {
@@ -1600,12 +1628,17 @@ function UpdateCheckRow() {
     setMsg('')
     try {
       const res = await window.updater?.check()
+      if (res?.current) setCurrent(res.current)
       if (!res?.ok) {
-        setMsg(res?.error === 'dev' ? 'وضع التطوير — التحديثات تعمل في النسخة المثبتة فقط' : 'تعذر التحقق — تحقق من الاتصال بالإنترنت')
+        setMsg(
+          res?.error === 'dev' ? 'وضع التطوير — التحديثات تعمل في النسخة المثبتة فقط'
+            : res?.error === 'unavailable' ? 'التحديثات غير متاحة في هذه النسخة'
+            : 'تعذر التحقق — تحقق من الاتصال بالإنترنت',
+        )
       } else if (res.version) {
-        setMsg(`يوجد تحديث ${res.version} — جارٍ التحميل…`)
+        setMsg(`يوجد تحديث v${res.version} — جارٍ التحميل…`)
       } else {
-        setMsg('أنت على أحدث نسخة')
+        setMsg(`أنت على أحدث نسخة${res.current ? ` (v${res.current})` : ''}`)
       }
     } catch {
       setMsg('تعذر التحقق — حاول لاحقاً')
@@ -1614,14 +1647,30 @@ function UpdateCheckRow() {
     }
   }
 
+  // Progress pushed from the main process (launch auto-check or manual check).
+  const live = status === 'downloading' ? `جارٍ تحميل التحديث… ${percent ?? 0}%`
+    : status === 'checking' ? 'جارٍ التحقق من التحديثات…'
+    : status === 'downloaded' ? 'التحديث جاهز للتثبيت'
+    : status === 'up-to-date' && !msg ? 'أنت على أحدث نسخة'
+    : ''
+
   return (
-    <div className="flex items-center gap-3">
+    <div className="flex flex-wrap items-center gap-3">
       <Button size="sm" className="rounded-xl gap-1.5" onClick={handleCheck} disabled={busy}>
         <RefreshCw className={cn("h-4 w-4", busy && "animate-spin")} />
         {busy ? 'جارٍ التحقق…' : 'التحقق من التحديثات'}
       </Button>
-      {(msg || status === 'downloading' || status === 'downloaded') && (
-        <p className="text-xs font-bold text-muted-foreground">{msg || (status === 'downloaded' ? 'التحديث جاهز — أعد التشغيل من الشريط العلوي' : 'جارٍ التحميل في الخلفية…')}</p>
+      {status === 'downloaded' && (
+        <Button size="sm" className="rounded-xl gap-1.5" onClick={() => window.updater?.quitAndInstall()}>
+          <RotateCcw className="h-4 w-4" />
+          إعادة التشغيل والتثبيت
+        </Button>
+      )}
+      {(msg || live) && (
+        <p className="text-xs font-bold text-muted-foreground">{msg || live}</p>
+      )}
+      {current && (
+        <p className="text-xs text-muted-foreground">الإصدار الحالي: v{current}</p>
       )}
     </div>
   )

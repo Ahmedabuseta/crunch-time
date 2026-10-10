@@ -14,6 +14,7 @@ const offIpc = (ipcRenderer as any).removeListener?.bind(ipcRenderer)
 
 contextBridge.exposeInMainWorld('updater', {
   check: () => invoke('updater:check'),
+  version: () => invoke('updater:version'),
   quitAndInstall: () => invoke('updater:quitAndInstall'),
   onStatus: (cb: (s: { status: string; version?: string; percent?: number; message?: string }) => void) => {
     if (!onIpc) return () => {}
@@ -248,4 +249,7 @@ contextBridge.exposeInMainWorld('api', {
     export: () => invoke('backup:export'),
     restore: () => invoke('backup:restore'),
   },
+
+  // ─── Export ───────────────────────────────────────────────
+  exportCsv: (name: string, rows: string[][]) => invoke('export:csv', name, rows),
 })

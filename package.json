@@ -6,10 +6,10 @@
     "name": "Fast Food",
     "email": "support@fastfood.local"
   },
-  "homepage": "https://github.com/fastfood/cashier",
+  "homepage": "https://github.com/Ahmedabuseta/crunch-time",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/fastfood/cashier.git"
+    "url": "git+https://github.com/Ahmedabuseta/crunch-time.git"
   },
   "type": "module",
   "main": "electron.cjs",
@@ -76,7 +76,7 @@
       "output": "release",
       "buildResources": "build"
     },
-    "npmRebuild": true,
+    "npmRebuild": false,
     "files": [
       "dist/**/*",
       "dist-electron/**/*",
@@ -86,7 +86,9 @@
     ],
     "icon": "build/icon",
     "publish": {
-      "provider": "github"
+      "provider": "github",
+      "owner": "Ahmedabuseta",
+      "repo": "crunch-time"
     },
     "win": {
       "target": [

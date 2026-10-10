@@ -91,7 +91,7 @@ export function CashDrawerPage() {
         </span>
       ),
     },
-    { key: 'time', label: 'الوقت', render: (m) => <span className="text-[11px]">{new Date(m.createdAt).toLocaleString('ar-EG')}</span> },
+    { key: 'time', label: 'الوقت', sortValue: (m: any) => m.createdAt, render: (m) => <span className="text-[11px]">{new Date(m.createdAt).toLocaleString('ar-EG')}</span> },
   ]
 
   return (
@@ -188,7 +188,7 @@ export function CashDrawerPage() {
 
       {view === 'table' ? (
         <div className="flex-1 px-5 overflow-auto">
-          <DataTable columns={columns} data={list.items} keyExtractor={(m) => m.id} />
+          <DataTable columns={columns} data={list.items} keyExtractor={(m) => m.id} sort={list.sort} onSortChange={list.setSort} />
         </div>
       ) : (
         <ScrollArea className="flex-1 px-5 pb-5">

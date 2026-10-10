@@ -313,17 +313,17 @@ export function OrderHistory() {
       ),
     },
     {
-      key: 'type', label: 'النوع', render: (o) => (
+      key: 'type', label: 'النوع', sortValue: (o: any) => o.orderType, render: (o) => (
         <span className="text-[10px] text-muted-foreground bg-secondary/60 rounded-full px-2 py-0.5 font-medium flex items-center gap-1 w-fit">
           {o.orderType === 'delivery' ? <Truck className="h-3 w-3" /> : <UtensilsCrossed className="h-3 w-3" />}
           {o.orderType === 'delivery' ? `توصيل${o.deliveryZoneName ? ` · ${o.deliveryZoneName}` : ''}` : o.orderType === 'takeaway' ? 'تيك أوي' : 'صالة'}
         </span>
       ),
     },
-    { key: 'payment', label: 'الدفع', render: (o) => <span className="text-xs font-bold">{paymentLabels[o.paymentType] || o.paymentType || 'كاش'}</span> },
-    { key: 'cashier', label: 'الكاشير', render: (o) => <span className="text-xs text-muted-foreground">{o.cashierName || '—'}</span> },
+    { key: 'payment', label: 'الدفع', sortValue: (o: any) => o.paymentType || 'cash', render: (o) => <span className="text-xs font-bold">{paymentLabels[o.paymentType] || o.paymentType || 'كاش'}</span> },
+    { key: 'cashier', label: 'الكاشير', sortValue: (o: any) => o.cashierName || '', render: (o) => <span className="text-xs text-muted-foreground">{o.cashierName || '—'}</span> },
     { key: 'total', label: 'الإجمالي', className: 'text-left', render: (o) => <span className="font-black text-primary">{o.total.toFixed(0)} ج.م</span> },
-    { key: 'time', label: 'الوقت', render: (o) => <span className="text-[11px] text-muted-foreground">{toEgyptianTime(o.createdAt)}</span> },
+    { key: 'time', label: 'الوقت', sortValue: (o: any) => o.createdAt, render: (o) => <span className="text-[11px] text-muted-foreground">{toEgyptianTime(o.createdAt)}</span> },
     {
       key: 'actions', label: 'إجراءات', render: (o) => (
         <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
@@ -681,6 +681,8 @@ export function OrderHistory() {
             columns={columns}
             data={list.items}
             keyExtractor={(order) => order.id}
+            sort={list.sort}
+            onSortChange={list.setSort}
             onRowClick={(o) => setExpandedOrder(expandedOrder === o.id ? null : o.id)}
             renderExpanded={(order) => expandedOrder === order.id ? renderOrderDetails(order) : null}
           />

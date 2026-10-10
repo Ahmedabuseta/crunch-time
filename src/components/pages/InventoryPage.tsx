@@ -41,7 +41,7 @@ export function InventoryPage() {
   const [showIngForm, setShowIngForm] = useState(false)
   const [invTab, setInvTab] = useState<'ingredients' | 'sub-recipes'>('ingredients')
   const [editIngId, setEditIngId] = useState<string | null>(null)
-  const [ingForm, setIngForm] = useState({ name: '', emoji: '', unit: 'g', stockQuantity: '', minStock: '', costPerUnit: '' })
+  const [ingForm, setIngForm] = useState({ name: '', emoji: '', unit: 'g', stockQuantity: '', minStock: '', purchaseQty: '1', packagePrice: '' })
   const [restockId, setRestockId] = useState<string | null>(null)
   const [restockQty, setRestockQty] = useState('')
   const [view, setView] = useState<ViewMode>('table')
@@ -75,35 +75,41 @@ export function InventoryPage() {
     pageSize: 12,
   })
 
-  const resetIngForm = () => { setIngForm({ name: '', emoji: '', unit: 'g', stockQuantity: '', minStock: '', costPerUnit: '' }); setEditIngId(null); setShowIngForm(false) }
+  const resetIngForm = () => { setIngForm({ name: '', emoji: '', unit: 'g', stockQuantity: '', minStock: '', purchaseQty: '1', packagePrice: '' }); setEditIngId(null); setShowIngForm(false) }
+
+  // The owner enters the purchase-package price (e.g. a 1kg bag);
+  // the per-unit cost stored on the ingredient is derived from it.
+  const deriveCost = (packagePrice: string, purchaseQty: string) =>
+    (parseFloat(packagePrice) || 0) / (parseFloat(purchaseQty) || 1)
 
   const handleCreateIng = async () => {
     if (!ingForm.name || !ingForm.unit) return
-    await createIngredient({ name: ingForm.name, emoji: ingForm.emoji || '📦', unit: ingForm.unit, stockQuantity: parseFloat(ingForm.stockQuantity) || 0, minStock: parseFloat(ingForm.minStock) || 0, costPerUnit: parseFloat(ingForm.costPerUnit) || 0 })
+    await createIngredient({ name: ingForm.name, emoji: ingForm.emoji || '📦', unit: ingForm.unit, stockQuantity: parseFloat(ingForm.stockQuantity) || 0, minStock: parseFloat(ingForm.minStock) || 0, costPerUnit: deriveCost(ingForm.packagePrice, ingForm.purchaseQty), purchaseQty: parseFloat(ingForm.purchaseQty) || 1 })
     toast({ title: 'تم إنشاء المادة', description: ingForm.name, variant: 'success' })
     resetIngForm()
   }
 
   const handleUpdateIng = async () => {
     if (!editIngId || !ingForm.name) return
-    await updateIngredient(editIngId, { name: ingForm.name, unit: ingForm.unit, minStock: parseFloat(ingForm.minStock) || 0, costPerUnit: parseFloat(ingForm.costPerUnit) || 0 })
+    await updateIngredient(editIngId, { name: ingForm.name, unit: ingForm.unit, minStock: parseFloat(ingForm.minStock) || 0, costPerUnit: deriveCost(ingForm.packagePrice, ingForm.purchaseQty), purchaseQty: parseFloat(ingForm.purchaseQty) || 1 })
     toast({ title: 'تم تحديث المادة', description: ingForm.name, variant: 'success' })
     resetIngForm()
   }
 
   const startEditIng = (i: any) => {
     setEditIngId(i.id); setShowIngForm(false)
-    setIngForm({ name: i.name, emoji: i.emoji || '', unit: i.unit, stockQuantity: String(i.stockQuantity), minStock: String(i.minStock), costPerUnit: String(i.costPerUnit) })
+    const purchaseQty = Number(i.purchaseQty) || 1
+    setIngForm({ name: i.name, emoji: i.emoji || '', unit: i.unit, stockQuantity: String(i.stockQuantity), minStock: String(i.minStock), purchaseQty: String(purchaseQty), packagePrice: String((Number(i.costPerUnit) || 0) * purchaseQty) })
   }
 
   const handleRestock = async () => {
     if (restockId && restockQty) {
-      const unitCost = parseFloat(restockUnitCost)
+      const packagePrice = parseFloat(restockUnitCost)
       const opts = {
-        unitCost: !isNaN(unitCost) && unitCost > 0 ? unitCost : undefined,
+        packagePrice: !isNaN(packagePrice) && packagePrice > 0 ? packagePrice : undefined,
         supplier: restockSupplier.trim() || undefined,
       }
-      const result = await restock(restockId, parseFloat(restockQty), 'إعادة تعبئة يدوية', opts.unitCost || opts.supplier ? opts : undefined)
+      const result = await restock(restockId, parseFloat(restockQty), 'إعادة تعبئة يدوية', opts.packagePrice || opts.supplier ? opts : undefined)
       const ing = ingredients.find(i => i.id === restockId)
       toast({ title: 'تمت التعبئة', description: ing ? `${ing.name} +${restockQty} ${ing.unit}` : undefined, variant: 'success' })
       if (result?.ppv != null && ing) setLastPpv({ name: ing.name, ppv: result.ppv })
@@ -148,9 +154,17 @@ export function InventoryPage() {
         </div>
       ),
     },
-    { key: 'stock', label: 'المخزون', render: (ing) => <span className="font-bold">{ing.stockQuantity} / {ing.minStock * 5} {unitLabel[ing.unit] || ing.unit}</span> },
-    { key: 'min', label: 'الحد الأدنى', render: (ing) => <span>{ing.minStock} {unitLabel[ing.unit] || ing.unit}</span> },
-    { key: 'cost', label: 'التكلفة', render: (ing) => <span>{fmtMoney(ing.costPerUnit)} ج.م/{unitLabel[ing.unit] || ing.unit}</span> },
+    { key: 'stock', label: 'المخزون', sortValue: (ing: any) => ing.stockQuantity, render: (ing) => <span className="font-bold">{ing.stockQuantity} / {ing.minStock * 5} {unitLabel[ing.unit] || ing.unit}</span> },
+    { key: 'min', label: 'الحد الأدنى', sortValue: (ing: any) => ing.minStock, render: (ing) => <span>{ing.minStock} {unitLabel[ing.unit] || ing.unit}</span> },
+    {
+      key: 'cost', label: 'التكلفة', sortValue: (ing: any) => ing.costPerUnit, render: (ing) => {
+        const pack = Number(ing.purchaseQty) || 1
+        const packPrice = (Number(ing.costPerUnit) || 0) * pack
+        return pack > 1
+          ? <span title={`${fmtMoney(ing.costPerUnit)} ج.م/${unitLabel[ing.unit] || ing.unit}`}>{fmtMoney(packPrice)} ج.م / {pack} {unitLabel[ing.unit] || ing.unit}</span>
+          : <span>{fmtMoney(ing.costPerUnit)} ج.م/{unitLabel[ing.unit] || ing.unit}</span>
+      },
+    },
     {
       key: 'actions', label: 'إجراءات', className: 'text-left', render: (ing) => (
         <div className="flex items-center gap-1.5">
@@ -158,8 +172,8 @@ export function InventoryPage() {
             <div className="flex items-center gap-1.5 flex-wrap">
               <input type="number" value={restockQty} onChange={e => setRestockQty(e.target.value)} placeholder="الكمية"
                 className="w-20 h-11 px-2 rounded-lg bg-secondary text-sm border-0 focus:ring-1 focus:ring-primary focus:outline-none text-center" />
-              <input type="number" value={restockUnitCost} onChange={e => setRestockUnitCost(e.target.value)} placeholder="تكلفة"
-                className="w-20 h-11 px-2 rounded-lg bg-secondary text-sm border-0 focus:ring-1 focus:ring-primary focus:outline-none text-center" title="تكلفة الوحدة" />
+              <input type="number" value={restockUnitCost} onChange={e => setRestockUnitCost(e.target.value)} placeholder="سعر العبوة"
+                className="w-20 h-11 px-2 rounded-lg bg-secondary text-sm border-0 focus:ring-1 focus:ring-primary focus:outline-none text-center" title="سعر العبوة كما تشتريها — تُقسم على حجم العبوة تلقائياً" />
               <input value={restockSupplier} onChange={e => setRestockSupplier(e.target.value)} placeholder="المورد"
                 className="w-24 h-11 px-2 rounded-lg bg-secondary text-sm border-0 focus:ring-1 focus:ring-primary focus:outline-none text-center" title="اسم المورد" />
               <Button className="rounded-xl h-11 px-4 text-sm font-bold" onClick={handleRestock}>تأكيد</Button>
@@ -248,7 +262,7 @@ export function InventoryPage() {
           <div className="grid grid-cols-2 gap-3">
             <input value={ingForm.name} onChange={e => setIngForm(f => ({ ...f, name: e.target.value }))} placeholder="اسم المادة" className="px-3 py-2 rounded-xl bg-secondary text-sm border-0 focus:ring-1 focus:ring-primary focus:outline-none" dir="rtl" />
             <EmojiPicker value={ingForm.emoji} onChange={emoji => setIngForm(f => ({ ...f, emoji }))} />
-            <Select value={ingForm.unit} onValueChange={v => setIngForm(f => ({ ...f, unit: v }))}>
+            <Select value={ingForm.unit} onValueChange={v => setIngForm(f => ({ ...f, unit: v, purchaseQty: v === 'g' ? '1000' : '1' }))}>
               <SelectTrigger className="rounded-xl">
                 <SelectValue />
               </SelectTrigger>
@@ -262,8 +276,12 @@ export function InventoryPage() {
             </Select>
             <input type="number" value={ingForm.stockQuantity} onChange={e => setIngForm(f => ({ ...f, stockQuantity: e.target.value }))} placeholder="الكمية الحالية" className="px-3 py-2 rounded-xl bg-secondary text-sm border-0 focus:ring-1 focus:ring-primary focus:outline-none" disabled={!!editIngId} />
             <input type="number" value={ingForm.minStock} onChange={e => setIngForm(f => ({ ...f, minStock: e.target.value }))} placeholder="الحد الأدنى" className="px-3 py-2 rounded-xl bg-secondary text-sm border-0 focus:ring-1 focus:ring-primary focus:outline-none" />
-            <input type="number" value={ingForm.costPerUnit} onChange={e => setIngForm(f => ({ ...f, costPerUnit: e.target.value }))} placeholder="التكلفة/الوحدة" className="px-3 py-2 rounded-xl bg-secondary text-sm border-0 focus:ring-1 focus:ring-primary focus:outline-none col-span-2" />
+            <input type="number" value={ingForm.purchaseQty} onChange={e => setIngForm(f => ({ ...f, purchaseQty: e.target.value }))} placeholder="حجم العبوة"
+              className="px-3 py-2 rounded-xl bg-secondary text-sm border-0 focus:ring-1 focus:ring-primary focus:outline-none" title="حجم العبوة بالوحدة نفسها — مثال: كيس 1 كجم من مادة بالجرام = 1000" />
+            <input type="number" value={ingForm.packagePrice} onChange={e => setIngForm(f => ({ ...f, packagePrice: e.target.value }))} placeholder="سعر العبوة (ج.م)"
+              className="px-3 py-2 rounded-xl bg-secondary text-sm border-0 focus:ring-1 focus:ring-primary focus:outline-none col-span-2" title="السعر كما يُكتب على الفاتورة — التكلفة لكل وحدة تُحسب تلقائياً" />
           </div>
+          <p className="text-[11px] text-muted-foreground">التكلفة لكل وحدة تُحسب تلقائياً من سعر العبوة — تُستخدم في تكلفة الوصفة، السعر المقترح، وتقارير الأرباح والمخزون</p>
           <div className="flex gap-2">
             <Button className="flex-1 rounded-xl" onClick={editIngId ? handleUpdateIng : handleCreateIng}>{editIngId ? 'تحديث' : 'إضافة'}</Button>
             {editIngId && <Button variant="ghost" className="rounded-xl" onClick={resetIngForm}>إلغاء</Button>}
@@ -293,6 +311,8 @@ export function InventoryPage() {
             data={list.items}
             keyExtractor={(ing) => ing.id}
             rowClassName={(ing) => alertIds.has(ing.id) ? "bg-yellow-500/5" : ""}
+            sort={list.sort}
+            onSortChange={list.setSort}
           />
         </div>
       ) : (
@@ -317,7 +337,13 @@ export function InventoryPage() {
                   </div>
                   <div className="text-right">
                     <p className="text-xs text-muted-foreground">الحد الأدنى: {ing.minStock} {ing.unit}</p>
-                    <p className="text-xs text-muted-foreground">التكلفة: {fmtMoney(ing.costPerUnit)} ج.م/{ing.unit}</p>
+                    {(() => {
+                      const pack = Number(ing.purchaseQty) || 1
+                      const packPrice = (Number(ing.costPerUnit) || 0) * pack
+                      return pack > 1
+                        ? <p className="text-xs text-muted-foreground" title={`${fmtMoney(ing.costPerUnit)} ج.م/${ing.unit}`}>التكلفة: {fmtMoney(packPrice)} ج.م / {pack} {ing.unit}</p>
+                        : <p className="text-xs text-muted-foreground">التكلفة: {fmtMoney(ing.costPerUnit)} ج.م/{ing.unit}</p>
+                    })()}
                     {ing.supplier && (
                       <p className="text-[10px] text-muted-foreground mt-0.5 flex items-center gap-1 justify-end">
                         <ShieldAlert className={cn("h-3 w-3", ing.secondarySupplier ? "text-muted-foreground" : "text-orange-400")} />
@@ -332,7 +358,7 @@ export function InventoryPage() {
                     {restockId === ing.id ? (
                       <div className="flex items-center gap-1.5 flex-wrap">
                         <input type="number" value={restockQty} onChange={e => setRestockQty(e.target.value)} placeholder="الكمية" className="w-20 h-11 px-2 rounded-lg bg-secondary text-sm border-0 focus:ring-1 focus:ring-primary focus:outline-none text-center" />
-                        <input type="number" value={restockUnitCost} onChange={e => setRestockUnitCost(e.target.value)} placeholder="تكلفة" className="w-20 h-11 px-2 rounded-lg bg-secondary text-sm border-0 focus:ring-1 focus:ring-primary focus:outline-none text-center" title="تكلفة الوحدة" />
+                        <input type="number" value={restockUnitCost} onChange={e => setRestockUnitCost(e.target.value)} placeholder="سعر العبوة" className="w-20 h-11 px-2 rounded-lg bg-secondary text-sm border-0 focus:ring-1 focus:ring-primary focus:outline-none text-center" title="سعر العبوة كما تشتريها — تُقسم على حجم العبوة تلقائياً" />
                         <input value={restockSupplier} onChange={e => setRestockSupplier(e.target.value)} placeholder="المورد" className="w-24 h-11 px-2 rounded-lg bg-secondary text-sm border-0 focus:ring-1 focus:ring-primary focus:outline-none text-center" title="اسم المورد" />
                         <Button className="rounded-xl h-11 px-4 text-sm font-bold" onClick={handleRestock}>تأكيد</Button>
                         <Button variant="ghost" className="rounded-xl h-11 px-3 text-sm" onClick={() => { setRestockId(null); setRestockUnitCost(''); setRestockSupplier('') }}>إلغاء</Button>

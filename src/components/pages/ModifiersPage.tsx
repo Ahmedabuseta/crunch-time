@@ -6,7 +6,7 @@ import { RecipePanel } from './RecipePanel'
 import { Button } from '@/components/ui/button'
 import { Plus, Pencil, Trash2, X, Link } from 'lucide-react'
 import { ListToolbar } from '@/components/ui/list-toolbar'
-import { DataTable, type DataColumn } from '@/components/ui/data-table'
+import { DataTable, sortRows, type DataColumn, type SortState } from '@/components/ui/data-table'
 import { Pagination } from '@/components/ui/pagination'
 import { useListControls } from '@/components/ui/list-controls'
 import { toast } from '@/components/ui/toast'
@@ -37,6 +37,7 @@ export function ModifiersPage() {
   const [recipeFor, setRecipeFor] = useState<string | null>(null)
   const [view, setView] = useState<ViewMode>('table')
   const [typeFilter, setTypeFilter] = useState<string | null>(null)
+  const [modSort, setModSort] = useState<SortState<any> | null>(null)
   const [pendingDelete, setPendingDelete] = useState<{ kind: 'group' | 'modifier'; item: any } | null>(null)
 
   useEffect(() => { fetchGroups(); fetchIngredients() }, [])
@@ -95,8 +96,8 @@ export function ModifiersPage() {
         <span className="font-bold">{m.name}{m.priceAdjustment > 0 && <span className="text-primary text-xs mr-1">+{fmtMoney(m.priceAdjustment)} ج.م</span>}</span>
       ),
     },
-    { key: 'group', label: 'المجموعة', render: (m) => <span className="text-xs bg-secondary rounded-full px-2 py-0.5">{m.groupName}</span> },
-    { key: 'type', label: 'النوع', render: (m) => <span className="text-[10px] text-muted-foreground">{m.groupType === 'single-select' ? 'اختيار واحد' : 'اختيار متعدد'}</span> },
+    { key: 'group', label: 'المجموعة', sortValue: (m: any) => m.groupName, render: (m) => <span className="text-xs bg-secondary rounded-full px-2 py-0.5">{m.groupName}</span> },
+    { key: 'type', label: 'النوع', sortValue: (m: any) => m.groupType, render: (m) => <span className="text-[10px] text-muted-foreground">{m.groupType === 'single-select' ? 'اختيار واحد' : 'اختيار متعدد'}</span> },
     {
       key: 'actions', label: 'إجراءات', className: 'text-left', render: (m) => (
         <div className="flex items-center gap-1">
@@ -158,8 +159,10 @@ export function ModifiersPage() {
         <div className="flex-1 p-5 overflow-auto">
           <DataTable
             columns={columns}
-            data={list.items.flatMap(g => g.modifiers.map(m => ({ ...m, groupId: g.id, groupName: g.name, groupType: g.type })))}
+            data={sortRows(list.items.flatMap(g => g.modifiers.map(m => ({ ...m, groupId: g.id, groupName: g.name, groupType: g.type }))), modSort)}
             keyExtractor={(m) => m.id}
+            sort={modSort}
+            onSortChange={setModSort}
           />
           {recipeFor && (
             <div className="mt-4 border-2 rounded-2xl bg-card p-4 animate-slide-up">

@@ -54,10 +54,14 @@ export function LoginPage({ onLogin }: LoginPageProps) {
   const [pin, setPin] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  // Admins log in with a full text password (complex,
+  // not just digits); cashiers keep the quick 4-digit PIN pad.
+  const isAdminUser = users.find(u => u.id === selectedUser)?.role === 'admin'
 
   useEffect(() => { fetchUsers() }, [])
 
   useEffect(() => {
+    if (loading || isAdminUser) return
     const onKey = (e: KeyboardEvent) => {
       if (loading) return
       if (e.key >= '0' && e.key <= '9') { handleDigit(e.key); return }
@@ -76,7 +80,7 @@ export function LoginPage({ onLogin }: LoginPageProps) {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [pin, selectedUser, loading, users])
+  }, [pin, selectedUser, loading, users, isAdminUser])
 
   const handleDigit = (d: string) => {
     if (pin.length < 4) {
@@ -88,7 +92,7 @@ export function LoginPage({ onLogin }: LoginPageProps) {
   const handleDelete = () => { setPin(pin.slice(0, -1)); setError('') }
 
   const handleSubmit = async () => {
-    if (!selectedUser || pin.length < 4) return
+    if (!selectedUser || pin.length < (isAdminUser ? 8 : 4)) return
     setLoading(true)
     const result = await login(selectedUser, pin)
     setLoading(false)
@@ -96,7 +100,7 @@ export function LoginPage({ onLogin }: LoginPageProps) {
     else { setError(result.error || 'خطأ'); setPin('') }
   }
 
-  useEffect(() => { if (pin.length >= 4 && selectedUser) handleSubmit() }, [pin])
+  useEffect(() => { if (!isAdminUser && pin.length >= 4 && selectedUser) handleSubmit() }, [pin, isAdminUser, selectedUser])
 
   return (
     <div
@@ -124,7 +128,9 @@ export function LoginPage({ onLogin }: LoginPageProps) {
           <div className="flex w-full justify-center">
             <Logo size="lg" />
           </div>
-          <p className="text-sm text-muted-foreground">سجل دخولك بالرقم السري</p>
+          <p className="text-sm text-muted-foreground">
+            {isAdminUser ? 'سجل دخولك بكلمة السر' : 'سجل دخولك بالرقم السري'}
+          </p>
         </div>
 
         {/* User Selection — big cards with opposite slopes */}
@@ -177,55 +183,71 @@ export function LoginPage({ onLogin }: LoginPageProps) {
           })}
         </div>
 
-        {/* PIN Display */}
+        {/* PIN Display — cashiers get the 4-dot pad,
+            admins get a text password field */}
         {selectedUser && (
           <div className="space-y-4 animate-slide-up">
-            <div className="flex justify-center gap-3">
-              {Array.from({ length: 4 }).map((_, i) => (
-                <div
-                  key={i}
-                  className={cn(
-                    "w-11 h-11 rounded-xl border-2 flex items-center justify-center transition-all backdrop-blur-sm",
-                    i < pin.length
-                      ? "bg-primary border-primary shadow-md shadow-primary/25 scale-105"
-                      : "bg-secondary/80 border-transparent"
-                  )}
-                >
-                  {i < pin.length && <div className="w-1.5 h-1.5 rounded-full bg-primary-foreground" />}
+            {isAdminUser ? (
+              <input
+                type="password"
+                autoFocus
+                value={pin}
+                onChange={e => { setPin(e.target.value); setError('') }}
+                onKeyDown={e => { if (e.key === 'Enter') handleSubmit() }}
+                placeholder="كلمة سر المدير"
+                dir="ltr"
+                className="w-64 mx-auto block px-4 py-3 rounded-2xl bg-secondary/80 border-2 border-transparent focus:border-primary text-lg tracking-wider focus:outline-none transition-all backdrop-blur-sm"
+              />
+            ) : (
+              <>
+                <div className="flex justify-center gap-3">
+                  {Array.from({ length: 4 }).map((_, i) => (
+                    <div
+                      key={i}
+                      className={cn(
+                        "w-11 h-11 rounded-xl border-2 flex items-center justify-center transition-all backdrop-blur-sm",
+                        i < pin.length
+                          ? "bg-primary border-primary shadow-md shadow-primary/25 scale-105"
+                          : "bg-secondary/80 border-transparent"
+                      )}
+                    >
+                      {i < pin.length && <div className="w-1.5 h-1.5 rounded-full bg-primary-foreground" />}
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
+
+                {/* PIN Pad */}
+                <div className="grid grid-cols-3 gap-2.5 max-w-[280px] mx-auto">
+                  {['1', '2', '3', '4', '5', '6', '7', '8', '9', '', '0', 'del'].map((key) => {
+                    if (key === '') return <div key="empty" />
+                    if (key === 'del') {
+                      return (
+                        <button
+                          key="del"
+                          onClick={handleDelete}
+                          className="h-14 rounded-2xl bg-secondary/60 backdrop-blur-sm text-muted-foreground hover:text-foreground transition-all cursor-pointer flex items-center justify-center active:scale-95"
+                        >
+                          <Delete className="h-5 w-5" />
+                        </button>
+                      )
+                    }
+                    return (
+                      <button
+                        key={key}
+                        onClick={() => handleDigit(key)}
+                        className="h-14 rounded-2xl bg-card/70 backdrop-blur-sm border-2 border-transparent hover:border-primary/30 text-xl font-black transition-all cursor-pointer active:scale-95 active:bg-primary/10"
+                      >
+                        {key}
+                      </button>
+                    )
+                  })}
+                </div>
+              </>
+            )}
 
             {error && (
               <p className="text-center text-sm text-destructive font-bold animate-pulse">{error}</p>
             )}
-
-            {/* PIN Pad */}
-            <div className="grid grid-cols-3 gap-2.5 max-w-[280px] mx-auto">
-              {['1', '2', '3', '4', '5', '6', '7', '8', '9', '', '0', 'del'].map((key) => {
-                if (key === '') return <div key="empty" />
-                if (key === 'del') {
-                  return (
-                    <button
-                      key="del"
-                      onClick={handleDelete}
-                      className="h-14 rounded-2xl bg-secondary/60 backdrop-blur-sm text-muted-foreground hover:text-foreground transition-all cursor-pointer flex items-center justify-center active:scale-95"
-                    >
-                      <Delete className="h-5 w-5" />
-                    </button>
-                  )
-                }
-                return (
-                  <button
-                    key={key}
-                    onClick={() => handleDigit(key)}
-                    className="h-14 rounded-2xl bg-card/70 backdrop-blur-sm border-2 border-transparent hover:border-primary/30 text-xl font-black transition-all cursor-pointer active:scale-95 active:bg-primary/10"
-                  >
-                    {key}
-                  </button>
-                )
-              })}
-            </div>
 
             {loading && (
               <p className="text-center text-sm text-muted-foreground animate-pulse">جاري التحقق...</p>

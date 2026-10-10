@@ -111,7 +111,7 @@ export function AddonsPage() {
 
       {view === 'table' ? (
         <div className="flex-1 p-5 overflow-auto">
-          <DataTable columns={columns} data={list.items} keyExtractor={(a) => a.id} />
+          <DataTable columns={columns} data={list.items} keyExtractor={(a) => a.id} sort={list.sort} onSortChange={list.setSort} />
         </div>
       ) : (
         <div className="flex-1 p-5 grid grid-cols-2 lg:grid-cols-4 gap-3 overflow-y-auto content-start">

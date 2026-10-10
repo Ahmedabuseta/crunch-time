@@ -6,6 +6,7 @@ export interface Ingredient {
   stockQuantity: number
   minStock: number
   costPerUnit: number
+  purchaseQty: number
   active: boolean
   supplier: string | null
   secondarySupplier: string | null
@@ -48,6 +49,7 @@ export interface CreateIngredientInput {
   stockQuantity?: number
   minStock?: number
   costPerUnit?: number
+  purchaseQty?: number
 }
 
 export interface UpdateIngredientInput {
@@ -57,6 +59,7 @@ export interface UpdateIngredientInput {
   stockQuantity?: number
   minStock?: number
   costPerUnit?: number
+  purchaseQty?: number
 }
 
 export interface InventoryAlert extends Ingredient {

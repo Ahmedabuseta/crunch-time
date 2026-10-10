@@ -127,6 +127,14 @@ export function runMigrations() {
   ensureColumn(db, 'ingredients', 'secondary_supplier', 'TEXT')
   ensureColumn(db, 'ingredients', 'supplier_ratio', 'REAL NOT NULL DEFAULT 0.7')
   ensureColumn(db, 'ingredients', 'planned_cost', 'REAL NOT NULL DEFAULT 0')
+  ensureColumn(db, 'ingredients', 'purchase_qty', 'REAL NOT NULL DEFAULT 1')
+  // Existing bulk items keep the migration default (1), which
+  // would still show per-gram prices. Bulk is bought in 1kg
+  // packages, so backfill gram items to 1000. Idempotent —
+  // only touches items still at the default; a package size
+  // the owner set explicitly is left alone. cost_per_unit is
+  // never changed, only how the price is presented.
+  db.prepare(`UPDATE ingredients SET purchase_qty = 1000 WHERE unit = 'g' AND purchase_qty = 1`).run()
   ensureColumn(db, 'recipes', 'sub_recipe_id', 'TEXT')
   ensureColumn(db, 'addon_recipes', 'sub_recipe_id', 'TEXT')
   ensureColumn(db, 'modifier_recipes', 'sub_recipe_id', 'TEXT')
@@ -234,15 +242,10 @@ export function runMigrations() {
   `)
 
   // ─── Backfill legacy ingredients ───────────────────────────
-  // Kept for databases that predate the Crunch Time stock list. Fresh installs
-  // get the real inventory from seedDatabase instead, so these only fill gaps
-  // on an existing database and never duplicate a seeded row.
-  db.exec(`
-    INSERT OR IGNORE INTO ingredients (id, name, unit, stock_quantity, min_stock, cost_per_unit, active) VALUES
-      ('ing-bbq', 'باربكيو', 'g', 4000, 800, 0, 1),
-      ('ing-hot-sauce', 'حريقة', 'g', 5000, 1000, 0, 1),
-      ('ing-ranch', 'رانش', 'g', 5000, 1000, 0, 1)
-  `)
+  // (removed — the seed covers bbq / hot-sauce / ranch with
+  // real data. This backfill ran *before* the seed on a fresh
+  // install, so its stale rows won the INSERT OR IGNORE and
+  // the seed's real stock/costs were skipped.)
 
   // ─── Backfill addon + modifier recipes ──────
   // Guarded separately: addon_recipes needs addons, modifier_recipes needs

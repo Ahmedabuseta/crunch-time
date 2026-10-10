@@ -29,8 +29,8 @@ import { getThemeMode, setThemeMode, type ThemeMode } from '@/lib/theme'
 import { Logo } from '@/components/Logo'
 import { ShiftStatusChip } from '@/components/ShiftStatusChip'
 import { UpdateBanner } from '@/components/UpdateBanner'
-import { Toaster } from '@/components/ui/toast'
-import { LayoutGrid, Clock, Calendar, LogOut, ShoppingCart, X, Truck } from 'lucide-react'
+import { Toaster, toast } from '@/components/ui/toast'
+import { LayoutGrid, Clock, Calendar, LogOut, ShoppingCart, X, Truck, RefreshCw } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 function App() {
@@ -56,6 +56,34 @@ function App() {
       setUnassignedCount(Number(await window.api.order.unassignedCount()) || 0)
     } catch {
       // The badge is cosmetic — never let it break the shell.
+    }
+  }
+
+  // Manual "check for updates" for the top-bar refresh icon — the same check
+  // the Settings card runs, but answering with a toast so it works anywhere.
+  const [updateCheckBusy, setUpdateCheckBusy] = useState(false)
+  const handleUpdateCheck = async () => {
+    if (updateCheckBusy) return
+    setUpdateCheckBusy(true)
+    try {
+      const res = await window.updater?.check()
+      if (!res?.ok) {
+        toast({
+          title: 'فحص التحديثات',
+          description: res?.error === 'dev' ? 'وضع التطوير — التحديثات تعمل في النسخة المثبتة فقط'
+            : res?.error === 'unavailable' ? 'التحديثات غير متاحة في هذه النسخة'
+            : 'تعذر التحقق — تحقق من الاتصال بالإنترنت',
+          variant: 'error',
+        })
+      } else if (res.version) {
+        toast({ title: 'يوجد تحديث جديد', description: `v${res.version} — جارٍ التحميل في الخلفية`, variant: 'success' })
+      } else {
+        toast({ title: 'أنت على أحدث نسخة', description: res.current ? `v${res.current}` : undefined })
+      }
+    } catch {
+      toast({ title: 'تعذر التحقق من التحديثات', description: 'حاول لاحقاً', variant: 'error' })
+    } finally {
+      setUpdateCheckBusy(false)
     }
   }
 
@@ -179,6 +207,14 @@ function App() {
               )}
             </button>
           )}
+          <button
+            onClick={handleUpdateCheck}
+            disabled={updateCheckBusy}
+            className="text-muted-foreground hover:text-foreground transition-colors cursor-pointer p-1 disabled:opacity-50 disabled:cursor-wait"
+            title="فحص التحديثات"
+          >
+            <RefreshCw className={cn("h-4 w-4", updateCheckBusy && "animate-spin")} />
+          </button>
           <button
             onClick={() => { const next: ThemeMode = themeMode === 'dark' ? 'light' : 'dark'; setThemeMode(next); setThemeModeLocal(next) }}
             className="text-muted-foreground hover:text-foreground transition-colors cursor-pointer p-1"

@@ -4,7 +4,8 @@ import type { PrintOrder } from '../lib/print'
 export type DeleteOpts = { hard?: boolean }
 
 export interface UpdaterBridge {
-  check: () => Promise<{ ok: boolean; version?: string | null; error?: string }>
+  check: () => Promise<{ ok: boolean; version?: string | null; current?: string; latest?: string | null; error?: string }>
+  version: () => Promise<{ ok: boolean; version?: string; error?: string }>
   quitAndInstall: () => Promise<{ ok: boolean }>
   onStatus: (cb: (s: UpdateStatus) => void) => () => void
 }
@@ -241,6 +242,7 @@ export interface ApiBridge {
     export: () => Promise<any>
     restore: () => Promise<any>
   }
+  exportCsv: (name: string, rows: string[][]) => Promise<{ ok: boolean; canceled?: boolean; path?: string; message?: string; error?: string }>
 }
 
 declare global {

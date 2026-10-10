@@ -142,9 +142,9 @@ export function ProductsPage() {
         </div>
       ),
     },
-    { key: 'cat', label: 'القسم', render: (p) => <span className="text-xs bg-secondary rounded-full px-2 py-0.5">{catMap.get(p.categoryId)?.name || '—'}</span> },
+    { key: 'cat', label: 'القسم', sortValue: (p: any) => catMap.get(p.categoryId)?.name || '', render: (p) => <span className="text-xs bg-secondary rounded-full px-2 py-0.5">{catMap.get(p.categoryId)?.name || '—'}</span> },
     { key: 'price', label: 'السعر', render: (p) => <span className="font-black text-primary">{fmtMoney(p.price)} ج.م</span> },
-    { key: 'cost', label: 'التكلفة', render: (p) => <span>{p.costPrice > 0 ? `${fmtMoney(p.costPrice)} ج.م` : '—'}</span> },
+    { key: 'cost', label: 'التكلفة', sortValue: (p: any) => p.costPrice > 0 ? p.costPrice : null, render: (p) => <span>{p.costPrice > 0 ? `${fmtMoney(p.costPrice)} ج.م` : '—'}</span> },
     {
       key: 'actions', label: 'إجراءات', className: 'text-left', render: (p) => (
         <div className="flex items-center gap-1">
@@ -414,7 +414,7 @@ export function ProductsPage() {
       <div className="flex-1 min-h-0 overflow-y-auto">
         {view === 'table' ? (
           <div className="p-5">
-            <DataTable columns={columns} data={list.items} keyExtractor={(p) => p.id} className="mb-4" />
+            <DataTable columns={columns} data={list.items} keyExtractor={(p) => p.id} className="mb-4" sort={list.sort} onSortChange={list.setSort} />
             {recipeFor && createPortal(
               <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={() => setRecipeFor(null)}>
                 <div dir="rtl" className="w-[620px] max-w-[94vw] max-h-[85vh] overflow-y-auto animate-slide-up" onClick={(e) => e.stopPropagation()}>

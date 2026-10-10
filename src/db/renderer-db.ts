@@ -372,7 +372,7 @@ function seed() {
   }
 
   // Users — crepe house staff
-  T.users.insert({ id: 'user-admin', name: 'أحمد السيد', pin: '0000', role: 'admin', active: true, createdAt: now() })
+  T.users.insert({ id: 'user-admin', name: 'أحمد السيد', pin: 'CrunchTime#2026', role: 'admin', active: true, createdAt: now() })
   T.users.insert({ id: 'user-cashier-a', name: 'محمد علي', pin: '1234', role: 'cashier', active: true, createdAt: now() })
   T.users.insert({ id: 'user-cashier-b', name: 'مصطفى كريم', pin: '5678', role: 'cashier', active: true, createdAt: now() })
 }

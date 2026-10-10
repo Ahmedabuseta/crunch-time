@@ -16,6 +16,7 @@ if (!(window as any).api) {
 if (!(window as any).updater) {
   ;(window as any).updater = {
     check: async () => ({ ok: false, error: 'dev' }),
+    version: async () => ({ ok: false, error: 'dev' }),
     quitAndInstall: async () => ({ ok: false }),
     onStatus: () => () => {},
   }

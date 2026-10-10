@@ -52,12 +52,19 @@ function createWindow() {
   return win
 }
 
-function registerUpdaterHandlers(autoUpdater) {
+function registerUpdaterHandlers(autoUpdater, devMode = false) {
+  // Settings shows the installed version next to the check button.
+  ipcMain.handle('updater:version', () => ({ ok: true, version: app.getVersion() }))
   ipcMain.handle('updater:check', async () => {
+    if (devMode) return { ok: false, error: 'dev' }
     if (!autoUpdater) return { ok: false, error: 'unavailable' }
     try {
       const res = await autoUpdater.checkForUpdates()
-      return { ok: true, version: res?.updateInfo?.version || null }
+      const current = app.getVersion()
+      const latest = res?.updateInfo?.version || null
+      // updateInfo always carries the feed's newest version, even when it
+      // equals ours — only report an update when it's actually newer.
+      return { ok: true, current, latest, version: res?.isUpdateAvailable ? latest : null }
     } catch (e) {
       return { ok: false, error: String(e?.message || e) }
     }
@@ -74,7 +81,12 @@ function registerUpdaterHandlers(autoUpdater) {
 // In production: check on launch, then forward every updater event to the
 // renderer so the UI can show progress + a "restart to update" button.
 function setupAutoUpdates(win) {
-  if (isDev) return
+  // Dev still registers the handlers so the Settings "check for updates"
+  // button answers with an honest "dev mode" note instead of a raw IPC error.
+  if (isDev) {
+    registerUpdaterHandlers(null, true)
+    return
+  }
   if (!existsSync(path.join(process.resourcesPath, 'app-update.yml'))) {
     console.log('[updater] app-update.yml not found; skipping update checks')
     registerUpdaterHandlers(null)

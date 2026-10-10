@@ -278,6 +278,8 @@ export function CategoriesPage() {
             columns={columns}
             data={list.items}
             keyExtractor={(c) => c.id}
+            sort={list.sort}
+            onSortChange={list.setSort}
           />
         </div>
       ) : (

@@ -157,6 +157,10 @@ export const ingredients = sqliteTable('ingredients', {
   stockQuantity: real('stock_quantity').notNull().default(0),
   minStock: real('min_stock').notNull().default(0),
   costPerUnit: real('cost_per_unit').notNull().default(0),
+  // Size of one purchase package in stock units (a 1kg bag of a
+  // gram-stored item is 1000; packaged items are 1). The owner
+  // enters the package price; cost_per_unit is derived from it.
+  purchaseQty: real('purchase_qty').notNull().default(1),
   active: integer('active', { mode: 'boolean' }).notNull().default(true),
   supplier: text('supplier'),
   secondarySupplier: text('secondary_supplier'),

@@ -6,7 +6,7 @@ import { runMigrations } from '../db/migrate'
 import { seedDatabase } from '../db/seed'
 import { randomUUID } from 'crypto'
 import { hashPin, verifyPin } from '../lib/auth'
-import { mkdirSync, readdirSync, copyFileSync, closeSync, existsSync, openSync, readSync, rmSync } from 'node:fs'
+import { mkdirSync, readdirSync, copyFileSync, closeSync, existsSync, openSync, readSync, rmSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import Database from 'better-sqlite3'
 
@@ -673,22 +673,14 @@ ipcMain.handle('discountCode:delete', (_e, id: string, opts?: { hard?: boolean }
     }
   }
 
-  function validateStationCategories(categoryIds: unknown, stationId?: string) {
+  // A department may belong to several stations at once — every one of them
+  // gets the ticket, so printers can share a department. Only duplicates
+  // INSIDE one station are rejected (mirrors the table's composite PK).
+  function validateStationCategories(categoryIds: unknown, _stationId?: string) {
     if (!Array.isArray(categoryIds)) return
     const ids = categoryIds.map(String)
     if (new Set(ids).size !== ids.length) {
       throw new Error('لا يمكن تكرار نفس القسم داخل المحطة.')
-    }
-    const existingLinks = db.select({ stationId: stationCategories.stationId, categoryId: stationCategories.categoryId })
-      .from(stationCategories)
-      .all()
-    const conflict = existingLinks.find((link: any) => ids.includes(link.categoryId) && link.stationId !== stationId)
-    if (conflict) {
-      const owner = db.select({ name: kitchenStations.name }).from(kitchenStations)
-        .where(and(eq(kitchenStations.id, conflict.stationId), eq(kitchenStations.active, true))).get()
-      if (owner) {
-        throw new Error(`القسم مرتبط بالفعل بمحطة «${owner.name}». انقله أولاً قبل حفظ هذه المحطة.`)
-      }
     }
   }
 
@@ -763,21 +755,36 @@ ipcMain.handle('discountCode:delete', (_e, id: string, opts?: { hard?: boolean }
     const stations = db.select().from(kitchenStations).where(eq(kitchenStations.active, true)).orderBy(kitchenStations.sortOrder).all() as any[]
     const activeStationIds = new Set(stations.map((station: any) => station.id))
     const links = db.select().from(stationCategories).all() as any[]
-    const catToStation = new Map<string, string>()
+    // One department can serve several printers — the item fans out to
+    // every station that owns its category.
+    const catToStations = new Map<string, string[]>()
     for (const l of links) {
       if (!activeStationIds.has(l.stationId)) continue
-      if (!catToStation.has(l.categoryId)) catToStation.set(l.categoryId, l.stationId)
+      const owners = catToStations.get(l.categoryId)
+      if (owners) {
+        if (!owners.includes(l.stationId)) owners.push(l.stationId)
+      } else {
+        catToStations.set(l.categoryId, [l.stationId])
+      }
     }
     const activeStations = stations.filter((s: any) => s.id !== 'st-receipt')
     const routes: { station: any; items: any[] }[] = activeStations.map((s: any) => ({ station: s, items: [] }))
     const unrouted: any[] = []
     for (const item of items) {
       const p = pMap.get(item.productId) as any
-      const sid = p?.categoryId ? catToStation.get(p.categoryId) : undefined
-      const route = routes.find((r) => r.station.id === sid)
-      if (route) route.items.push({ ...item, productName: p?.name, productEmoji: p?.emoji, categoryId: p?.categoryId })
-      else unrouted.push({ ...item, productName: p?.name, productEmoji: p?.emoji, categoryId: p?.categoryId })
+      const row = { ...item, productName: p?.name, productEmoji: p?.emoji, categoryId: p?.categoryId }
+      const ownerIds = p?.categoryId ? catToStations.get(p.categoryId) || [] : []
+      let routedSomewhere = false
+      for (const sid of ownerIds) {
+        const route = routes.find((r) => r.station.id === sid)
+        if (route) {
+          route.items.push({ ...row })
+          routedSomewhere = true
+        }
+      }
+      if (!routedSomewhere) unrouted.push(row)
     }
+    // Stations with nothing to cook stay silent.
     return { routes: routes.filter((r) => r.items.length > 0), unrouted }
   })
 
@@ -1507,8 +1514,19 @@ ipcMain.handle('discountCode:delete', (_e, id: string, opts?: { hard?: boolean }
       .from(users).where(eq(users.active, true))
   )
 
+  // Admin passwords must be complex — 8+ characters,
+  // not digits only. Cashiers keep their quick 4-digit PINs.
+  const weakAdminPin = (pin: string, role: string): string | null => {
+    if (role !== 'admin') return null
+    if (pin.length < 8) return 'كلمة سر المدير لازم تكون 8 حروف أو أكثر'
+    if (/^\d+$/.test(pin)) return 'كلمة سر المدير لازم تحتوي حروف، مش أرقام بس'
+    return null
+  }
+
   ipcMain.handle('user:create', async (_e, data: any) => {
     requireAdmin()
+    const weak = weakAdminPin(data.pin, data.role || 'cashier')
+    if (weak) return { ok: false, error: weak }
     const id = uuid()
     const pinHash = await hashPin(data.pin)
     db.insert(users).values({ id, name: data.name, pinHash, role: data.role || 'cashier', active: true, createdAt: now(), hourlyRate: data.hourlyRate || 0, commissionRate: data.commissionRate || 0 }).run()
@@ -1518,7 +1536,11 @@ ipcMain.handle('discountCode:delete', (_e, id: string, opts?: { hard?: boolean }
   ipcMain.handle('user:update', async (_e, id: string, data: any) => {
     requireAdmin()
     const update: any = { name: data.name, role: data.role }
-    if (data.pin) update.pinHash = await hashPin(data.pin)
+    if (data.pin) {
+      const weak = weakAdminPin(data.pin, data.role)
+      if (weak) return { ok: false, error: weak }
+      update.pinHash = await hashPin(data.pin)
+    }
     if (data.hourlyRate !== undefined) update.hourlyRate = Number(data.hourlyRate) || 0
     if (data.commissionRate !== undefined) update.commissionRate = Number(data.commissionRate) || 0
     db.update(users).set(update).where(eq(users.id, id)).run()
@@ -1740,6 +1762,19 @@ ipcMain.handle('discountCode:delete', (_e, id: string, opts?: { hard?: boolean }
   ipcMain.handle('inventory:updateIngredient', (_e, id: string, data: any) => {
     requireAdmin()
     db.update(ingredients).set(data).where(eq(ingredients.id, id)).run()
+    // A cost change must reach product costs immediately — the
+    // startup recompute is not enough once the app is running.
+    if (data?.costPerUnit != null) {
+      const s = getSqlite()
+      const productIds = s.prepare(`
+        SELECT DISTINCT product_id FROM recipes WHERE ingredient_id = ?
+        UNION
+        SELECT DISTINCT r.product_id FROM recipes r
+        JOIN sub_recipe_ingredients sri ON sri.sub_recipe_id = r.sub_recipe_id
+        WHERE sri.ingredient_id = ?
+      `).all(id, id) as { product_id: string }[]
+      for (const { product_id } of productIds) recomputeProductCost(product_id)
+    }
     return { ok: true }
   })
 
@@ -1921,16 +1956,22 @@ ipcMain.handle('discountCode:delete', (_e, id: string, opts?: { hard?: boolean }
     return out
   })
 
-  ipcMain.handle('inventory:restock', (_e, ingredientId: string, qty: number, note?: string, opts?: { unitCost?: number; supplier?: string }) => {
+  ipcMain.handle('inventory:restock', (_e, ingredientId: string, qty: number, note?: string, opts?: { unitCost?: number; packagePrice?: number; supplier?: string }) => {
     requireAdmin()
-    const unitCost = opts?.unitCost != null ? Number(opts.unitCost) : null
     const supplier = opts?.supplier?.trim() || null
+    // The owner enters the price of the purchase package (e.g. a 1kg
+    // bag); divide by the package size to get the per-stock-unit cost.
+    // A raw unitCost is still accepted (API compatibility).
+    const ing = db.select().from(ingredients).where(eq(ingredients.id, ingredientId)).get()
+    const packQty = Number(ing?.purchaseQty) || 1
+    const unitCost = opts?.packagePrice != null
+      ? Number(opts.packagePrice) / (packQty > 0 ? packQty : 1)
+      : (opts?.unitCost != null ? Number(opts.unitCost) : null)
     db.update(ingredients).set({ stockQuantity: sql`${ingredients.stockQuantity} + ${qty}` })
       .where(eq(ingredients.id, ingredientId)).run()
     db.insert(inventoryTransactions).values({
       id: uuid(), ingredientId, type: 'PURCHASE', quantity: qty, unitCost, supplier, note: note || 'إعادة تعبئة', createdAt: now(),
     }).run()
-    const ing = db.select().from(ingredients).where(eq(ingredients.id, ingredientId)).get()
     if (ing && !ing.supplier && supplier) {
       db.update(ingredients).set({ supplier }).where(eq(ingredients.id, ingredientId)).run()
     }
@@ -3126,6 +3167,30 @@ ipcMain.handle('discountCode:delete', (_e, id: string, opts?: { hard?: boolean }
       return { ok: true, path: filePath, message: 'تم تصدير النسخة الاحتياطية' }
     } catch (err: any) {
       return { ok: false, error: err?.message || 'فشل تصدير النسخة' }
+    }
+  })
+
+  // Export any table to a CSV file that opens directly in
+  // Excel. The UTF-8 BOM makes Excel detect the Arabic text
+  // correctly (without it Excel mangles the Arabic glyphs).
+  ipcMain.handle('export:csv', async (_e, name: string, rows: string[][]) => {
+    try {
+      const stamp = new Date().toISOString().replace(/[^0-9]/g, '').slice(0, 14)
+      const { canceled, filePath } = await dialog.showSaveDialog({
+        title: 'تصدير إلى إكسل',
+        defaultPath: `${name || 'table'}-${stamp}.csv`,
+        filters: [{ name: 'ملف إكسل (CSV)', extensions: ['csv'] }],
+      })
+      if (canceled || !filePath) return { ok: false, canceled: true }
+      const esc = (v: unknown) => {
+        const s = String(v ?? '')
+        return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
+      }
+      const csv = '﻿' + rows.map((r) => r.map(esc).join(',')).join('\r\n')
+      writeFileSync(filePath, csv, 'utf-8')
+      return { ok: true, path: filePath, message: 'تم تصدير الجدول إلى إكسل' }
+    } catch (err: any) {
+      return { ok: false, error: err?.message || 'فشل تصدير الجدول' }
     }
   })
 

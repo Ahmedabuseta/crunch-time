@@ -39,8 +39,20 @@ export function UsersPage() {
 
   const resetForm = () => { setForm({ name: '', pin: '', role: 'cashier' }); setEditId(null); setShowForm(false) }
 
+  // Admin passwords must be complex — cashiers
+  // keep their quick 4-digit PINs.
+  const adminPinError = (pin: string): string | null => {
+    if (pin.length < 8) return 'كلمة سر المدير لازم تكون 8 حروف أو أكثر'
+    if (/^\d+$/.test(pin)) return 'كلمة سر المدير لازم تحتوي حروف، مش أرقام بس'
+    return null
+  }
+
   const handleCreate = async () => {
     if (!form.name || !form.pin) return
+    if (form.role === 'admin') {
+      const err = adminPinError(form.pin)
+      if (err) { toast({ title: err, variant: 'error' }); return }
+    }
     await create({ name: form.name, pin: form.pin, role: form.role as 'admin' | 'cashier' })
     toast({ title: 'تم إنشاء المستخدم', description: form.name, variant: 'success' })
     resetForm()
@@ -48,6 +60,10 @@ export function UsersPage() {
 
   const handleUpdate = async () => {
     if (!editId || !form.name) return
+    if (form.pin && form.role === 'admin') {
+      const err = adminPinError(form.pin)
+      if (err) { toast({ title: err, variant: 'error' }); return }
+    }
     const data: any = { name: form.name, role: form.role }
     if (form.pin) data.pin = form.pin
     await update(editId, data)
@@ -67,7 +83,7 @@ export function UsersPage() {
 
   const columns: DataColumn<any>[] = [
     {
-      key: 'user', label: 'المستخدم', render: (u) => (
+      key: 'user', label: 'المستخدم', sortValue: (u: any) => u.name, render: (u) => (
         <div className="flex items-center gap-3">
           <div className={cn("w-8 h-8 rounded-full flex items-center justify-center shrink-0", u.role === 'admin' ? "bg-primary/10" : "bg-secondary")}>
             {u.role === 'admin' ? <Shield className="h-4 w-4 text-primary" /> : <User className="h-4 w-4 text-muted-foreground" />}
@@ -77,7 +93,7 @@ export function UsersPage() {
       ),
     },
     {
-      key: 'role', label: 'الصلاحية', render: (u) => (
+      key: 'role', label: 'الصلاحية', sortValue: (u: any) => u.role, render: (u) => (
         <span className={cn("text-[10px] font-bold rounded-full px-2.5 py-0.5", u.role === 'admin' ? "bg-primary/10 text-primary" : "bg-secondary text-muted-foreground")}>
           {roleLabel(u.role)}
         </span>
@@ -106,7 +122,17 @@ export function UsersPage() {
         <div className="mx-5 mt-4 p-4 border-2 rounded-2xl bg-card space-y-3 animate-slide-up">
           <div className="grid grid-cols-2 gap-3">
             <input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="الاسم" className="px-3 py-2 rounded-xl bg-secondary text-sm border-0 focus:ring-1 focus:ring-primary focus:outline-none" dir="rtl" />
-            <input value={form.pin} onChange={e => setForm(f => ({ ...f, pin: e.target.value }))} placeholder={editId ? 'اتركه فارغ للاحتفاظ' : 'الرقم السري (4 أرقام)'} maxLength={4} className="px-3 py-2 rounded-xl bg-secondary text-sm border-0 focus:ring-1 focus:ring-primary focus:outline-none text-center" />
+            <input
+              value={form.pin}
+              onChange={e => setForm(f => ({ ...f, pin: e.target.value }))}
+              type={form.role === 'admin' ? 'password' : 'text'}
+              inputMode={form.role === 'admin' ? 'text' : 'numeric'}
+              placeholder={editId
+                ? 'اتركه فارغ للاحتفاظ'
+                : form.role === 'admin' ? 'كلمة سر المدير (8+ حروف)' : 'الرقم السري (4 أرقام)'}
+              maxLength={form.role === 'admin' ? undefined : 4}
+              className="px-3 py-2 rounded-xl bg-secondary text-sm border-0 focus:ring-1 focus:ring-primary focus:outline-none text-center"
+            />
           </div>
           {/* Role select */}
           <Select value={form.role} onValueChange={v => setForm(f => ({ ...f, role: v }))}>
@@ -142,7 +168,7 @@ export function UsersPage() {
 
       {view === 'table' ? (
         <div className="flex-1 p-5 overflow-auto">
-          <DataTable columns={columns} data={list.items} keyExtractor={(u) => u.id} />
+          <DataTable columns={columns} data={list.items} keyExtractor={(u) => u.id} sort={list.sort} onSortChange={list.setSort} />
         </div>
       ) : (
         <div className="flex-1 p-5 space-y-2 overflow-y-auto">

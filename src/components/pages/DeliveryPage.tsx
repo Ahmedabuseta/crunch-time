@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Truck, Phone, Wallet, Bike } from 'lucide-react'
 import { fmtMoney } from '@/lib/format'
+import { SortButton, sortRows, toggleSort, type SortState } from '@/components/ui/data-table'
 import type { DriverSummary } from '@/services/report/report.types'
 
 function clock(iso: string) {
@@ -38,6 +39,7 @@ export function DeliveryPage({ onAssigned }: { onAssigned?: () => void }) {
   const [pendingId, setPendingId] = useState<string | null>(null)
   const [chosen, setChosen] = useState<Record<string, string>>({})
   const [driverFilter, setDriverFilter] = useState<string>('all')
+  const [driverSort, setDriverSort] = useState<SortState<any> | null>(null)
 
   // Settlement (admin only)
   const [from, setFrom] = useState(today())
@@ -261,15 +263,25 @@ export function DeliveryPage({ onAssigned }: { onAssigned?: () => void }) {
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="text-[11px] text-muted-foreground border-b-2 bg-secondary/40">
-                      <th className="text-start px-3 py-2.5 font-bold">السائق</th>
-                      <th className="px-3 py-2.5 font-bold">الطلبات</th>
-                      <th className="px-3 py-2.5 font-bold text-green-400">كاش يسلّمه</th>
-                      <th className="px-3 py-2.5 font-bold text-blue-400">فيزا (مش إيده)</th>
-                      <th className="px-3 py-2.5 font-bold">إجمالي</th>
+                      <th className="text-start px-3 py-2.5 font-bold">
+                        <SortButton label="السائق" dir={driverSort?.key === 'name' ? driverSort.dir : null} onSort={() => setDriverSort(toggleSort(driverSort, 'name', (d: any) => d.name))} />
+                      </th>
+                      <th className="px-3 py-2.5 font-bold">
+                        <SortButton label="الطلبات" dir={driverSort?.key === 'orderCount' ? driverSort.dir : null} onSort={() => setDriverSort(toggleSort(driverSort, 'orderCount', (d: any) => d.orderCount))} />
+                      </th>
+                      <th className="px-3 py-2.5 font-bold text-green-400">
+                        <SortButton label="كاش يسلّمه" dir={driverSort?.key === 'cashTotal' ? driverSort.dir : null} onSort={() => setDriverSort(toggleSort(driverSort, 'cashTotal', (d: any) => d.cashTotal))} />
+                      </th>
+                      <th className="px-3 py-2.5 font-bold text-blue-400">
+                        <SortButton label="فيزا (مش إيده)" dir={driverSort?.key === 'visaTotal' ? driverSort.dir : null} onSort={() => setDriverSort(toggleSort(driverSort, 'visaTotal', (d: any) => d.visaTotal))} />
+                      </th>
+                      <th className="px-3 py-2.5 font-bold">
+                        <SortButton label="إجمالي" dir={driverSort?.key === 'total' ? driverSort.dir : null} onSort={() => setDriverSort(toggleSort(driverSort, 'total', (d: any) => d.total))} />
+                      </th>
                     </tr>
                   </thead>
                   <tbody>
-                    {summary.drivers.map((d) => (
+                    {sortRows(summary.drivers, driverSort).map((d) => (
                       <tr key={d.profileId} className="border-b last:border-0">
                         <td className="px-3 py-2.5">
                           <div className="font-bold flex items-center gap-1.5">

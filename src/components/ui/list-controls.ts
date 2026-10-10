@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { sortRows, type SortState } from './data-table'
 
 interface UseListControlsOptions<T> {
   items: T[]
@@ -10,6 +11,7 @@ interface UseListControlsOptions<T> {
 export function useListControls<T>({ items, searchText, filter, pageSize = 10 }: UseListControlsOptions<T>) {
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
+  const [sort, setSortState] = useState<SortState<T> | null>(null)
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
@@ -20,18 +22,24 @@ export function useListControls<T>({ items, searchText, filter, pageSize = 10 }:
     })
   }, [items, search, filter, searchText])
 
-  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize))
+  // Sort happens before pagination so a column click reorders the whole set,
+  // not just the visible page.
+  const sorted = useMemo(() => sortRows(filtered, sort), [filtered, sort])
+
+  const totalPages = Math.max(1, Math.ceil(sorted.length / pageSize))
   const safePage = Math.min(page, totalPages)
   const start = (safePage - 1) * pageSize
-  const paginated = filtered.slice(start, start + pageSize)
+  const paginated = sorted.slice(start, start + pageSize)
 
   return {
     search,
     setSearch,
+    sort,
+    setSort: (s: SortState<T> | null) => { setSortState(s); setPage(1) },
     page: safePage,
     setPage,
     pageSize,
-    total: filtered.length,
+    total: sorted.length,
     totalPages,
     start,
     end: start + paginated.length,

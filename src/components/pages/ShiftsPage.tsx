@@ -122,7 +122,7 @@ export function ShiftsPage() {
   }
 
   const columns: DataColumn<any>[] = [
-    { key: 'date', label: 'التاريخ', render: (s) => <span className="font-bold whitespace-nowrap">{new Date(s.startedAt).toLocaleString('ar-EG')}</span> },
+    { key: 'date', label: 'التاريخ', sortValue: (s: any) => s.startedAt, render: (s) => <span className="font-bold whitespace-nowrap">{new Date(s.startedAt).toLocaleString('ar-EG')}</span> },
     {
       key: 'status', label: 'الحالة', render: (s) => (
         <span className={cn("text-[10px] font-bold rounded-full px-2.5 py-0.5", s.status === 'open' ? "bg-green-500/10 text-green-500" : "bg-secondary text-muted-foreground")}>
@@ -130,10 +130,13 @@ export function ShiftsPage() {
         </span>
       ),
     },
-    { key: 'opening', label: 'الافتتاح', render: (s) => <span>{fmtMoney(s.openingCash)} ج.م</span> },
-    { key: 'closing', label: 'الإغلاق', render: (s) => <span>{s.closingCash != null ? `${fmtMoney(s.closingCash)} ج.م` : '—'}</span> },
+    { key: 'opening', label: 'الافتتاح', sortValue: (s: any) => s.openingCash, render: (s) => <span>{fmtMoney(s.openingCash)} ج.م</span> },
+    { key: 'closing', label: 'الإغلاق', sortValue: (s: any) => s.closingCash, render: (s) => <span>{s.closingCash != null ? `${fmtMoney(s.closingCash)} ج.م` : '—'}</span> },
     {
-      key: 'diff', label: 'الفرق', render: (s) => {
+      key: 'diff', label: 'الفرق', sortValue: (s: any) => {
+        const recon = reconciliations[s.id]
+        return s.status === 'closed' && recon ? (recon.difference ?? 0) : null
+      }, render: (s) => {
         const recon = reconciliations[s.id]
         if (s.status !== 'closed' || !recon) return <span className="text-muted-foreground">—</span>
         const d = recon.difference ?? 0
@@ -276,7 +279,7 @@ export function ShiftsPage() {
 
       {view === 'table' ? (
         <div className="flex-1 p-5 overflow-auto">
-          <DataTable columns={columns} data={list.items} keyExtractor={(s) => s.id} />
+          <DataTable columns={columns} data={list.items} keyExtractor={(s) => s.id} sort={list.sort} onSortChange={list.setSort} />
         </div>
       ) : (
         <ScrollArea className="flex-1 p-5">

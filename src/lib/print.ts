@@ -309,6 +309,23 @@ export function markKitchenTicketItems(allItems: PrintItem[], stationItems: Prin
   }))
 }
 
+// The full order as printed on every ticket, deduped by row id: a department
+// shared by several stations puts the item into each of their routes, and it
+// must still appear only once per ticket. Rows without an id are kept as-is.
+export function collectKitchenItems(
+  routes: { items?: PrintItem[] }[],
+  unrouted: PrintItem[] = [],
+): PrintItem[] {
+  const seen = new Set<string>()
+  return [...routes.flatMap((r) => r.items || []), ...unrouted].filter((item) => {
+    const key = item?.id
+    if (!key) return true
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+}
+
 // ─── Customer receipt: full totals ─────────────────────────────
 export function buildCustomerReceiptHtml(o: PrintOrder, width = '72mm', info: ReceiptInfo = RECEIPT_INFO_DEFAULTS): string {
   const now = o.createdAt instanceof Date ? o.createdAt : new Date(o.createdAt)
@@ -412,10 +429,7 @@ export async function printOrderPack(args: {
   if (autoKitchen) {
     try {
       const routed = await window.api.station.routeOrder(order.id)
-      const allKitchenItems = [
-        ...routed.routes.flatMap((r: any) => r.items || []),
-        ...(routed.unrouted || []),
-      ]
+      const allKitchenItems = collectKitchenItems(routed.routes || [], routed.unrouted || [])
       const usedPrinters = new Set<string>()
       for (const r of routed.routes) {
         if (!r.station.printerName) {
