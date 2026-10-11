@@ -1,6 +1,6 @@
 {
   "name": "fastfood-cashier",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Fast Food Cashier App",
   "author": {
     "name": "Fast Food",
@@ -72,6 +72,7 @@
   "build": {
     "appId": "com.fastfood.cashier",
     "productName": "Crunch Time",
+    "artifactName": "Crunch-Time-Setup-${version}.${ext}",
     "directories": {
       "output": "release",
       "buildResources": "build"
