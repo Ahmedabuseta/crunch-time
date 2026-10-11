@@ -1761,12 +1761,25 @@ function UpdateCheckRow() {
       // A downloaded update replaces any stale "downloading…" message with
       // the restart button below.
       if (s.status === 'downloaded') setMsg('')
+      // Failures must be visible here too, not only in the top banner.
+      if (s.status === 'stalled') setMsg('تعذّر التحميل — لم تصل أي بيانات، أعد المحاولة')
+      if (s.status === 'error') setMsg(`تعذر التحديث${s.version ? ` v${s.version}` : ''}${s.message ? ` — ${s.message}` : ''}`)
     })
   }, [])
 
+  // Repaint a check/download that is already running when this card mounts.
   useEffect(() => {
     window.updater?.version?.()
       .then((r) => { if (r?.ok && r.version) setCurrent(r.version) })
+      .catch(() => {})
+    window.updater?.state?.()
+      .then((r) => {
+        if (!r?.ok) return
+        if (r.phase && r.phase !== 'idle') setStatus(r.phase)
+        if (typeof r.percent === 'number') setPercent(r.percent)
+        if (r.transferred) setTransferred(r.transferred)
+        if (r.total) setTotal(r.total)
+      })
       .catch(() => {})
   }, [])
 
@@ -1782,6 +1795,11 @@ function UpdateCheckRow() {
             : res?.error === 'unavailable' ? 'التحديثات غير متاحة في هذه النسخة'
             : 'تعذر التحقق — تحقق من الاتصال بالإنترنت',
         )
+      } else if (res.busy) {
+        // Already checking/downloading — the button must not start a second one.
+        setMsg(res.phase === 'downloaded'
+          ? 'التحديث جاهز — أعد التشغيل للتثبيت'
+          : 'يوجد تحديث قيد التحميل بالفعل — تابع الشريط أعلى الشاشة')
       } else if (res.version) {
         setMsg(`يوجد تحديث v${res.version} — جارٍ التحميل…`)
       } else {
@@ -1797,15 +1815,17 @@ function UpdateCheckRow() {
   // Progress pushed from the main process (launch auto-check or manual check).
   const live = status === 'downloading' ? `جارٍ تحميل التحديث… ${percent ?? 0}%`
     : status === 'checking' ? 'جارٍ التحقق من التحديثات…'
+    : status === 'available' ? 'يوجد تحديث — جارٍ بدء التحميل…'
     : status === 'downloaded' ? 'التحديث جاهز للتثبيت'
     : status === 'up-to-date' && !msg ? 'أنت على أحدث نسخة'
     : ''
+  const downloading = status === 'downloading' || status === 'checking' || status === 'available'
 
   return (
     <div className="flex flex-wrap items-center gap-3">
-      <Button size="sm" className="rounded-xl gap-1.5" onClick={handleCheck} disabled={busy}>
-        <RefreshCw className={cn("h-4 w-4", busy && "animate-spin")} />
-        {busy ? 'جارٍ التحقق…' : 'التحقق من التحديثات'}
+      <Button size="sm" className="rounded-xl gap-1.5" onClick={handleCheck} disabled={busy || downloading}>
+        <RefreshCw className={cn("h-4 w-4", (busy || downloading) && "animate-spin")} />
+        {busy || downloading ? 'جارٍ التحقق…' : 'التحقق من التحديثات'}
       </Button>
       {status === 'downloaded' && (
         <Button size="sm" className="rounded-xl gap-1.5" onClick={() => window.updater?.quitAndInstall()}>

@@ -15,6 +15,7 @@ const offIpc = (ipcRenderer as any).removeListener?.bind(ipcRenderer)
 contextBridge.exposeInMainWorld('updater', {
   check: () => invoke('updater:check'),
   version: () => invoke('updater:version'),
+  state: () => invoke('updater:state'),
   quitAndInstall: () => invoke('updater:quitAndInstall'),
   onStatus: (cb: (s: UpdateStatusPayload) => void) => {
     if (!onIpc) return () => {}

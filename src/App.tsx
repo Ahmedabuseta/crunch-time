@@ -62,8 +62,24 @@ function App() {
   // Manual "check for updates" for the top-bar refresh icon — the same check
   // the Settings card runs, but answering with a toast so it works anywhere.
   const [updateCheckBusy, setUpdateCheckBusy] = useState(false)
+  // Mirrors the main process' updater state so the button can never start a
+  // second check while one is already running or a download is in flight.
+  const [updateLive, setUpdateLive] = useState<string | null>(null)
+  useEffect(() => window.updater?.onStatus?.((s) => setUpdateLive(s.status)), [])
+  const updateBusy = updateCheckBusy
+    || updateLive === 'checking'
+    || updateLive === 'downloading'
+    || updateLive === 'available'
+    || updateLive === 'downloaded'
+  // Only spin while work is actually happening — a finished download just
+  // disables the button (there is nothing left to check).
+  const updateSpinning = updateCheckBusy
+    || updateLive === 'checking'
+    || updateLive === 'downloading'
+    || updateLive === 'available'
+
   const handleUpdateCheck = async () => {
-    if (updateCheckBusy) return
+    if (updateBusy) return
     setUpdateCheckBusy(true)
     try {
       const res = await window.updater?.check()
@@ -74,6 +90,16 @@ function App() {
             : res?.error === 'unavailable' ? 'التحديثات غير متاحة في هذه النسخة'
             : 'تعذر التحقق — تحقق من الاتصال بالإنترنت',
           variant: 'error',
+        })
+      } else if (res.busy) {
+        // The main process answered with the live state instead of starting a
+        // second download — say so instead of pretending a new check happened.
+        toast({
+          title: res.phase === 'downloaded' ? 'التحديث جاهز' : 'التحديث قيد التحميل',
+          description: res.phase === 'downloaded'
+            ? 'أعد التشغيل للتثبيت'
+            : `v${res.version || res.latest || ''} — تابع الشريط أعلى الشاشة`,
+          variant: res.phase === 'downloaded' ? 'success' : 'default',
         })
       } else if (res.version) {
         toast({ title: 'يوجد تحديث جديد', description: `v${res.version} — جارٍ التحميل في الخلفية`, variant: 'success' })
@@ -209,11 +235,11 @@ function App() {
           )}
           <button
             onClick={handleUpdateCheck}
-            disabled={updateCheckBusy}
+            disabled={updateBusy}
             className="text-muted-foreground hover:text-foreground transition-colors cursor-pointer p-1 disabled:opacity-50 disabled:cursor-wait"
-            title="فحص التحديثات"
+            title={updateBusy ? 'جارٍ فحص/تحميل التحديث…' : 'فحص التحديثات'}
           >
-            <RefreshCw className={cn("h-4 w-4", updateCheckBusy && "animate-spin")} />
+            <RefreshCw className={cn("h-4 w-4", updateSpinning && "animate-spin")} />
           </button>
           <button
             onClick={() => { const next: ThemeMode = themeMode === 'dark' ? 'light' : 'dark'; setThemeMode(next); setThemeModeLocal(next) }}

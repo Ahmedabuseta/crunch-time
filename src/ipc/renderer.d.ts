@@ -3,15 +3,38 @@ import type { PrintOrder } from '../lib/print'
 // Soft-delete by default; admins can request permanent removal with { hard: true }.
 export type DeleteOpts = { hard?: boolean }
 
+export type UpdatePhase = 'idle' | 'checking' | 'downloading' | 'downloaded' | 'stalled' | 'error'
+
 export interface UpdaterBridge {
-  check: () => Promise<{ ok: boolean; version?: string | null; current?: string; latest?: string | null; error?: string }>
+  check: () => Promise<{
+    ok: boolean
+    busy?: boolean
+    phase?: UpdatePhase
+    version?: string | null
+    current?: string
+    latest?: string | null
+    transferred?: number
+    total?: number
+    percent?: number
+    error?: string
+  }>
   version: () => Promise<{ ok: boolean; version?: string; error?: string }>
+  state: () => Promise<{
+    ok: boolean
+    current?: string
+    phase?: UpdatePhase
+    version?: string | null
+    transferred?: number
+    total?: number
+    percent?: number
+    error?: string
+  }>
   quitAndInstall: () => Promise<{ ok: boolean }>
   onStatus: (cb: (s: UpdateStatus) => void) => () => void
 }
 
 export interface UpdateStatus {
-  status: 'checking' | 'available' | 'downloading' | 'downloaded' | 'up-to-date' | 'error'
+  status: 'checking' | 'available' | 'downloading' | 'downloaded' | 'up-to-date' | 'stalled' | 'error'
   version?: string
   percent?: number
   transferred?: number
