@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import type { Addon } from '@/services/addon/addon.types'
 import { cn } from '@/lib/utils'
 import { fmtMoney } from '@/lib/format'
+import { Emoji } from '@/components/Emoji'
 
 interface AddonsPanelProps {
   onAddAddon: (addon: Addon) => void
@@ -67,7 +68,7 @@ export function AddonsPanel({ onAddAddon, cartItems = [], targetId, onTargetChan
                     "hover:border-primary/40 hover:bg-primary/5 hover:scale-105 active:scale-95 cursor-pointer"
                   )}
                 >
-                  <span className="text-2xl">{addon.emoji}</span>
+                  <Emoji className="text-2xl">{addon.emoji}</Emoji>
                   <span className="text-xs font-bold">{addon.name}</span>
                   <span className="text-primary font-black text-xs bg-primary/10 px-2.5 py-0.5 rounded-full">
                     +{fmtMoney(addon.price)} ج.م

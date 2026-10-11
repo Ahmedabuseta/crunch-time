@@ -21,6 +21,7 @@ import { Pagination } from '@/components/ui/pagination'
 import { useListControls } from '@/components/ui/list-controls'
 import type { ViewMode } from '@/components/ui/view-toggle'
 import { useIsAdmin } from '@/lib/use-is-admin'
+import { Emoji } from '@/components/Emoji'
 
 type TabId = 'data' | 'recipe' | 'addons' | 'modifiers'
 
@@ -134,7 +135,7 @@ export function ProductsPage() {
     {
       key: 'name', label: 'المنتج', render: (p) => (
         <div className="flex items-center gap-2">
-          <span className="text-2xl shrink-0">{p.emoji}</span>
+          <Emoji className="text-2xl shrink-0">{p.emoji}</Emoji>
           <div className="min-w-0">
             <p className="font-bold truncate">{p.name}</p>
             {p.description && <p className="text-[10px] text-muted-foreground truncate">{p.description}</p>}
@@ -174,7 +175,7 @@ export function ProductsPage() {
             <div className="flex items-center justify-between px-5 py-4 border-b bg-card">
               <div>
                 <h3 className="font-black text-base">{editId ? 'تعديل المنتج' : 'إضافة منتج'}</h3>
-                {editingProduct && <p className="text-[10px] text-muted-foreground">{editingProduct.emoji} {editingProduct.name}</p>}
+                {editingProduct && <p className="text-[10px] text-muted-foreground"><Emoji>{editingProduct.emoji}</Emoji> {editingProduct.name}</p>}
               </div>
               <Button variant="ghost" size="icon" className="rounded-xl" onClick={resetForm}><X className="h-4 w-4" /></Button>
             </div>
@@ -211,7 +212,7 @@ export function ProductsPage() {
                         <SelectValue placeholder="اختر القسم" />
                       </SelectTrigger>
                       <SelectContent>
-                        {categories.map(c => <SelectItem key={c.id} value={c.id}>{c.emoji} {c.name}</SelectItem>)}
+                        {categories.map(c => <SelectItem key={c.id} value={c.id}><Emoji>{c.emoji}</Emoji> {c.name}</SelectItem>)}
                       </SelectContent>
                     </Select>
 
@@ -291,7 +292,7 @@ export function ProductsPage() {
                               <button key={a.id} onClick={() => setSelectedAddons(s => selected ? s.filter(id => id !== a.id) : [...s, a.id])}
                                 className={cn("px-2.5 py-1 rounded-full text-[10px] font-bold border transition-all cursor-pointer",
                                   selected ? "bg-primary text-primary-foreground border-primary" : "bg-secondary text-muted-foreground border-transparent hover:border-border")}>
-                                {a.emoji} {a.name} {a.price > 0 && <span>{a.price}ج</span>}
+                                <Emoji>{a.emoji}</Emoji> {a.name} {a.price > 0 && <span>{a.price}ج</span>}
                               </button>
                             )
                           })}
@@ -304,7 +305,7 @@ export function ProductsPage() {
                         <p className="text-[10px] font-bold text-muted-foreground">وصفات الإضافات المرتبطة (تُخصم من المخزون عند البيع):</p>
                         {selectedAddonObjs.map(a => (
                           <div key={a.id} className="border border-border rounded-2xl p-3 space-y-2">
-                            <p className="text-xs font-bold">{a.emoji} {a.name} <span className="text-[10px] text-muted-foreground font-medium">+{fmtMoney(a.price)} ج.م</span></p>
+                            <p className="text-xs font-bold"><Emoji>{a.emoji}</Emoji> {a.name} <span className="text-[10px] text-muted-foreground font-medium">+{fmtMoney(a.price)} ج.م</span></p>
                             <RecipePanel
                               title="وصفة الإضافة"
                               targetId={a.id}
@@ -440,7 +441,7 @@ export function ProductsPage() {
               {list.items.map(p => (
                 <div key={p.id} className="border-2 rounded-2xl bg-card p-4 space-y-2">
                   <div className="flex items-center justify-between">
-                    <span className="text-3xl">{p.emoji}</span>
+                    <Emoji className="text-3xl">{p.emoji}</Emoji>
                     <div className="flex items-center gap-1">
                       <Button variant="ghost" size="icon" className="h-7 w-7 rounded-lg" onClick={() => setRecipeFor(recipeFor === p.id ? null : p.id)}><Link className="h-3.5 w-3.5" /></Button>
                       <Button variant="ghost" size="icon" className="h-7 w-7 rounded-lg" onClick={() => startEdit(p)}><Pencil className="h-3.5 w-3.5" /></Button>

@@ -12,6 +12,7 @@ import { useListControls } from '@/components/ui/list-controls'
 import type { ViewMode } from '@/components/ui/view-toggle'
 import { useIsAdmin } from '@/lib/use-is-admin'
 import { cn } from '@/lib/utils'
+import { Emoji } from '@/components/Emoji'
 
 export function CategoriesPage() {
   const categories = useCategoryStore((s) => s.categories)
@@ -190,7 +191,7 @@ export function CategoriesPage() {
         )
       }
     },
-    { key: 'emoji', label: '', render: (c) => <span className="text-xl">{c.emoji}</span> },
+    { key: 'emoji', label: '', render: (c) => <Emoji className="text-xl">{c.emoji}</Emoji> },
     { key: 'name', label: 'الاسم', headerClassName: 'text-center', render: (c) => <span className="font-bold">{c.name}</span> },
     { key: 'color', label: 'اللون', render: (c) => <div className="w-4 h-4 rounded-full shadow-sm" style={{ backgroundColor: c.color }} /> },
     {
@@ -369,7 +370,7 @@ export function CategoriesPage() {
                 </div>
 
                 <div className="w-3.5 h-3.5 rounded-full shrink-0 shadow-sm" style={{ backgroundColor: cat.color }} />
-                <span className="text-2xl">{cat.emoji}</span>
+                <Emoji className="text-2xl">{cat.emoji}</Emoji>
                 <span className="flex-1 font-bold text-sm text-foreground">{cat.name}</span>
 
                 {/* Order Input Badge */}

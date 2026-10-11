@@ -17,6 +17,7 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { SortButton, sortRows, toggleSort, type SortState } from '@/components/ui/data-table'
+import { Emoji } from '@/components/Emoji'
 
 const pad = (n: number) => String(n).padStart(2, '0')
 const fmtLocal = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
@@ -521,7 +522,7 @@ export function Reports() {
                     <div className="space-y-1.5">
                       {salesTrend.items.slice(0, 8).map((it, i) => (
                         <div key={i} className="flex items-center gap-3 bg-secondary/40 rounded-xl px-3 py-2">
-                          <span className="text-lg w-7 text-center">{it.emoji}</span>
+                          <Emoji className="text-lg w-7 text-center">{it.emoji}</Emoji>
                           <div className="flex-1 min-w-0">
                             <div className="flex justify-between text-xs">
                               <span className="font-bold truncate">{it.name}</span>
@@ -604,7 +605,7 @@ export function Reports() {
                       const maxCount = topItems[0]?.totalQuantity || 1
                       return (
                         <div key={i} className="flex items-center gap-3">
-                          <span className="text-lg w-8 text-center">{item.emoji}</span>
+                          <Emoji className="text-lg w-8 text-center">{item.emoji}</Emoji>
                           <div className="flex-1 min-w-0">
                             <div className="flex justify-between text-xs mb-1">
                               <span className="font-bold">{item.name}</span>
@@ -674,7 +675,7 @@ export function Reports() {
                       const maxQty = addonStats[0]?.totalQuantity || 1
                       return (
                         <div key={i} className="flex items-center gap-3">
-                          <span className="text-lg w-7 text-center">{a.emoji}</span>
+                          <Emoji className="text-lg w-7 text-center">{a.emoji}</Emoji>
                           <div className="flex-1 min-w-0">
                             <div className="flex justify-between text-xs mb-1">
                               <span className="font-bold">{a.name}</span>
@@ -859,7 +860,7 @@ export function Reports() {
                         <tbody>
                           {sortRows(abcXyz.products, abcSort).slice(0, 12).map(p => (
                             <tr key={p.productId} className="border-t border-border/60">
-                              <td className="py-2 px-2 font-bold">{p.emoji} {p.name}</td>
+                              <td className="py-2 px-2 font-bold"><Emoji>{p.emoji}</Emoji> {p.name}</td>
                               <td className="py-2 px-2 font-black">{p.revenue.toFixed(0)} ج.م</td>
                               <td className="py-2 px-2">{p.qty}</td>
                               <td className="py-2 px-2">{(p.share * 100).toFixed(0)}%</td>

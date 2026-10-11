@@ -16,6 +16,7 @@ import { DatePicker } from '@/components/ui/date-picker'
 import { toast } from '@/components/ui/toast'
 import type { ViewMode } from '@/components/ui/view-toggle'
 import { SubRecipesSection } from './SubRecipesSection'
+import { Emoji } from '@/components/Emoji'
 
 const unitLabel: Record<string, string> = { g: 'جرام', kg: 'كيلو', ml: 'مليلتر', l: 'لتر', pcs: 'قطعة' }
 
@@ -391,7 +392,7 @@ export function InventoryPage() {
             <div className="flex items-center justify-between px-5 py-4 border-b">
               <div>
                 <h3 className="font-black text-lg">حركة المخزون</h3>
-                {ledger.ingredient && <p className="text-xs text-muted-foreground">{ledger.ingredient.emoji} {ledger.ingredient.name} — {unitLabel[ledger.ingredient.unit] || ledger.ingredient.unit} · الرصيد {ledger.currentStock}</p>}
+                {ledger.ingredient && <p className="text-xs text-muted-foreground"><Emoji>{ledger.ingredient.emoji}</Emoji> {ledger.ingredient.name} — {unitLabel[ledger.ingredient.unit] || ledger.ingredient.unit} · الرصيد {ledger.currentStock}</p>}
               </div>
               <Button variant="ghost" size="icon" className="rounded-xl h-11 w-11" onClick={() => setMovesFor(null)}><X className="h-5 w-5" /></Button>
             </div>

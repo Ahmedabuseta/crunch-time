@@ -14,6 +14,7 @@ import { Pagination } from '@/components/ui/pagination'
 import { useListControls } from '@/components/ui/list-controls'
 import type { ViewMode } from '@/components/ui/view-toggle'
 import { useIsAdmin } from '@/lib/use-is-admin'
+import { Emoji } from '@/components/Emoji'
 
 export function AddonsPage() {
   const addons = useAddonStore((s) => s.addons)
@@ -65,7 +66,7 @@ export function AddonsPage() {
   }
 
   const columns: DataColumn<any>[] = [
-    { key: 'name', label: 'الإضافة', render: (a) => <div className="flex items-center gap-2"><span className="text-xl">{a.emoji}</span><span className="font-bold">{a.name}</span></div> },
+    { key: 'name', label: 'الإضافة', render: (a) => <div className="flex items-center gap-2"><Emoji className="text-xl">{a.emoji}</Emoji><span className="font-bold">{a.name}</span></div> },
     { key: 'price', label: 'السعر', render: (a) => <span className="font-black text-primary">{fmtMoney(a.price)} ج.م</span> },
     {
       key: 'actions', label: 'إجراءات', className: 'text-left', render: (a) => (
@@ -117,7 +118,7 @@ export function AddonsPage() {
         <div className="flex-1 p-5 grid grid-cols-2 lg:grid-cols-4 gap-3 overflow-y-auto content-start">
           {list.items.map(a => (
             <div key={a.id} className="border-2 rounded-2xl bg-card p-4 flex flex-col items-center gap-2">
-              <span className="text-3xl">{a.emoji}</span>
+              <Emoji className="text-3xl">{a.emoji}</Emoji>
               <p className="font-bold text-sm">{a.name}</p>
               <p className="font-black text-primary text-sm">{fmtMoney(a.price)} ج.م</p>
               <div className="flex gap-1">

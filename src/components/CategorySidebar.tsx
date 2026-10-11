@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 import { useCategoryStore } from '@/services/category/category.store'
 import { cn } from '@/lib/utils'
+import { Emoji } from '@/components/Emoji'
 
 interface CategorySidebarProps {
   selected: string | null
@@ -43,7 +44,7 @@ export function CategorySidebar({ selected, onSelect }: CategorySidebarProps) {
                 : "bg-secondary/60 text-foreground hover:bg-secondary font-medium"
             )}
           >
-            <span className="text-lg sm:text-xl md:text-2xl">{cat.emoji}</span>
+            <Emoji className="text-lg sm:text-xl md:text-2xl">{cat.emoji}</Emoji>
             <span className="whitespace-nowrap max-[420px]:hidden">{cat.name}</span>
           </button>
         ))}

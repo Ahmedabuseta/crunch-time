@@ -4,6 +4,7 @@ import { useCartStore } from '@/services/cart/cart.store'
 import { ModifierDialog } from './ModifierDialog'
 import { cn } from '@/lib/utils'
 import { fmtMoney } from '@/lib/format'
+import { Emoji } from '@/components/Emoji'
 
 interface ProductCardProps {
   product: Product
@@ -72,7 +73,7 @@ export function ProductCard({ product, index }: ProductCardProps) {
             خيارات
           </span>
         )}
-        <span className="text-3xl sm:text-5xl group-hover:scale-110 transition-transform duration-200">{product.emoji}</span>
+        <Emoji className="text-3xl sm:text-5xl group-hover:scale-110 transition-transform duration-200">{product.emoji}</Emoji>
         <div className="flex w-full min-w-0 flex-1 flex-col items-center justify-start space-y-0.5 text-center">
           <p className="w-full min-w-0 whitespace-normal break-words text-[11px] font-bold leading-snug sm:text-sm">
             {product.name}

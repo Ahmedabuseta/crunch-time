@@ -88,7 +88,7 @@ export function EmojiPicker({ value, onChange, className }: EmojiPickerProps) {
                 key={emoji}
                 onClick={() => { onChange(emoji); setOpen(false) }}
                 className={cn(
-                  "w-9 h-9 flex items-center justify-center rounded-lg text-xl hover:bg-secondary transition-all cursor-pointer",
+                  "w-9 h-9 flex items-center justify-center rounded-lg text-xl emoji hover:bg-secondary transition-all cursor-pointer",
                   value === emoji && "bg-primary/20 ring-1 ring-primary"
                 )}
               >

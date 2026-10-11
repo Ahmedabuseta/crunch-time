@@ -4,6 +4,7 @@ import { Minus, Plus, Trash2, StickyNote, X } from 'lucide-react'
 import { useState } from 'react'
 import { cn } from '@/lib/utils'
 import { fmtMoney } from '@/lib/format'
+import { Emoji } from '@/components/Emoji'
 
 interface CartItemProps {
   item: CartItemType
@@ -24,7 +25,7 @@ export function CartItem({ item }: CartItemProps) {
   return (
     <div className="py-2 border-b border-border/40 last:border-0 animate-fade-in">
       <div className="flex items-center gap-2">
-        <span className="text-2xl leading-none shrink-0 w-8 text-center">{item.product.emoji}</span>
+        <Emoji className="text-2xl leading-none shrink-0 w-8 text-center">{item.product.emoji}</Emoji>
         <div className="flex-1 min-w-0">
           <p className="text-sm font-black leading-snug break-words">
             {item.product.name}
@@ -76,7 +77,7 @@ export function CartItem({ item }: CartItemProps) {
           {item.addons.map((addon) => (
             <div key={addon.id} className="flex items-center gap-1.5 text-xs">
               <span className="text-muted-foreground">↳</span>
-              <span className="text-sm leading-none">{addon.emoji}</span>
+              <Emoji className="text-sm leading-none">{addon.emoji}</Emoji>
               <span className="flex-1 font-medium break-words">{addon.name}</span>
               <div className="flex items-center bg-secondary/70 rounded-full p-0.5 shrink-0">
                 <button onClick={() => updateAddonQty(item.lineId, addon.id, (addon.qty || 1) - 1)} className="flex items-center justify-center h-6 w-6 rounded-full hover:bg-accent cursor-pointer transition-colors">

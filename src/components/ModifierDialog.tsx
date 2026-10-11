@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { fmtMoney } from '@/lib/format'
+import { Emoji } from '@/components/Emoji'
 
 interface ModifierGroup {
   id: string
@@ -87,7 +88,7 @@ export function ModifierDialog({ product, groups, onClose }: ModifierDialogProps
         {/* Header */}
         <div className="flex items-center justify-between p-5 pb-3">
           <div className="flex items-center gap-3">
-            <span className="text-3xl">{product.emoji}</span>
+            <Emoji className="text-3xl">{product.emoji}</Emoji>
             <div>
               <h3 className="font-black text-base">{product.name}</h3>
               <p className="text-xs text-muted-foreground">{product.description}</p>

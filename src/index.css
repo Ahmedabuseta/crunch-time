@@ -206,9 +206,12 @@ select {
   font: inherit;
 }
 
+/* Colour emoji fonts are named explicitly: without them Windows falls back to
+   the monochrome Segoe UI Symbol glyphs and draws emoji as black outlines. */
 body {
   @apply bg-background text-foreground;
-  font-family: 'Tajawal', 'Noto Sans Arabic', sans-serif;
+  font-family: 'Tajawal', 'Noto Sans Arabic', 'Segoe UI Emoji', 'Apple Color Emoji',
+    'Noto Color Emoji', 'Twemoji Mozilla', sans-serif;
   font-size: 1rem;
   font-weight: 400;
   line-height: 1.5;
@@ -227,6 +230,27 @@ input,
 textarea,
 select {
   text-rendering: optimizeLegibility;
+}
+
+/* ─── Emoji ───
+   Two Windows-specific problems show up here:
+   1. DirectWrite emulates a bold face by stroking the glyph, so an emoji that
+      inherits font-bold / font-black from its parent gets a thick black
+      outline. Tajawal ships no emoji, so the fallback font always has to
+      absorb the requested weight — pinning 400 inside .emoji stops that.
+   2. Without a colour emoji font named, the fallback is the monochrome
+      Segoe UI Symbol face, which renders emoji as black outlines.
+   .emoji is applied by the <Emoji> component so only the glyph is affected,
+   never the Arabic text next to it. */
+.emoji {
+  font-family: 'Segoe UI Emoji', 'Apple Color Emoji', 'Noto Color Emoji', 'Twemoji Mozilla',
+    sans-serif;
+  font-weight: 400;
+  font-style: normal;
+  font-synthesis: none;
+  -webkit-text-stroke: 0;
+  font-variant-emoji: emoji;
+  letter-spacing: 0;
 }
 
 /* Theme-aware scrollbars */

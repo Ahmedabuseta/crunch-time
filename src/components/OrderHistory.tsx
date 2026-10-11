@@ -16,6 +16,7 @@ import { toast } from '@/components/ui/toast'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import type { ViewMode } from '@/components/ui/view-toggle'
+import { Emoji } from '@/components/Emoji'
 
 const statusConfig: Record<string, { label: string; color: string; bg: string }> = {
   COMPLETED: { label: 'مكتمل', color: 'text-green-400', bg: 'bg-green-500/10' },
@@ -450,7 +451,7 @@ export function OrderHistory() {
                 <div className="mr-5 space-y-0.5">
                   {addonGroups.map((a, i) => (
                     <div key={i} className="flex justify-between gap-2 text-[10px] text-muted-foreground">
-                      <span className="flex-1 break-words min-w-0">↳ {a.emoji} {a.name}{a.qty > 1 ? ` ×${a.qty}` : ''}{item.quantity > 1 ? ` ×${item.quantity}` : ''}</span>
+                      <span className="flex-1 break-words min-w-0">↳ <Emoji>{a.emoji}</Emoji> {a.name}{a.qty > 1 ? ` ×${a.qty}` : ''}{item.quantity > 1 ? ` ×${item.quantity}` : ''}</span>
                       <span className="shrink-0 whitespace-nowrap">{fmtMoney(a.price * a.qty * item.quantity)} ج.م</span>
                     </div>
                   ))}
@@ -520,7 +521,7 @@ export function OrderHistory() {
                   {/* Addon rollback info */}
                   {(item.addonRollbackInfo || []).map((addon: any, ai: number) => (
                     <div key={ai} className="flex items-center justify-between text-[9px] mr-4 text-muted-foreground">
-                      <span>↳ {addon.emoji} {addon.name}</span>
+                      <span>↳ <Emoji>{addon.emoji}</Emoji> {addon.name}</span>
                       {addon.supportsRollback ? (
                         <span className="text-green-400/70 font-bold">✓</span>
                       ) : (
