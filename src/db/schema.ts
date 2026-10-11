@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, real, index } from 'drizzle-orm/sqlite-core'
+import { sqliteTable, text, integer, real, index, unique } from 'drizzle-orm/sqlite-core'
 import { relations } from 'drizzle-orm'
 
 // ─── Categories ────────────────────────────────────────────────
@@ -292,15 +292,33 @@ export const deliveryProfiles = sqliteTable('delivery_profiles', {
 })
 
 // ─── Discount Codes ────────────────────────────────────────────
+// mode 'order' discounts the whole order (classic coupon);
+// mode 'daily' is the employee discount — it applies only to the
+// product-of-the-day picked in discount_day_products, up to
+// `dailyUses` orders per day (shared pool, 0 = unlimited).
 export const discountCodes = sqliteTable('discount_codes', {
   id: text('id').primaryKey(),
   code: text('code').notNull(),
   type: text('type').notNull(), // 'percentage' | 'fixed'
   value: real('value').notNull(),
+  mode: text('mode').notNull().default('order'), // 'order' | 'daily'
+  dailyUses: integer('daily_uses').notNull().default(0),
   active: integer('active', { mode: 'boolean' }).notNull().default(true),
   maxUses: integer('max_uses').notNull().default(0),
   usedCount: integer('used_count').notNull().default(0),
 })
+
+// Weekly rotation for 'daily' employee codes: one product per
+// weekday (0 = Sunday … 6 = Saturday). The code only discounts
+// that day's product.
+export const discountDayProducts = sqliteTable('discount_day_products', {
+  id: text('id').primaryKey(),
+  discountCodeId: text('discount_code_id').notNull().references(() => discountCodes.id),
+  dayOfWeek: integer('day_of_week').notNull(),
+  productId: text('product_id').notNull().references(() => products.id),
+}, (t) => [
+  unique('discount_day_products_unique').on(t.discountCodeId, t.dayOfWeek),
+])
 
 // ─── Expenses ──────────────────────────────────────────────────
 export const expenses = sqliteTable('expenses', {

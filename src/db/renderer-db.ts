@@ -165,6 +165,18 @@ function seed() {
   T.discountCodes.insert({ id: 'disc-10', code: 'WELCOME10', type: 'percentage', value: 10, active: true, maxUses: 100, usedCount: 0 })
   T.discountCodes.insert({ id: 'disc-20', code: 'SAVE20', type: 'fixed', value: 20, active: true, maxUses: 50, usedCount: 0 })
   T.discountCodes.insert({ id: 'disc-5', code: 'FIVE', type: 'fixed', value: 5, active: true, maxUses: 0, usedCount: 0 })
+  // Employee daily code — the rotation rides on the row
+  // itself (the in-browser mock has no day-products table).
+  T.discountCodes.insert({
+    id: 'disc-staff', code: 'STAFF', type: 'percentage', value: 50, active: true, maxUses: 0, usedCount: 0,
+    mode: 'daily', dailyUses: 10,
+    dayProducts: [
+      { dayOfWeek: 0, productId: 'cr1' }, { dayOfWeek: 1, productId: 'cr3' },
+      { dayOfWeek: 2, productId: 'cr6' }, { dayOfWeek: 3, productId: 'cr7' },
+      { dayOfWeek: 4, productId: 'cr5' }, { dayOfWeek: 5, productId: 'cr2' },
+      { dayOfWeek: 6, productId: 'cr9' },
+    ],
+  })
 
   // Expenses
   T.expenses.insert({ id: 'exp-salary-1', name: 'رواتب الموظفين', category: 'رواتب', amount: 15000, type: 'monthly', active: true })
@@ -406,6 +418,28 @@ export const rendererApi = {
       const dc = T.discountCodes.get(r => r.code.toUpperCase() === code.toUpperCase() && r.active)
       if (!dc) return { valid: false, error: 'كود غير صالح' }
       if (dc.maxUses > 0 && dc.usedCount >= dc.maxUses) return { valid: false, error: 'انتهى الاستخدام' }
+      // Employee daily code: shared uses per day, and the
+      // discount only applies to the product-of-the-day.
+      if (dc.mode === 'daily') {
+        let usedToday = 0
+        if (dc.dailyUses > 0) {
+          const today = new Date().toDateString()
+          usedToday = T.orders.select(r => r.discountCode === dc.code && r.createdAt && new Date(r.createdAt).toDateString() === today).length
+          if (usedToday >= dc.dailyUses) return { valid: false, error: 'تم استهلاك استخدامات اليوم' }
+        }
+        const row = (dc.dayProducts || []).find((r: any) => r.dayOfWeek === new Date().getDay())
+        if (!row) return { valid: false, error: 'لا يوجد صنف محدد لهذا اليوم' }
+        const product = T.products.get((r: any) => r.id === row.productId)
+        if (!product) return { valid: false, error: 'صنف اليوم غير موجود' }
+        return {
+          valid: true,
+          discount: {
+            id: dc.id, code: dc.code, type: dc.type, value: dc.value,
+            mode: 'daily', productId: product.id, productName: product.name,
+            remaining: dc.dailyUses > 0 ? dc.dailyUses - usedToday : null,
+          },
+        }
+      }
       return { valid: true, discount: { id: dc.id, code: dc.code, type: dc.type, value: dc.value } }
     },
     use: (id: string) => { const dc = T.discountCodes.get(r => r.id === id); if (dc) dc.usedCount++; return { ok: true } },

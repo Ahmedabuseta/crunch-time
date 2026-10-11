@@ -39,6 +39,8 @@ export function createTestDb() {
     CREATE TABLE sub_recipe_ingredients (id TEXT PRIMARY KEY, sub_recipe_id TEXT NOT NULL, ingredient_id TEXT NOT NULL, quantity_per_unit REAL NOT NULL);
     CREATE TABLE inventory_transactions (id TEXT PRIMARY KEY, ingredient_id TEXT NOT NULL REFERENCES ingredients(id), type TEXT NOT NULL, quantity REAL NOT NULL, unit_cost REAL, supplier TEXT, reference_order_id TEXT REFERENCES orders(id), note TEXT, created_at TEXT NOT NULL);
     CREATE TABLE cash_movements (id TEXT PRIMARY KEY, shift_id TEXT NOT NULL REFERENCES shifts(id), type TEXT NOT NULL, amount REAL NOT NULL, note TEXT, created_at TEXT NOT NULL);
+    CREATE TABLE discount_codes (id TEXT PRIMARY KEY, code TEXT NOT NULL UNIQUE, type TEXT NOT NULL, value REAL NOT NULL, mode TEXT NOT NULL DEFAULT 'order', daily_uses INTEGER NOT NULL DEFAULT 0, active INTEGER NOT NULL DEFAULT 1, max_uses INTEGER NOT NULL DEFAULT 0, used_count INTEGER NOT NULL DEFAULT 0);
+    CREATE TABLE discount_day_products (id TEXT PRIMARY KEY, discount_code_id TEXT NOT NULL REFERENCES discount_codes(id), day_of_week INTEGER NOT NULL, product_id TEXT NOT NULL REFERENCES products(id), UNIQUE (discount_code_id, day_of_week));
   `)
 
   return { sqlite, db }

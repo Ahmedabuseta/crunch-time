@@ -41,6 +41,11 @@ export async function seedDatabase() {
   insertDisc.run('disc-10', 'WELCOME10', 'percentage', 10, 100)
   insertDisc.run('disc-20', 'SAVE20', 'fixed', 20, 50)
   insertDisc.run('disc-5', 'FIVE', 'fixed', 5, 0)
+  // Employee daily code: discounts only the product-of-the-day
+  // from the weekly rotation below, from a shared pool of
+  // 10 uses per day. Edit the rotation in Settings.
+  const insertDaily = db.prepare("INSERT OR IGNORE INTO discount_codes (id, code, type, value, mode, daily_uses, active, max_uses, used_count) VALUES (?, ?, ?, ?, 'daily', ?, 1, 0, 0)")
+  insertDaily.run('disc-staff', 'STAFF', 'percentage', 50, 10)
 
   // ─── Expenses ────────────────────────────────────────────────
   const insertExp = db.prepare('INSERT OR IGNORE INTO expenses (id, name, category, amount, type, active) VALUES (?, ?, ?, ?, ?, 1)')
@@ -191,6 +196,23 @@ export async function seedDatabase() {
       const row = { id: it.id, name: it.name, price: it.price, cost: 0, rollback, cat: c.id, emoji, desc }
       insertProd.run(row.id, row.name, row.price, row.cost, row.rollback, row.cat, row.emoji, row.desc)
     }
+  }
+
+  // STAFF's weekly rotation — inserted after the products
+  // exist (the rows reference them). dayOfWeek:
+  // 0 = Sunday … 6 = Saturday; weekend is crepe.
+  const insertDay = db.prepare('INSERT OR IGNORE INTO discount_day_products (id, discount_code_id, day_of_week, product_id) VALUES (?, ?, ?, ?)')
+  const staffRotation: [number, string][] = [
+    [0, 'm1'],   // الأحد — برجر
+    [1, 'c3'],   // الاثنين — زنجر حار
+    [2, 's1'],   // الثلاثاء — بطاطس سوري
+    [3, 'mx1'],  // الأربعاء — طوكيو
+    [4, 'b1'],   // الخميس — كريب بطاطس
+    [5, 'c1'],   // الجمعة — كرانش حار
+    [6, 'c2'],   // السبت — كرانش بارد
+  ]
+  for (const [day, productId] of staffRotation) {
+    insertDay.run(`disc-staff-d${day}`, 'disc-staff', day, productId)
   }
 
   // Flat id lists per category drive the recipe / modifier / addon wiring below.

@@ -17,6 +17,10 @@ import { Receipt as ReceiptView } from '@/components/Receipt'
 import { normalizeReceiptInfo, processLogoFile } from '@/lib/receipt'
 import { buildCustomerReceiptHtml, contentWidth } from '@/lib/print'
 import { toast } from '@/components/ui/toast'
+import { Emoji } from '@/components/Emoji'
+
+// Arabic weekday names, indexed by Date.getDay() (0 = Sunday).
+const DAY_NAMES = ['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت']
 
 // ─── Receipt branding form helpers ─────────────────────────────
 const inputClass = 'w-full px-3 py-2 rounded-xl bg-secondary text-sm border-0 focus:ring-1 focus:ring-primary focus:outline-none'
@@ -113,6 +117,7 @@ export function SettingsPage() {
   const [zoneSort, setZoneSort] = useState<SortState<any> | null>(null)
   const [settings, setSettings] = useState<any>({})
   const [discounts, setDiscounts] = useState<any[]>([])
+  const [allProducts, setAllProducts] = useState<any[]>([])
   const [expenses, setExpenses] = useState<any[]>([])
   const [categories, setCategories] = useState<any[]>([])
   const [printers, setPrinters] = useState<any[]>([])
@@ -147,7 +152,11 @@ export function SettingsPage() {
   const [editingDiscount, setEditingDiscount] = useState<any | null>(null)
   const [editingExpense, setEditingExpense] = useState<any | null>(null)
   const [profileForm, setProfileForm] = useState({ name: '', phone: '' })
-  const [discountForm, setDiscountForm] = useState({ code: '', type: 'percentage', value: '', maxUses: '' })
+  const [discountForm, setDiscountForm] = useState({
+    code: '', type: 'percentage', value: '', maxUses: '',
+    mode: 'order', dailyUses: '',
+    dayProducts: Array.from({ length: 7 }, (_, dayOfWeek) => ({ dayOfWeek, productId: '' })),
+  })
   const [expenseForm, setExpenseForm] = useState({ name: '', category: 'رواتب', amount: '', type: 'monthly' })
   const [backupStatus, setBackupStatus] = useState<any>({ lastBackup: null, backupCount: 0 })
   const [backupBusy, setBackupBusy] = useState(false)
@@ -198,13 +207,14 @@ export function SettingsPage() {
   }
 
   const load = async () => {
-    const [s, d, e, b, cats, prs] = await Promise.all([
+    const [s, d, e, b, cats, prs, prods] = await Promise.all([
       window.api.settings.get(),
       window.api.discountCode.list(),
       window.api.expense.list(),
       window.api.backup.getStatus(),
       window.api.category.list().catch(() => []),
       window.api.printer.list().catch(() => []),
+      window.api.product.list().catch(() => []),
     ])
     setSettings(s)
     setDiscounts(d)
@@ -212,12 +222,21 @@ export function SettingsPage() {
     setBackupStatus(b || { lastBackup: null, backupCount: 0 })
     setCategories(cats || [])
     setPrinters(prs || [])
+    setAllProducts(prods || [])
     await fetchZones(true)
     await fetchStations(true)
     await fetchProfiles(true)
   }
 
   useEffect(() => { load() }, [])
+
+  // Today's product for a 'daily' employee code — shown
+  // in the codes list so the cashier can see what's on.
+  const discountDayLabel = (d: any) => {
+    const row = (d.dayProducts || []).find((r: any) => r.dayOfWeek === new Date().getDay())
+    const p = allProducts.find((pr: any) => pr.id === row?.productId)
+    return p?.name || ''
+  }
 
   // Debounced autosave. Timers are tracked per key so that editing a second
   // field never cancels the pending write of the first one.
@@ -241,9 +260,25 @@ export function SettingsPage() {
 
   const handleAddDiscount = async () => {
     if (!discountForm.code || !discountForm.value) return
+    if (discountForm.mode === 'daily' && discountForm.dayProducts.some((dp) => !dp.productId)) {
+      toast({ title: 'اكمل صنف كل يوم من الأيام السبعة', variant: 'error' })
+      return
+    }
     try {
-      await window.api.discountCode.create({ code: discountForm.code.toUpperCase().trim(), type: discountForm.type, value: parseFloat(discountForm.value), maxUses: parseInt(discountForm.maxUses) || 0 })
-      setDiscountForm({ code: '', type: 'percentage', value: '', maxUses: '' })
+      await window.api.discountCode.create({
+        code: discountForm.code.toUpperCase().trim(),
+        type: discountForm.type,
+        value: parseFloat(discountForm.value),
+        maxUses: parseInt(discountForm.maxUses) || 0,
+        mode: discountForm.mode,
+        dailyUses: parseInt(discountForm.dailyUses) || 0,
+        dayProducts: discountForm.mode === 'daily' ? discountForm.dayProducts : undefined,
+      })
+      setDiscountForm({
+        code: '', type: 'percentage', value: '', maxUses: '',
+        mode: 'order', dailyUses: '',
+        dayProducts: Array.from({ length: 7 }, (_, dayOfWeek) => ({ dayOfWeek, productId: '' })),
+      })
       setShowDiscountForm(false)
       toast({ title: 'تمت إضافة كود الخصم', description: discountForm.code.toUpperCase(), variant: 'success' })
       await load()
@@ -254,12 +289,23 @@ export function SettingsPage() {
 
   const handleUpdateDiscount = async () => {
     if (!editingDiscount || !editingDiscount.code || !editingDiscount.value) return
+    const mode = editingDiscount.mode || 'order'
+    if (mode === 'daily') {
+      const rows = editingDiscount.dayProducts || []
+      if (rows.length < 7 || rows.some((r: any) => !r.productId)) {
+        toast({ title: 'اكمل صنف كل يوم من الأيام السبعة', variant: 'error' })
+        return
+      }
+    }
     try {
       await window.api.discountCode.update(editingDiscount.id, {
         code: String(editingDiscount.code).toUpperCase().trim(),
         type: editingDiscount.type,
         value: parseFloat(editingDiscount.value),
         maxUses: parseInt(editingDiscount.maxUses) || 0,
+        mode,
+        dailyUses: parseInt(editingDiscount.dailyUses) || 0,
+        dayProducts: mode === 'daily' ? (editingDiscount.dayProducts || []).map((r: any) => ({ dayOfWeek: r.dayOfWeek, productId: r.productId })) : undefined,
       })
       toast({ title: 'تم تحديث كود الخصم', description: editingDiscount.code, variant: 'success' })
       setEditingDiscount(null)
@@ -819,7 +865,7 @@ export function SettingsPage() {
                       <button key={c.id} onClick={() => toggleStationCategory(false, null, c.id)}
                         className={cn("px-3 py-1.5 rounded-full text-xs font-bold cursor-pointer border-2 transition-all",
                           on ? "bg-primary text-primary-foreground border-primary" : "bg-secondary/60 text-muted-foreground border-transparent")}>
-                        {c.emoji} {c.name}
+                        <Emoji>{c.emoji}</Emoji> {c.name}
                       </button>
                     )
                   })}
@@ -863,7 +909,7 @@ export function SettingsPage() {
                           <button key={c.id} onClick={() => toggleStationCategory(true, s.id, c.id)}
                             className={cn("px-2.5 py-1 rounded-full text-[11px] font-bold cursor-pointer border-2 transition-all",
                               on ? "bg-primary text-primary-foreground border-primary" : "bg-secondary text-muted-foreground border-transparent")}>
-                            {c.emoji} {c.name}
+                            <Emoji>{c.emoji}</Emoji> {c.name}
                           </button>
                         )
                       })}
@@ -905,7 +951,7 @@ export function SettingsPage() {
                       <div className="flex flex-wrap gap-1 mr-7">
                         {(s.categoryIds || []).map((cid: string) => {
                           const c = categories.find((x: any) => x.id === cid)
-                          return <span key={cid} className="text-[10px] font-bold bg-primary/10 text-primary rounded-full px-2 py-0.5">{c ? `${c.emoji} ${c.name}` : cid}</span>
+                          return <span key={cid} className="text-[10px] font-bold bg-primary/10 text-primary rounded-full px-2 py-0.5">{c ? <><Emoji>{c.emoji}</Emoji> {c.name}</> : cid}</span>
                         })}
                       </div>
                     )}
@@ -1169,7 +1215,11 @@ export function SettingsPage() {
                 setShowDiscountForm(false)
                 setEditingDiscount(null)
               } else {
-                setDiscountForm({ code: '', type: 'percentage', value: '', maxUses: '' })
+                setDiscountForm({
+                  code: '', type: 'percentage', value: '', maxUses: '',
+                  mode: 'order', dailyUses: '',
+                  dayProducts: Array.from({ length: 7 }, (_, dayOfWeek) => ({ dayOfWeek, productId: '' })),
+                })
                 setShowDiscountForm(true)
               }
             }}>
@@ -1217,7 +1267,79 @@ export function SettingsPage() {
                   placeholder="حد الاستخدام (0 = بلا حد)"
                   className="px-3 py-2 rounded-xl bg-secondary text-sm border-0 focus:ring-1 focus:ring-primary focus:outline-none"
                 />
+                <Select
+                  value={editingDiscount ? (editingDiscount.mode || 'order') : discountForm.mode}
+                  onValueChange={v => {
+                    if (editingDiscount) {
+                      const rows = Array.from({ length: 7 }, (_, d) => {
+                        const existing = (editingDiscount.dayProducts || []).find((r: any) => r.dayOfWeek === d)
+                        return { dayOfWeek: d, productId: existing?.productId || '' }
+                      })
+                      setEditingDiscount({ ...editingDiscount, mode: v, dayProducts: rows })
+                    } else {
+                      setDiscountForm(f => ({ ...f, mode: v }))
+                    }
+                  }}
+                >
+                  <SelectTrigger className="rounded-xl">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="order">خصم عام (كل الطلب)</SelectItem>
+                    <SelectItem value="daily">خصم موظفين يومي (صنف اليوم)</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
+              {(editingDiscount ? (editingDiscount.mode || 'order') : discountForm.mode) === 'daily' && (
+                <div className="space-y-3">
+                  <input
+                    type="number"
+                    value={editingDiscount ? (editingDiscount.dailyUses ?? '') : discountForm.dailyUses}
+                    onChange={e => editingDiscount ? setEditingDiscount({ ...editingDiscount, dailyUses: e.target.value }) : setDiscountForm(f => ({ ...f, dailyUses: e.target.value }))}
+                    placeholder="الاستخدامات اليومية (0 = بلا حد)"
+                    className="w-full px-3 py-2 rounded-xl bg-secondary text-sm border-0 focus:ring-1 focus:ring-primary focus:outline-none"
+                  />
+                  <p className="text-[11px] font-bold text-muted-foreground">
+                    صنف كل يوم — الخصم يُطبق على صنف اليوم فقط، وباقي الطلب بسعره الكامل
+                  </p>
+                  <div className="space-y-1.5">
+                    {Array.from({ length: 7 }, (_, d) => {
+                      const row = editingDiscount
+                        ? (editingDiscount.dayProducts || []).find((r: any) => r.dayOfWeek === d)
+                        : discountForm.dayProducts.find((r) => r.dayOfWeek === d)
+                      const productId = row?.productId || ''
+                      return (
+                        <div key={d} className="flex items-center gap-2">
+                          <span className="w-16 text-xs font-bold text-muted-foreground shrink-0">{DAY_NAMES[d]}</span>
+                          <Select
+                            value={productId}
+                            onValueChange={v => {
+                              if (editingDiscount) {
+                                const rows = Array.from({ length: 7 }, (_, dd) => {
+                                  const existing = (editingDiscount.dayProducts || []).find((r: any) => r.dayOfWeek === dd)
+                                  return { dayOfWeek: dd, productId: dd === d ? v : (existing?.productId || '') }
+                                })
+                                setEditingDiscount({ ...editingDiscount, dayProducts: rows })
+                              } else {
+                                setDiscountForm(f => ({ ...f, dayProducts: f.dayProducts.map((r) => r.dayOfWeek === d ? { ...r, productId: v } : r) }))
+                              }
+                            }}
+                          >
+                            <SelectTrigger className="flex-1 rounded-xl h-9">
+                              <SelectValue placeholder="اختار الصنف" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {allProducts.map((p: any) => (
+                                <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
               <div className="flex gap-2">
                 <Button className="flex-1 rounded-xl" onClick={editingDiscount ? handleUpdateDiscount : handleAddDiscount}>
                   {editingDiscount ? 'تحديث الكود' : 'إضافة الكود'}
@@ -1254,10 +1376,25 @@ export function SettingsPage() {
                 { key: 'code', label: 'الكود', render: d => <span className="font-mono font-bold">{d.code}</span> },
                 { key: 'value', label: 'القيمة', render: d => d.type === 'percentage' ? `${d.value}%` : `${d.value} ج.م` },
                 {
+                  key: 'mode',
+                  label: 'النوع',
+                  sortValue: (d: any) => d.mode || 'order',
+                  render: d => (d.mode || 'order') === 'daily' ? (
+                    <span className="text-[10px] font-bold rounded-full px-2.5 py-0.5 bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-500/20">
+                      يومي{discountDayLabel(d) ? ` — ${discountDayLabel(d)}` : ''}
+                    </span>
+                  ) : (
+                    <span className="text-[10px] font-bold rounded-full px-2.5 py-0.5 bg-secondary text-muted-foreground border border-border">عام</span>
+                  )
+                },
+                {
                   key: 'usage',
                   label: 'الاستخدام',
                   sortValue: (d: any) => d.usedCount,
-                  render: d => d.maxUses > 0 ? `${d.usedCount} / ${d.maxUses} (متبقي ${d.maxUses - d.usedCount})` : `${d.usedCount} (بلا حد)`
+                  render: d => {
+                    const base = d.maxUses > 0 ? `${d.usedCount} / ${d.maxUses} (متبقي ${d.maxUses - d.usedCount})` : `${d.usedCount} (بلا حد)`
+                    return (d.mode || 'order') === 'daily' && d.dailyUses > 0 ? `${base} — ${d.dailyUses}/يوم` : base
+                  }
                 },
                 {
                   key: 'status',
@@ -1304,7 +1441,9 @@ export function SettingsPage() {
                   <p className="text-sm font-bold font-mono">{d.code}</p>
                   <p className="text-[10px] text-muted-foreground">
                     {d.type === 'percentage' ? `${d.value}%` : `${d.value} ج.م`}
-                    {d.maxUses > 0 ? ` — متبقي ${d.maxUses - d.usedCount} استخدام` : ' — بلا حد'}
+                    {(d.mode || 'order') === 'daily'
+                      ? ` — يومي${discountDayLabel(d) ? `: ${discountDayLabel(d)}` : ''}${d.dailyUses > 0 ? ` (${d.dailyUses}/يوم)` : ''}`
+                      : d.maxUses > 0 ? ` — متبقي ${d.maxUses - d.usedCount} استخدام` : ' — بلا حد'}
                   </p>
                 </div>
                 <button
