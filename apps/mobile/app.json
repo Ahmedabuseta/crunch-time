@@ -24,10 +24,6 @@
       "backgroundColor": "#00000000",
       "barStyle": "light-content"
     },
-    "androidNavigationBar": {
-      "backgroundColor": "#00000000",
-      "barStyle": "light-content"
-    },
     "web": {
       "output": "static",
       "favicon": "./assets/images/app-icon.png"
@@ -47,10 +43,10 @@
       [
         "expo-splash-screen",
         {
-          "image": "./assets/images/app-icon.png",
-          "imageWidth": 220,
+          "image": "./assets/images/splash-blank.png",
+          "imageWidth": 100,
           "resizeMode": "contain",
-          "backgroundColor": "#05070B",
+          "backgroundColor": "#F4F5F7",
           "dark": {
             "backgroundColor": "#05070B"
           }
