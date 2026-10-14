@@ -11,7 +11,11 @@ export default function Index() {
   const { ready, onboardingDone, serverUrl, signedIn } = useSession();
 
   if (!ready) return <View style={{ flex: 1 }} />;
-  if (!onboardingDone) return <Redirect href='/onboarding' />;
-  if (!serverUrl || !signedIn) return <Redirect href='/setup' />;
+
+  // Onboarding is about getting set up, so it also covers "installed but never
+  // connected" — a stored "done" flag from a half-finished setup would
+  // otherwise hide it for good. Once an address exists the flag decides.
+  if (!onboardingDone || !serverUrl) return <Redirect href='/onboarding' />;
+  if (!signedIn) return <Redirect href='/setup' />;
   return <Redirect href='/board' />;
 }

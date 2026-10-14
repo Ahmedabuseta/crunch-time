@@ -210,7 +210,18 @@ export function Onboarding({
   return (
     <View style={[styles.container, { backgroundColor }, style]}>
       <GestureDetector gesture={panGesture}>
-        <Animated.View style={[styles.container, animatedStyle]}>
+        {/*
+          This carousel is drawn with LTR maths — page `i` lives at
+          `i * screenWidth`, and `handleNext` scrolls forward by one page. Under
+          `I18nManager.forceRTL` a horizontal ScrollView mirrors, so page 1 sat
+          on the right and "next" scrolled the wrong way, which is what shuffled
+          the step order. Pinning the paging area (and the dots below) to `ltr`
+          keeps the component's own coordinate system; the Arabic copy still
+          renders RTL through bidi, and the buttons keep mirroring on their own.
+        */}
+        <Animated.View
+          style={[styles.container, { direction: 'ltr' }, animatedStyle]}
+        >
           <ScrollView
             ref={scrollViewRef}
             horizontal
@@ -309,6 +320,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     paddingVertical: 20,
+    // Match the paging area above, so dot 1 stays on the same side as step 1.
+    direction: 'ltr',
   },
   progressDot: {
     width: 8,
