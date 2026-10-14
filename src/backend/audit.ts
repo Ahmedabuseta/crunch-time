@@ -24,15 +24,28 @@ export interface AuditEntry {
 
 let currentDevice: string | null = null
 
-/** Scopes a device label to a single server request (used for phone actions). */
+/**
+ * Scopes a device label to a single server request (used for phone actions).
+ * The label is held until a returned promise settles, so an async backend
+ * function that writes its audit row after an await still sees it.
+ */
 export function withDeviceLabel<T>(label: string | null, fn: () => T): T {
   const prev = currentDevice
   currentDevice = label
+  let result: T
   try {
-    return fn()
-  } finally {
+    result = fn()
+  } catch (err) {
     currentDevice = prev
+    throw err
   }
+  if (result && typeof (result as any).then === 'function') {
+    return (result as any).finally(() => {
+      currentDevice = prev
+    })
+  }
+  currentDevice = prev
+  return result
 }
 
 const asJson = (value: unknown) => (value === undefined ? null : JSON.stringify(value))

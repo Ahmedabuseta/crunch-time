@@ -10,6 +10,7 @@ import { withDeviceLabel } from '../backend/audit'
 import { emitEvent } from './events'
 import { asOwner } from './privileges'
 import { deviceLabel } from './util'
+import { mutate } from './route-helpers'
 
 const ORDER_TYPES = new Set(['dine-in', 'takeaway', 'delivery'])
 const ORDER_STATUSES = new Set(['COMPLETED', 'CANCELLED', 'REFUNDED'])
@@ -106,6 +107,10 @@ export function registerOrderRoutes(app: FastifyInstance, backend: Backend) {
     if (!order) return reply.code(404).send({ ok: false, error: 'الطلب غير موجود' })
     return { order }
   })
+
+  // Delivery customer upsert (autocomplete data captured at order time).
+  app.post('/customers', async (req) =>
+    mutate(req, { action: 'customer.upsert', entity: 'customer' }, () => backend.customers.upsertCustomer(req.body)))
 
   // ─── Status / driver / print ────────────────────────────────
   app.patch('/orders/:id/status', async (req, reply) => {

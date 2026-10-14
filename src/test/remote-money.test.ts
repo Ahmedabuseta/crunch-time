@@ -162,6 +162,9 @@ describe('settings changes are audited', () => {
 
 describe('Z report + shift close', () => {
   it('returns the Z report for the open shift', async () => {
+    // No desktop session — the report is admin-gated and must run under the
+    // owner identity the server lends it, exactly as it does in production.
+    backend.session.clearUser()
     await createOrder()
     const res = await api('/reports/z')
     expect(res.status).toBe(200)

@@ -7,7 +7,7 @@ import type { Backend } from '../backend'
 import { withDeviceLabel } from '../backend/audit'
 import { emitEvent } from './events'
 import { asOwner } from './privileges'
-import { deviceLabel, num } from './util'
+import { deviceLabel, num, ownerUserId } from './route-helpers'
 
 export function registerMoneyRoutes(app: FastifyInstance, backend: Backend) {
   // ─── Payments ───────────────────────────────────────────────
@@ -22,6 +22,10 @@ export function registerMoneyRoutes(app: FastifyInstance, backend: Backend) {
 
   app.get('/orders/:id/payments', async (req) => ({
     payments: await backend.payments.listPaymentsByOrder(String((req.params as any).id)),
+  }))
+
+  app.get('/orders/:id/payments/total', async (req) => ({
+    total: await backend.payments.getTotalPaid(String((req.params as any).id)),
   }))
 
   // ─── Cash drawer ────────────────────────────────────────────
@@ -56,7 +60,7 @@ export function registerMoneyRoutes(app: FastifyInstance, backend: Backend) {
   app.post('/shifts/open', async (req, reply) => {
     const body = (req.body || {}) as any
     const res = withDeviceLabel(deviceLabel(req.headers, body), () =>
-      backend.shifts.openShift({ ...body, openingCash: num(body.openingCash) })) as any
+      backend.shifts.openShift({ ...body, userId: body.userId || ownerUserId(), openingCash: num(body.openingCash) })) as any
     if (res.error) return reply.code(400).send({ ok: false, error: res.error })
     emitEvent('shift:updated', { id: res.id })
     return { ok: true, ...res }
@@ -85,7 +89,7 @@ export function registerMoneyRoutes(app: FastifyInstance, backend: Backend) {
       shiftId = current?.id || ''
     }
     if (!shiftId) return reply.code(404).send({ ok: false, error: 'لا توجد وردية مفتوحة' })
-    const report = await backend.reports.shiftReport(shiftId)
+    const report = await asOwner(() => backend.reports.shiftReport(shiftId))
     if (!report) return reply.code(404).send({ ok: false, error: 'الوردية غير موجودة' })
     return { ok: true, report }
   })

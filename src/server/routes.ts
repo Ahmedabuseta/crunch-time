@@ -8,6 +8,12 @@ import { getRemoteConfig, verifyRemotePin } from '../backend/settings'
 import { createRateLimiter } from './ratelimit'
 import { registerOrderRoutes } from './routes.orders'
 import { registerMoneyRoutes } from './routes.money'
+import { registerCatalogRoutes } from './routes.catalog'
+import { registerInventoryRoutes } from './routes.inventory'
+import { registerAdminRoutes } from './routes.admin'
+import { registerDeliveryRoutes } from './routes.delivery'
+import { registerBackupRoutes } from './routes.backup'
+import { registerReportRoutes } from './routes.reports'
 import {
   TOKEN_REFRESH_AFTER_MS,
   TOKEN_TTL_MS,
@@ -24,6 +30,18 @@ const loginLimiter = createRateLimiter({ max: 8, windowMs: 5 * 60_000, lockMs: 1
 
 /** Builds the auth guard + registers every route on the instance. */
 export function registerRoutes(app: FastifyInstance, backend: Backend) {
+  // Business errors thrown by the backend (validation, refused deletes) become
+  // a 400 with their Arabic message instead of a bare 500.
+  app.setErrorHandler((err: any, _req, reply) => {
+    const status = typeof err?.statusCode === 'number' && err.statusCode >= 400 && err.statusCode < 500
+      ? err.statusCode
+      : 400
+    reply.code(status).send({ ok: false, error: err?.message || 'خطأ غير متوقع' })
+  })
+
+  // Raw uploads (database restore).
+  app.addContentTypeParser('application/octet-stream', { parseAs: 'buffer' }, (_req, body, done) => done(null, body))
+
   app.addHook('onRequest', async (req, reply) => {
     const path = req.routeOptions?.url || req.url.split('?')[0]
     if (PUBLIC_PATHS.has(path)) return
@@ -98,4 +116,14 @@ export function registerRoutes(app: FastifyInstance, backend: Backend) {
 
   // ─── Money: payments, drawer, shifts, Z report ──────────────
   registerMoneyRoutes(app, backend)
+
+  // ─── Admin parity: catalogue, inventory, users/settings, delivery, backup ──
+  registerCatalogRoutes(app, backend)
+  registerInventoryRoutes(app, backend)
+  registerAdminRoutes(app, backend)
+  registerDeliveryRoutes(app, backend)
+  registerBackupRoutes(app, backend)
+
+  // ─── Reports ────────────────────────────────────────────────
+  registerReportRoutes(app, backend)
 }
