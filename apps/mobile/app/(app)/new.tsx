@@ -9,6 +9,7 @@ import { Text } from '@/components/ui/text';
 import { View } from '@/components/ui/view';
 import { useColor } from '@/hooks/useColor';
 import { categoryColor } from '@/lib/categoryColors';
+import { TAB_BAR_GAP, TAB_BAR_HEIGHT, TAB_BAR_SPACE } from '@/theme/globals';
 import { fmtMoneyInt } from '@/lib/format';
 import { useRouter } from 'expo-router';
 import { Check, Minus, Plus, ShoppingCart, Trash2, X } from 'lucide-react-native';
@@ -238,7 +239,7 @@ export default function NewOrderScreen() {
     <View style={{ flex: 1 }}>
       <ScrollView
         style={{ flex: 1 }}
-        contentContainerStyle={{ paddingTop: insets.top + 12, paddingBottom: cart.length ? 120 : 28 }}
+        contentContainerStyle={{ paddingTop: insets.top + 12, paddingBottom: cart.length ? TAB_BAR_SPACE + 100 : TAB_BAR_SPACE + 12 }}
       >
         <View style={styles.header}>
           <Text variant='title'>طلب جديد</Text>
@@ -306,7 +307,14 @@ export default function NewOrderScreen() {
         <View
           style={[
             styles.cartBar,
-            { backgroundColor: card, borderTopColor: border, paddingBottom: insets.bottom + 12 },
+            {
+              backgroundColor: card,
+              borderColor: border,
+              left: TAB_BAR_GAP,
+              right: TAB_BAR_GAP,
+              // Sits just above the floating tab bar rather than behind it.
+              bottom: TAB_BAR_GAP + insets.bottom + TAB_BAR_HEIGHT + 8,
+            },
           ]}
         >
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}>
@@ -396,7 +404,18 @@ interface PanelColors {
 
 function Sheet({ children, ...c }: { children: React.ReactNode } & PanelColors) {
   return (
-    <View style={[styles.sheet, { backgroundColor: c.card, paddingBottom: c.insetsBottom + 16 }]}>
+    <View
+      style={[
+        styles.sheet,
+        {
+          backgroundColor: c.card,
+          borderColor: c.border,
+          // Float above the tab bar so the sheet never hides behind it.
+          bottom: TAB_BAR_GAP + c.insetsBottom + TAB_BAR_HEIGHT + 8,
+          paddingBottom: 16,
+        },
+      ]}
+    >
       {children}
     </View>
   );
@@ -767,26 +786,25 @@ const styles = StyleSheet.create({
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, justifyContent: 'space-between' },
   cartBar: {
     position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
     paddingHorizontal: 16,
-    paddingTop: 12,
-    borderTopWidth: 1,
+    paddingVertical: 12,
+    borderRadius: 22,
+    borderWidth: 1,
+    overflow: 'hidden',
   },
   sheet: {
     position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
+    left: TAB_BAR_GAP,
+    right: TAB_BAR_GAP,
     gap: 12,
     paddingHorizontal: 16,
     paddingTop: 16,
-    borderTopLeftRadius: 22,
-    borderTopRightRadius: 22,
+    borderRadius: 22,
+    borderWidth: 1,
+    overflow: 'hidden',
   },
   sheetHeader: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   cartLine: { flexDirection: 'row', alignItems: 'center', gap: 10 },

@@ -1,52 +1,10 @@
+import { OnboardingArt } from '@/components/app/OnboardingArt';
 import { Onboarding, type OnboardingStep } from '@/components/ui/onboarding';
-import { View } from '@/components/ui/view';
 import { useColor } from '@/hooks/useColor';
 import { useSession } from '@/lib/session';
-import { withOpacity } from '@/theme/colors';
-import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import { BarChart3, Radio, Wallet } from 'lucide-react-native';
 import React from 'react';
-
-/** The till's mark, on a soft plate — reuses the asset the desktop ships. */
-function LogoArt() {
-  const primary = useColor('primary');
-  return (
-    <View
-      style={{
-        width: 200,
-        height: 200,
-        borderRadius: 100,
-        alignItems: 'center',
-        justifyContent: 'center',
-        backgroundColor: withOpacity(primary, 0.12),
-      }}
-    >
-      <Image
-        source={require('../assets/images/logo.png')}
-        style={{ width: 132, height: 132 }}
-        contentFit='contain'
-      />
-    </View>
-  );
-}
-
-function StepArt({ icon: Icon, color }: { icon: typeof BarChart3; color: string }) {
-  return (
-    <View
-      style={{
-        width: 176,
-        height: 176,
-        borderRadius: 88,
-        alignItems: 'center',
-        justifyContent: 'center',
-        backgroundColor: withOpacity(color, 0.14),
-      }}
-    >
-      <Icon color={color} size={76} />
-    </View>
-  );
-}
 
 export default function OnboardingScreen() {
   const { completeOnboarding } = useSession();
@@ -68,28 +26,28 @@ export default function OnboardingScreen() {
       title: 'كرنش تايم',
       description:
         'تطبيق صاحب المحل. تابع الطلبات والورديات والتقارير من الموبايل — وهو شغال على الكمبيوتر زي ما هو.',
-      image: <LogoArt />,
+      image: <OnboardingArt id='welcome' logo color={primary} size={210} />,
     },
     {
       id: 'orders',
       title: 'الطلبات لحظة بلحظة',
       description:
         'أي طلب يتعمل من الموبايل يطلع تذكرة في المطبخ فوراً، ويظهر فوراً على شاشة الكاشير.',
-      icon: <StepArt icon={Radio} color={primary} />,
+      icon: <OnboardingArt id='orders' icon={Radio} color={primary} size={190} />,
     },
     {
       id: 'money',
       title: 'الفلوس والورديات',
       description:
         'افتح واقفل الوردية، سجّل حركات الدرج، واعمل استرداد — مع تقرير Z كامل في آخر اليوم.',
-      icon: <StepArt icon={Wallet} color={green} />,
+      icon: <OnboardingArt id='money' icon={Wallet} color={green} size={190} />,
     },
     {
       id: 'anywhere',
       title: 'من أي مكان',
       description:
         'شغّل الخادم من إعدادات الكمبيوتر، ووصّل الموبايل على Tailscale — وهتتابع من بره المحل.',
-      icon: <StepArt icon={BarChart3} color={blue} />,
+      icon: <OnboardingArt id='anywhere' icon={BarChart3} color={blue} size={190} />,
     },
   ];
 

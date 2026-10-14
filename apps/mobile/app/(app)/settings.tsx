@@ -7,6 +7,7 @@ import { Text } from '@/components/ui/text';
 import { View } from '@/components/ui/view';
 import { ModeToggle } from '@/components/ui/mode-toggle';
 import { useColor } from '@/hooks/useColor';
+import { TAB_BAR_SPACE } from '@/theme/globals';
 import { useSession } from '@/lib/session';
 import Constants from 'expo-constants';
 import { useRouter } from 'expo-router';
@@ -54,7 +55,7 @@ export default function MoreScreen() {
     ]);
 
   return (
-    <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingTop: insets.top + 12, paddingBottom: 40 }}>
+    <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingTop: insets.top + 12, paddingBottom: TAB_BAR_SPACE + 20 }}>
       <View style={styles.header}>
         <Text variant='title'>المزيد</Text>
         <Text variant='caption' style={{ color: muted }}>

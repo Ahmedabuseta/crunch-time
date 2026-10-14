@@ -11,6 +11,7 @@ import {
   fmtTime,
 } from '@/lib/format';
 import { useOrderFeed } from '@/lib/useOrderFeed';
+import { TAB_BAR_SPACE } from '@/theme/globals';
 import type { Order } from '@/api/types';
 import { useRouter } from 'expo-router';
 import { ChefHat, Radio, ShoppingBag, Truck, UtensilsCrossed } from 'lucide-react-native';
@@ -58,7 +59,7 @@ export default function BoardScreen() {
   return (
     <ScrollView
       style={{ flex: 1 }}
-      contentContainerStyle={{ paddingTop: insets.top + 12, paddingBottom: 28 }}
+      contentContainerStyle={{ paddingTop: insets.top + 12, paddingBottom: TAB_BAR_SPACE + 16 }}
       refreshControl={
         <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={primary} />
       }

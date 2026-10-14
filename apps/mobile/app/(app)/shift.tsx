@@ -8,6 +8,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Text } from '@/components/ui/text';
 import { View } from '@/components/ui/view';
 import { useColor } from '@/hooks/useColor';
+import { TAB_BAR_SPACE } from '@/theme/globals';
 import { fmtMoneyInt, fmtTime } from '@/lib/format';
 import { useRouter } from 'expo-router';
 import { ArrowRight, BarChart3, DoorOpen, DoorClosed, Minus, Plus } from 'lucide-react-native';
@@ -104,7 +105,7 @@ export default function ShiftScreen() {
   return (
     <ScrollView
       style={{ flex: 1 }}
-      contentContainerStyle={{ paddingTop: insets.top + 8, paddingBottom: 40 }}
+      contentContainerStyle={{ paddingTop: insets.top + 8, paddingBottom: TAB_BAR_SPACE + 20 }}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={primary} />}
     >
       <View style={styles.topBar}>

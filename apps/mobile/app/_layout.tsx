@@ -11,7 +11,7 @@ import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { setBackgroundColorAsync } from 'expo-system-ui';
 import React, { useEffect, useState } from 'react';
-import { I18nManager, Platform } from 'react-native';
+import { I18nManager, Platform, View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import 'react-native-reanimated';
 
@@ -79,14 +79,21 @@ function RootNavigator() {
     );
   }, [colorScheme]);
 
+  const backgroundColor =
+    colorScheme === 'dark' ? Colors.dark.background : Colors.light.background;
+
   return (
-    <>
+    // The window background is set once at launch and the system bars are
+    // transparent in edge-to-edge, so the status-bar strip shows whatever is
+    // behind it. Painting the theme colour here is what stops it staying black
+    // (and the clock invisible) after switching to light.
+    <View style={{ flex: 1, backgroundColor }}>
       <StatusBar style={colorScheme === 'dark' ? 'light' : 'dark'} animated />
 
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name='(app)' options={{ headerShown: false }} />
         <Stack.Screen name='+not-found' />
       </Stack>
-    </>
+    </View>
   );
 }
