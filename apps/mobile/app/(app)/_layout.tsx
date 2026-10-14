@@ -1,5 +1,6 @@
 import { useColor } from '@/hooks/useColor';
 import { useColorScheme } from '@/hooks/useColorScheme';
+import { GlobalActions } from '@/components/app/GlobalActions';
 import { TAB_BAR_GAP, TAB_BAR_HEIGHT } from '@/theme/globals';
 import { BlurTargetView, BlurView } from 'expo-blur';
 import { Tabs, useIsFocused } from 'expo-router';
@@ -26,6 +27,7 @@ export default function AppTabsLayout() {
   const publishBlurTarget = useCallback((node: View | null) => setBlurTargetNode(node), []);
 
   return (
+    <>
     <Tabs
       screenLayout={({ children }) => (
         <ScreenBlurTarget onTarget={publishBlurTarget}>{children}</ScreenBlurTarget>
@@ -108,6 +110,11 @@ export default function AppTabsLayout() {
       <Tabs.Screen name='shift' options={{ href: null }} />
       <Tabs.Screen name='manage' options={{ href: null }} />
     </Tabs>
+
+      {/* One quick-action dial for the whole app; it hides itself on the
+          screens whose own buttons live in the same corner. */}
+      <GlobalActions />
+    </>
   );
 }
 

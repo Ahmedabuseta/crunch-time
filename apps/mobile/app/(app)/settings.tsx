@@ -1,5 +1,4 @@
 import { getApiBaseUrl } from '@/api/client';
-import { ActionFab } from '@/components/app/ActionFab';
 import { api } from '@/api/endpoints';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -12,7 +11,7 @@ import { TAB_BAR_SPACE } from '@/theme/globals';
 import { useSession } from '@/lib/session';
 import Constants from 'expo-constants';
 import { useRouter } from 'expo-router';
-import { BarChart3, Boxes, LayoutGrid, LogOut, Package, Radio, Server, Sparkles, Store, Users, Wallet } from 'lucide-react-native';
+import { BarChart3, Boxes, LogOut, Radio, Server, Sparkles, Wallet } from 'lucide-react-native';
 import React, { useEffect, useState } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -114,7 +113,7 @@ export default function MoreScreen() {
             </Text>
           </View>
           <Text variant='caption' style={{ color: muted }}>
-            منتجات · أقسام · مخزون · موظفين · بيانات المحل. اضغط الزر العائم تحت للوصول السريع.
+            منتجات · أقسام · مخزون · موظفين · بيانات المحل — كلهم من زر الإجراءات العائم تحت.
           </Text>
         </Card>
 
@@ -162,17 +161,6 @@ export default function MoreScreen() {
         </Pressable>
       </View>
       </ScrollView>
-
-      <ActionFab
-        footer='إدارة المحل'
-        actions={[
-          { key: 'products', label: 'المنتجات', icon: Package, onPress: () => router.push('/manage/products') },
-          { key: 'categories', label: 'الأقسام', icon: LayoutGrid, onPress: () => router.push('/manage/categories') },
-          { key: 'inventory', label: 'المخزون', icon: Boxes, onPress: () => router.push('/manage/inventory') },
-          { key: 'users', label: 'الموظفين', icon: Users, onPress: () => router.push('/manage/users') },
-          { key: 'store', label: 'بيانات المحل', icon: Store, onPress: () => router.push('/manage/store') },
-        ]}
-      />
     </>
   );
 }
