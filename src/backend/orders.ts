@@ -4,6 +4,7 @@ import { getDb, getSqlite } from '../db/client'
 import * as schema from '../db/schema'
 import { getOpenShiftId, now, rollbackInventory, rollbackInventoryPartial, uuid } from './shared'
 import { requireAdmin } from './session'
+import { writeAudit } from './audit'
 
 const { orders, orderItems, payments, cashMovements, shifts, products, addons, customers, deliveryZones, deliveryProfiles } = schema
 
@@ -245,11 +246,23 @@ export function updateOrderStatus(id: string, status: string, reason?: string) {
     }
     db.update(orders).set({ status, statusReason: reason || null, refundedAmount, updatedAt: ts })
       .where(eq(orders.id, id)).run()
+    writeAudit({
+      action: 'order.refund', entity: 'order', entityId: id,
+      before: { status: order.status, refundedAmount: order.refundedAmount },
+      after: { status, reason: reason || null, refundedAmount },
+    })
     return { ok: true, refundedAmount }
   }
 
   db.update(orders).set({ status, statusReason: reason || null, updatedAt: ts })
     .where(eq(orders.id, id)).run()
+  if (status === 'CANCELLED') {
+    writeAudit({
+      action: 'order.cancel', entity: 'order', entityId: id,
+      before: { status: order.status, refundedAmount: order.refundedAmount },
+      after: { status, reason: reason || null },
+    })
+  }
   return { ok: true }
 }
 

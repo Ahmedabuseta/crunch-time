@@ -5,17 +5,14 @@ import type { FastifyInstance } from 'fastify'
 import type { Backend } from '../backend'
 import { getSqlite } from '../db/client'
 import { now } from '../backend/shared'
+import { verifyRemotePin } from '../backend/settings'
+import { withDeviceLabel } from '../backend/audit'
 import { emitEvent } from './events'
 import { asOwner } from './privileges'
+import { deviceLabel } from './util'
 
 const ORDER_TYPES = new Set(['dine-in', 'takeaway', 'delivery'])
 const ORDER_STATUSES = new Set(['COMPLETED', 'CANCELLED', 'REFUNDED'])
-
-function deviceLabel(headers: Record<string, any>, body: any): string {
-  const raw = headers['x-device-label'] || body?.deviceLabel
-  const label = String(raw ?? '').trim()
-  return label || 'تطبيق الهاتف'
-}
 
 export function registerOrderRoutes(app: FastifyInstance, backend: Backend) {
   // ─── Create ─────────────────────────────────────────────────
@@ -118,16 +115,36 @@ export function registerOrderRoutes(app: FastifyInstance, backend: Backend) {
     if (!ORDER_STATUSES.has(status)) {
       return reply.code(400).send({ ok: false, error: 'حالة غير صحيحة' })
     }
-    const res = asOwner(() => backend.orders.updateOrderStatus(id, status, body.reason))
+    const res = withDeviceLabel(deviceLabel(req.headers, body), () =>
+      asOwner(() => backend.orders.updateOrderStatus(id, status, body.reason)))
     if (!res.ok) return reply.code(400).send(res)
     emitEvent('order:updated', { id, status })
+    return res
+  })
+
+  // Dedicated refund: reason required, optional PIN re-entry (a second factor
+  // for money going back). The audit row is written by updateOrderStatus.
+  app.post('/orders/:id/refund', async (req, reply) => {
+    const id = String((req.params as any).id)
+    const body = (req.body || {}) as any
+    const reason = String(body.reason || '').trim()
+    if (!reason) return reply.code(400).send({ ok: false, error: 'سبب الاسترداد مطلوب' })
+    if (body.pin) {
+      const ok = await verifyRemotePin(String(body.pin))
+      if (!ok) return reply.code(401).send({ ok: false, error: 'الرقم السري غلط' })
+    }
+    const res = withDeviceLabel(deviceLabel(req.headers, body), () =>
+      asOwner(() => backend.orders.updateOrderStatus(id, 'REFUNDED', reason)))
+    if (!res.ok) return reply.code(400).send(res)
+    emitEvent('order:updated', { id, status: 'REFUNDED' })
     return res
   })
 
   app.post('/orders/:id/assign-driver', async (req, reply) => {
     const id = String((req.params as any).id)
     const body = (req.body || {}) as any
-    const res = asOwner(() => backend.orders.assignDriver(id, String(body.profileId || body.driverId || '')))
+    const res = withDeviceLabel(deviceLabel(req.headers, body), () =>
+      asOwner(() => backend.orders.assignDriver(id, String(body.profileId || body.driverId || ''))))
     if (!res.ok) return reply.code(400).send(res)
     emitEvent('order:updated', { id, driver: true })
     return res

@@ -370,6 +370,22 @@ export const customers = sqliteTable('customers', {
   index('customers_phone_idx').on(t.phone),
 ])
 
+// ─── Audit log ─────────────────────────────────────────────────
+export const auditLog = sqliteTable('audit_log', {
+  id: text('id').primaryKey(),
+  userId: text('user_id'),
+  deviceLabel: text('device_label'),
+  action: text('action').notNull(),
+  entity: text('entity').notNull(),
+  entityId: text('entity_id'),
+  before: text('before'),
+  after: text('after'),
+  createdAt: text('created_at').notNull(),
+}, (t) => [
+  index('audit_log_created_idx').on(t.createdAt),
+  index('audit_log_entity_idx').on(t.entity, t.entityId),
+])
+
 // ─── Relations ─────────────────────────────────────────────────
 export const categoriesRelations = relations(categories, ({ many }) => ({
   products: many(products),

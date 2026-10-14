@@ -7,6 +7,7 @@ import { hardDelete, uuid } from './shared'
 import { requireAdmin } from './session'
 import { getElectron } from './electron'
 import { hashPin, verifyPin as verifyPinHash } from '../lib/auth'
+import { writeAudit } from './audit'
 
 const { settings, discountCodes, discountDayProducts, products, kitchenStations } = schema
 
@@ -132,7 +133,19 @@ export async function updateSettings(data: any, opts?: { listPrinters?: () => Pr
   } else {
     db.insert(settings).values({ id: 'settings', ...data }).run()
   }
+  writeAudit({ action: 'settings.update', entity: 'settings', entityId: 'settings', before: pickForAudit(existing, data), after: pickForAudit(data, data) })
   return { ok: true }
+}
+
+// Settings snapshots for the audit log: only the changed keys, with long
+// values (the store logo data URL) replaced by a marker so the log stays small.
+function pickForAudit(row: any, keys: any): Record<string, any> {
+  const out: Record<string, any> = {}
+  for (const key of Object.keys(keys || {})) {
+    const value = row?.[key] ?? null
+    out[key] = typeof value === 'string' && value.length > 200 ? `[${value.length} chars]` : value
+  }
+  return out
 }
 
 // Replaces the weekly product rotation for a 'daily' employee code.

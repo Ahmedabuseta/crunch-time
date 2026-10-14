@@ -4,6 +4,7 @@ import { getDb } from '../db/client'
 import * as schema from '../db/schema'
 import { now, uuid } from './shared'
 import { requireAdmin } from './session'
+import { writeAudit } from './audit'
 
 const { cashMovements, shifts } = schema
 
@@ -14,6 +15,12 @@ export function addMovement(data: any) {
   db.insert(cashMovements).values({
     id, shiftId: data.shiftId, type: data.type, amount: data.amount, note: data.note || null, createdAt: now(),
   }).run()
+  // Drawer corrections are audit-logged (money entering/leaving the till
+  // outside a sale).
+  writeAudit({
+    action: 'cash.movement', entity: 'cash_movement', entityId: id,
+    after: { shiftId: data.shiftId, type: data.type, amount: data.amount, note: data.note || null },
+  })
   return { id }
 }
 

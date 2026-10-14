@@ -7,6 +7,7 @@ import type { Backend } from '../backend'
 import { getRemoteConfig, verifyRemotePin } from '../backend/settings'
 import { createRateLimiter } from './ratelimit'
 import { registerOrderRoutes } from './routes.orders'
+import { registerMoneyRoutes } from './routes.money'
 import {
   TOKEN_REFRESH_AFTER_MS,
   TOKEN_TTL_MS,
@@ -94,4 +95,7 @@ export function registerRoutes(app: FastifyInstance, backend: Backend) {
 
   // ─── Orders ─────────────────────────────────────────────────
   registerOrderRoutes(app, backend)
+
+  // ─── Money: payments, drawer, shifts, Z report ──────────────
+  registerMoneyRoutes(app, backend)
 }

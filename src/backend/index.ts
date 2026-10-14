@@ -19,6 +19,7 @@ import * as inventory from './inventory'
 import * as reports from './reports'
 import * as backup from './backup'
 import * as printing from './printing'
+import * as audit from './audit'
 import * as session from './session'
 import { setElectron, ElectronBits } from './electron'
 
@@ -41,6 +42,7 @@ export interface Backend {
   reports: typeof reports
   backup: typeof backup
   printing: typeof printing
+  audit: typeof audit
 }
 
 export function createBackend(bits: ElectronBits): Backend {
@@ -64,6 +66,7 @@ export function createBackend(bits: ElectronBits): Backend {
     reports,
     backup,
     printing,
+    audit,
   }
 }
 

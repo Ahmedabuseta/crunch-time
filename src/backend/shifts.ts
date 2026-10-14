@@ -4,6 +4,7 @@ import { getDb } from '../db/client'
 import * as schema from '../db/schema'
 import { now, uuid } from './shared'
 import { requireAdmin } from './session'
+import { writeAudit } from './audit'
 
 const { shifts, cashMovements } = schema
 
@@ -27,10 +28,16 @@ export function openShift(data: any) {
 
 export function closeShift(id: string, closingCash: number) {
   const db = getDb()
+  const before = db.select().from(shifts).where(eq(shifts.id, id)).get()
   db.update(shifts).set({ endedAt: now(), closingCash, status: 'closed' }).where(eq(shifts.id, id)).run()
   db.insert(cashMovements).values({
     id: uuid(), shiftId: id, type: 'CLOSING', amount: closingCash, note: 'إغلاق الوردية', createdAt: now(),
   }).run()
+  writeAudit({
+    action: 'shift.close', entity: 'shift', entityId: id,
+    before: before ? { status: before.status, openingCash: before.openingCash } : null,
+    after: { status: 'closed', closingCash },
+  })
   return { ok: true }
 }
 
