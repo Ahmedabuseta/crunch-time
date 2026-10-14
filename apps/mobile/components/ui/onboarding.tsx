@@ -4,6 +4,8 @@ import { useColor } from '@/hooks/useColor';
 import React, { useEffect, useRef, useState } from 'react';
 import {
   AccessibilityInfo,
+  I18nManager,
+  Platform,
   ScrollView,
   StyleSheet,
   useWindowDimensions,
@@ -71,6 +73,13 @@ export function Onboarding({
   const backgroundColor = useColor('background');
   const primaryColor = useColor('primary');
   const mutedColor = useColor('mutedForeground');
+
+  // Pin the paging area to logical (LTR) order only when the layout is actually
+  // mirrored. `direction` is a Yoga-only style — react-native-web rejects it —
+  // so it is never emitted on web, and on an already-LTR layout there is
+  // nothing to correct.
+  const isMirrored = Platform.OS !== 'web' && I18nManager.isRTL;
+  const rtlPin = isMirrored ? ({ direction: 'ltr' } as ViewStyle) : null;
 
   const isLastStep = currentStep === steps.length - 1;
   const isFirstStep = currentStep === 0;
@@ -149,7 +158,7 @@ export function Onboarding({
 
     return (
       <View
-        style={styles.progressContainer}
+        style={[styles.progressContainer, rtlPin]}
         accessibilityElementsHidden
         importantForAccessibility='no-hide-descendants'
       >
@@ -219,9 +228,7 @@ export function Onboarding({
           keeps the component's own coordinate system; the Arabic copy still
           renders RTL through bidi, and the buttons keep mirroring on their own.
         */}
-        <Animated.View
-          style={[styles.container, { direction: 'ltr' }, animatedStyle]}
-        >
+        <Animated.View style={[styles.container, rtlPin, animatedStyle]}>
           <ScrollView
             ref={scrollViewRef}
             horizontal
@@ -320,8 +327,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     paddingVertical: 20,
-    // Match the paging area above, so dot 1 stays on the same side as step 1.
-    direction: 'ltr',
   },
   progressDot: {
     width: 8,
