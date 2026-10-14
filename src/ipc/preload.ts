@@ -43,6 +43,13 @@ contextBridge.exposeInMainWorld('api', {
     update: (data: unknown) => invoke('settings:update', data),
   },
 
+  // ─── Remote POS server (owner's phone) ─────────────────────
+  remote: {
+    get: () => invoke('remote:get'),
+    set: (data: unknown) => invoke('remote:set', data),
+    setPin: (pin: string) => invoke('remote:setPin', pin),
+  },
+
   // ─── Discount codes ────────────────────────────────────────
   discountCode: {
     list: () => invoke('discountCode:list'),

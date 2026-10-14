@@ -1,17 +1,98 @@
 // Settings + discount codes.
 import { and, eq, sql } from 'drizzle-orm'
+import { randomBytes } from 'crypto'
 import { getDb, getSqlite } from '../db/client'
 import * as schema from '../db/schema'
 import { hardDelete, uuid } from './shared'
 import { requireAdmin } from './session'
 import { getElectron } from './electron'
+import { hashPin, verifyPin as verifyPinHash } from '../lib/auth'
 
 const { settings, discountCodes, discountDayProducts, products, kitchenStations } = schema
 
+export const DEFAULT_REMOTE_PORT = 4317
+
 export function getSettings() {
   const db = getDb()
-  return db.select().from(settings).where(eq(settings.id, 'settings')).get()
+  const row = db.select().from(settings).where(eq(settings.id, 'settings')).get()
     || { id: 'settings', deliveryFee: 25, taxRate: 0.14, restaurantName: 'Crunch Time', currency: 'EGP' }
+  // Never leak the signing secret or PIN hash to the renderer — they are only
+  // needed by the server inside the main process. The UI gets a boolean instead.
+  const { remoteSecret, remotePinHash, ...safe } = row as Record<string, any>
+  return { ...safe, remoteHasPin: Boolean(remotePinHash) }
+}
+
+// ─── Remote POS server (owner's phone app) ──────────────────
+// Read WITHOUT an admin check: the HTTP server reads this on every login and
+// every authenticated request, where there is no desktop session.
+export function getRemoteConfig() {
+  const db = getDb()
+  const row = db.select({
+    enabled: settings.remoteEnabled,
+    port: settings.remotePort,
+    pinHash: settings.remotePinHash,
+    secret: settings.remoteSecret,
+  }).from(settings).where(eq(settings.id, 'settings')).get()
+  return {
+    enabled: Boolean(row?.enabled),
+    port: Number(row?.port) || DEFAULT_REMOTE_PORT,
+    pinHash: row?.pinHash ?? null,
+    secret: row?.secret ?? null,
+  }
+}
+
+function patchSettings(patch: Record<string, any>) {
+  const db = getDb()
+  const existing = db.select({ id: settings.id }).from(settings).where(eq(settings.id, 'settings')).get()
+  if (existing) db.update(settings).set(patch).where(eq(settings.id, 'settings')).run()
+  else db.insert(settings).values({ id: 'settings', ...patch }).run()
+}
+
+// Toggle the server on/off and set its port. Enabling requires a PIN first, so
+// the port can never open with no way to authenticate.
+export function setRemoteConfig(data: { enabled?: boolean; port?: number }) {
+  requireAdmin()
+  const patch: Record<string, any> = {}
+  if (data.port !== undefined) {
+    const port = Math.floor(Number(data.port))
+    if (!Number.isFinite(port) || port < 1024 || port > 65535) {
+      return { ok: false, error: 'بورت غير صالح — اختر رقماً من 1024 إلى 65535' }
+    }
+    patch.remotePort = port
+  }
+  if (data.enabled !== undefined) {
+    if (data.enabled) {
+      const cfg = getRemoteConfig()
+      if (!cfg.pinHash) return { ok: false, error: 'حدّد الرقم السري للهاتف قبل تشغيل الخادم' }
+      if (!cfg.secret) patch.remoteSecret = randomBytes(32).toString('hex')
+    }
+    patch.remoteEnabled = data.enabled
+  }
+  if (Object.keys(patch).length > 0) patchSettings(patch)
+  return { ok: true }
+}
+
+// Setting a new PIN rotates the signing secret, so every token already issued
+// to a phone (including a lost one) stops verifying immediately.
+export async function setRemotePin(pin: string) {
+  requireAdmin()
+  const clean = String(pin || '').trim()
+  if (clean.length < 4) return { ok: false, error: 'الرقم السري لازم يكون 4 أرقام على الأقل' }
+  if (clean.length > 64) return { ok: false, error: 'الرقم السري طويل جداً' }
+  const pinHash = await hashPin(clean)
+  patchSettings({ remotePinHash: pinHash, remoteSecret: randomBytes(32).toString('hex') })
+  return { ok: true }
+}
+
+/** Verify a phone login PIN against the stored hash (no session required). */
+export async function verifyRemotePin(pin: string): Promise<boolean> {
+  const { pinHash } = getRemoteConfig()
+  if (!pinHash) return false
+  try {
+    return await verifyPinHash(pinHash, String(pin ?? ''))
+  } catch {
+    return false
+  }
 }
 
 export async function updateSettings(data: any, opts?: { listPrinters?: () => Promise<any[]> }) {

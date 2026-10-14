@@ -5,6 +5,7 @@ import { ipcMain, app, BrowserWindow, dialog } from 'electron'
 import { runMigrations } from '../db/migrate'
 import { seedDatabase } from '../db/seed'
 import { createBackend, Backend } from '../backend'
+import { applyRemoteServer, getRemoteStatus } from '../server'
 import { silentPrint } from './print'
 
 let backend: Backend | null = null
@@ -42,6 +43,8 @@ export async function initBackend() {
   runMigrations()
   await seedDatabase()
   registerIpcHandlers()
+  // Bring the remote POS server up if the owner has it enabled (off by default).
+  await applyRemoteServer(getBackend())
 }
 
 export function registerIpcHandlers() {
@@ -686,4 +689,24 @@ export function registerIpcHandlers() {
   ipcMain.handle('backup:restore', async () =>
     b.backup.restoreBackup()
   )
+
+  // ═══════════════════════════════════════════════════════════
+  // REMOTE POS SERVER (owner's phone)
+  // ═══════════════════════════════════════════════════════════
+  ipcMain.handle('remote:get', () => getRemoteStatus())
+
+  // Toggle/port change: persist first, then (re)start the listener so the
+  // config on disk and the open port never disagree.
+  ipcMain.handle('remote:set', async (_e, data: any) => {
+    const res = b.settings.setRemoteConfig(data)
+    if (!res.ok) return { ...res, status: getRemoteStatus() }
+    const started = await applyRemoteServer(b)
+    return { ok: started.ok, error: started.error, status: getRemoteStatus() }
+  })
+
+  // New PIN → new signing secret → every phone token is invalidated at once.
+  ipcMain.handle('remote:setPin', async (_e, pin: string) => {
+    const res = await b.settings.setRemotePin(pin)
+    return { ...res, status: getRemoteStatus() }
+  })
 }

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { Database, Cloud, Settings, Tag, DollarSign, Receipt, Plus, Trash2, X, Truck, Printer, ChefHat, RefreshCw, Sun, Moon, Palette, User, Store, ImageUp, Pencil, RotateCcw } from 'lucide-react'
+import { Database, Cloud, Settings, Tag, DollarSign, Receipt, Plus, Trash2, X, Truck, Printer, ChefHat, RefreshCw, Sun, Moon, Palette, User, Store, ImageUp, Pencil, RotateCcw, Wifi } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { fmtMoney } from '@/lib/format'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
@@ -18,6 +18,7 @@ import { normalizeReceiptInfo, processLogoFile } from '@/lib/receipt'
 import { buildCustomerReceiptHtml, contentWidth } from '@/lib/print'
 import { toast } from '@/components/ui/toast'
 import { Emoji } from '@/components/Emoji'
+import type { RemoteStatus } from '../../ipc/renderer.d'
 
 // Arabic weekday names, indexed by Date.getDay() (0 = Sunday).
 const DAY_NAMES = ['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت']
@@ -162,6 +163,9 @@ export function SettingsPage() {
   const [backupBusy, setBackupBusy] = useState(false)
   const [backupMessage, setBackupMessage] = useState('')
   const [confirmRestore, setConfirmRestore] = useState(false)
+  const [remote, setRemote] = useState<RemoteStatus | null>(null)
+  const [pin, setPin] = useState('')
+  const [pin2, setPin2] = useState('')
   const [pendingDelete, setPendingDelete] = useState<{ kind: 'discount' | 'expense' | 'zone' | 'station' | 'profile'; item: any } | null>(null)
   const [logoError, setLogoError] = useState('')
   const [logoBusy, setLogoBusy] = useState(false)
@@ -223,6 +227,7 @@ export function SettingsPage() {
     setCategories(cats || [])
     setPrinters(prs || [])
     setAllProducts(prods || [])
+    window.api.remote.get().then(setRemote).catch(() => {})
     await fetchZones(true)
     await fetchStations(true)
     await fetchProfiles(true)
@@ -508,6 +513,69 @@ export function SettingsPage() {
       setBackupMessage(err?.message || 'فشل الاستعادة')
     } finally {
       setBackupBusy(false)
+    }
+  }
+
+  const refreshRemote = async () => {
+    try { setRemote(await window.api.remote.get()) } catch {}
+  }
+
+  const handleToggleRemote = async () => {
+    if (!remote) return
+    try {
+      const res = await window.api.remote.set({ enabled: !remote.enabled })
+      if (res.ok) {
+        if (res.status) setRemote(res.status)
+        toast({ title: remote.enabled ? 'تم إيقاف الخادم' : 'تم تشغيل الخادم', variant: 'success' })
+      } else {
+        await refreshRemote()
+        toast({ title: 'تعذّر تشغيل الخادم', description: res.error || 'حدّد الرقم السري الأول', variant: 'error', duration: 6500 })
+      }
+    } catch (err: any) {
+      toast({ title: 'تعذّر تشغيل الخادم', description: err?.message || 'حدث خطأ', variant: 'error' })
+    }
+  }
+
+  const handleSavePort = async (port: number) => {
+    if (!remote || port === remote.port) return
+    if (!port || port < 1024 || port > 65535) {
+      toast({ title: 'رقم منفذ غير صالح', description: 'المنفذ لازم يكون بين 1024 و 65535', variant: 'error' })
+      return
+    }
+    try {
+      const res = await window.api.remote.set({ port })
+      if (res.ok) {
+        if (res.status) setRemote(res.status)
+        toast({ title: 'تم حفظ المنفذ', description: String(port), variant: 'success' })
+      } else {
+        toast({ title: 'تعذّر حفظ المنفذ', description: res.error || 'حدث خطأ', variant: 'error', duration: 6500 })
+      }
+    } catch (err: any) {
+      toast({ title: 'تعذّر حفظ المنفذ', description: err?.message || 'حدث خطأ', variant: 'error' })
+    }
+  }
+
+  const handleSavePin = async () => {
+    if (pin.length < 4) {
+      toast({ title: 'الرقم السري قصير', description: 'لازم 4 أرقام على الأقل', variant: 'warning' })
+      return
+    }
+    if (pin !== pin2) {
+      toast({ title: 'الرقمين مش زي بعض', description: 'اكتب نفس الرقم السري في الخانتين', variant: 'warning' })
+      return
+    }
+    try {
+      const res = await window.api.remote.setPin(pin)
+      if (res.ok) {
+        if (res.status) setRemote(res.status)
+        setPin('')
+        setPin2('')
+        toast({ title: 'تم حفظ الرقم السري', description: 'كل الموبايلات اللي داخلة اتعمل لها تسجيل خروج', variant: 'success' })
+      } else {
+        toast({ title: 'تعذّر حفظ الرقم السري', description: res.error || 'حدث خطأ', variant: 'error', duration: 6500 })
+      }
+    } catch (err: any) {
+      toast({ title: 'تعذّر حفظ الرقم السري', description: err?.message || 'حدث خطأ', variant: 'error' })
     }
   }
 
@@ -1691,6 +1759,67 @@ export function SettingsPage() {
           </div>
           <p className="text-xs text-muted-foreground">غير متصل</p>
           <Button size="sm" variant="outline" className="rounded-xl">إعداد المزامنة</Button>
+        </div>
+
+        {/* Remote server (phone app) */}
+        <div className="border-2 rounded-2xl bg-card p-4 space-y-3" dir="rtl">
+          <div className="flex items-center gap-2">
+            <Wifi className="h-5 w-5 text-primary" />
+            <h3 className="font-bold text-sm">الخادم البعيد (تطبيق الهاتف)</h3>
+            {remote && (
+              <span className={cn('text-[10px] rounded-full px-2 py-0.5 font-bold', remote.running ? 'bg-green-500/10 text-green-500' : 'bg-secondary text-muted-foreground')}>
+                {remote.running ? 'يعمل' : 'متوقف'}
+              </span>
+            )}
+          </div>
+          <p className="text-xs text-muted-foreground">
+            تطبيق الموبايل بيتصل بالخادم من على واي فاي المحل. الخادم مقفول افتراضياً ولا يفتح غير على شبكتك الداخلية.
+          </p>
+          {remote && (
+            <>
+              <Toggle on={remote.enabled} onToggle={handleToggleRemote} label="تشغيل الخادم" />
+
+              <label className="block max-w-[160px]">
+                <span className="text-xs text-muted-foreground font-bold mb-1 block">المنفذ (Port)</span>
+                <input
+                  key={remote.port}
+                  type="number"
+                  dir="ltr"
+                  min={1024}
+                  max={65535}
+                  defaultValue={remote.port}
+                  onBlur={e => handleSavePort(Number(e.target.value))}
+                  className={inputClass}
+                />
+              </label>
+
+              {remote.running && remote.addresses.length > 0 && (
+                <div className="space-y-1.5">
+                  <p className="text-xs text-muted-foreground font-bold">العنوان على Wi-Fi</p>
+                  {remote.addresses.map(addr => (
+                    <p key={addr} dir="ltr" className="font-mono text-xs bg-secondary/60 rounded-xl px-3 py-1.5">{`http://${addr}`}</p>
+                  ))}
+                </div>
+              )}
+
+              {remote.error && <p className="text-xs font-bold text-destructive">{remote.error}</p>}
+
+              <div className="border-t border-border pt-3 space-y-2">
+                <p className="text-xs text-muted-foreground font-bold">تغيير الرقم السري</p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <label className="block">
+                    <span className="text-xs text-muted-foreground font-bold mb-1 block">الرقم السري الجديد</span>
+                    <input type="password" dir="ltr" value={pin} onChange={e => setPin(e.target.value)} className={inputClass} />
+                  </label>
+                  <label className="block">
+                    <span className="text-xs text-muted-foreground font-bold mb-1 block">تأكيد الرقم السري</span>
+                    <input type="password" dir="ltr" value={pin2} onChange={e => setPin2(e.target.value)} className={inputClass} />
+                  </label>
+                </div>
+                <Button size="sm" className="rounded-xl" onClick={handleSavePin} disabled={!pin || !pin2}>حفظ الرقم السري</Button>
+              </div>
+            </>
+          )}
         </div>
           </>
         )}

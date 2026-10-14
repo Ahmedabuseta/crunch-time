@@ -403,6 +403,35 @@ export const rendererApi = {
     get: () => getSettings(),
     update: (data: any) => { T.settings.update(r => r.id === 'settings', data); return { ok: true } },
   },
+  // Remote POS server — the in-browser mock has no Node HTTP listener, so the
+  // toggle/port/PIN persist to the mock settings but `running` stays false.
+  remote: {
+    get: () => {
+      const s = getSettings()
+      return {
+        enabled: !!s.remoteEnabled,
+        port: Number(s.remotePort) || 4317,
+        hasPin: !!s.remotePinHash,
+        running: false,
+        addresses: [],
+        error: null,
+      }
+    },
+    set: (data: { enabled?: boolean; port?: number }) => {
+      const patch: any = {}
+      if (data.port !== undefined) patch.remotePort = Number(data.port) || 4317
+      if (data.enabled !== undefined) patch.remoteEnabled = !!data.enabled
+      T.settings.update(r => r.id === 'settings', patch)
+      return { ok: true, status: rendererApi.remote.get() }
+    },
+    setPin: (pin: string) => {
+      if (String(pin || '').trim().length < 4) {
+        return { ok: false, error: 'الرقم السري لازم يكون 4 أرقام على الأقل', status: rendererApi.remote.get() }
+      }
+      T.settings.update(r => r.id === 'settings', { remotePinHash: 'mock' })
+      return { ok: true, status: rendererApi.remote.get() }
+    },
+  },
   discountCode: {
     list: () => T.discountCodes.select(),
     create: (data: any) => { const id = uuid(); T.discountCodes.insert({ id, ...data, active: true, usedCount: 0 }); return { id } },

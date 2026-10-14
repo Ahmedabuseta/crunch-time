@@ -257,6 +257,16 @@ export const settings = sqliteTable('settings', {
   showCashier: integer('show_cashier', { mode: 'boolean' }).notNull().default(true),
   showOrderId: integer('show_order_id', { mode: 'boolean' }).notNull().default(true),
   showTax: integer('show_tax', { mode: 'boolean' }).notNull().default(true),
+
+  // ─── Remote POS server (owner's phone app) ───────────────
+  // Off by default; binds 0.0.0.0 on remotePort only while enabled.
+  // remotePinHash is the argon2 PIN the phone logs in with; remoteSecret
+  // is the HMAC key for signed tokens (rotated on every PIN change, which
+  // invalidates every issued token). Neither is ever sent to the renderer.
+  remoteEnabled: integer('remote_enabled', { mode: 'boolean' }).notNull().default(false),
+  remotePort: integer('remote_port').notNull().default(4317),
+  remotePinHash: text('remote_pin_hash'),
+  remoteSecret: text('remote_secret'),
 })
 
 // ─── Kitchen Stations (print routing: categories → printer) ────

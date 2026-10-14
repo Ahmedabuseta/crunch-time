@@ -43,6 +43,21 @@ export interface UpdateStatus {
   message?: string
 }
 
+export interface RemoteStatus {
+  enabled: boolean
+  port: number
+  hasPin: boolean
+  running: boolean
+  addresses: string[]
+  error: string | null
+}
+
+export interface RemoteBridge {
+  get: () => Promise<RemoteStatus>
+  set: (data: { enabled?: boolean; port?: number }) => Promise<{ ok: boolean; error?: string; status: RemoteStatus }>
+  setPin: (pin: string) => Promise<{ ok: boolean; error?: string; status: RemoteStatus }>
+}
+
 export interface Customer {
   id: string
   phone: string
@@ -52,7 +67,6 @@ export interface Customer {
   lastOrderAt: string | null
   createdAt: string
 }
-
 export interface DeliveryZone {
   id: string
   name: string
@@ -93,6 +107,7 @@ export interface ApiBridge {
     get: () => Promise<any>
     update: (data: any) => Promise<{ ok: boolean }>
   }
+  remote: RemoteBridge
   discountCode: {
     list: () => Promise<any[]>
     create: (data: any) => Promise<{ id: string }>

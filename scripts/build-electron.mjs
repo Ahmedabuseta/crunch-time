@@ -13,7 +13,7 @@ const base = {
   format: 'cjs',
   target: 'node20',
   outdir,
-  external: ['electron', 'better-sqlite3', 'argon2', 'electron-updater', 'electron-log'],
+  external: ['electron', 'better-sqlite3', 'argon2', 'electron-updater', 'electron-log', 'fastify', 'ws'],
   legalComments: 'none',
   logLevel: 'info',
 }
