@@ -24,19 +24,38 @@ let wss: WebSocketServer | null = null
 let boundPort: number | null = null
 let lastError: string | null = null
 
-function lanAddresses(port: number): string[] {
-  const out: string[] = []
-  const ifaces = networkInterfaces()
-  for (const list of Object.values(ifaces)) {
+// Tailscale hands out addresses from the CGNAT range 100.64.0.0/10. Separating
+// them lets the Settings card show the owner which address to type into the
+// phone when they are away from the shop.
+function isTailscale(ip: string): boolean {
+  const parts = ip.split('.').map(Number)
+  if (parts.length !== 4 || parts.some((n) => Number.isNaN(n))) return false
+  return parts[0] === 100 && parts[1] >= 64 && parts[1] <= 127
+}
+
+function addressInfo(port: number) {
+  const lan: string[] = []
+  const remote: string[] = []
+  for (const list of Object.values(networkInterfaces())) {
     for (const info of list || []) {
-      if (info.family === 'IPv4' && !info.internal) out.push(`${info.address}:${port}`)
+      if (info.family !== 'IPv4' || info.internal) continue
+      ;(isTailscale(info.address) ? remote : lan).push(`${info.address}:${port}`)
     }
   }
-  return out
+  return { lan, remote }
 }
 
 export function getRemoteServerStatus() {
-  return { running: app !== null, port: boundPort, addresses: boundPort ? lanAddresses(boundPort) : [], error: lastError }
+  const hasPort = boundPort !== null
+  const { lan, remote } = hasPort ? addressInfo(boundPort as number) : { lan: [], remote: [] }
+  return {
+    running: app !== null,
+    port: boundPort,
+    addresses: [...lan, ...remote],
+    lan,
+    remote,
+    error: lastError,
+  }
 }
 
 /** Starts the server on the configured port. No-op when disabled. */

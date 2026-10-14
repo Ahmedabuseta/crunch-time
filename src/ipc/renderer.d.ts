@@ -49,6 +49,10 @@ export interface RemoteStatus {
   hasPin: boolean
   running: boolean
   addresses: string[]
+  /** Shop-network addresses (192.168.x.x, 10.x.x.x …). */
+  lan: string[]
+  /** Tailscale addresses (100.64.0.0/10) — what the phone uses away from the shop. */
+  remote: string[]
   error: string | null
 }
 

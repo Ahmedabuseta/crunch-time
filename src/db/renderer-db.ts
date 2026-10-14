@@ -414,6 +414,8 @@ export const rendererApi = {
         hasPin: !!s.remotePinHash,
         running: false,
         addresses: [],
+        lan: [],
+        remote: [],
         error: null,
       }
     },

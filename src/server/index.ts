@@ -32,6 +32,10 @@ export function getRemoteStatus() {
     hasPin: Boolean(cfg.pinHash),
     running: live.running,
     addresses: live.addresses,
+    // Split out so the card can point the owner at the right address when they
+    // are outside the shop (Tailscale) versus on the shop Wi-Fi.
+    lan: live.lan,
+    remote: live.remote,
     error: live.error,
   }
 }

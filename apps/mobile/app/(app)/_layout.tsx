@@ -50,6 +50,10 @@ export default function AppTabsLayout() {
           tabBarIcon: ({ color, size }) => <MoreHorizontal color={color} size={size} />,
         }}
       />
+
+      {/* Reached from the board and the more screen, not tab bar entries. */}
+      <Tabs.Screen name='order/[id]' options={{ href: null }} />
+      <Tabs.Screen name='shift' options={{ href: null }} />
     </Tabs>
   );
 }

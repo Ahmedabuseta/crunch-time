@@ -1773,7 +1773,7 @@ export function SettingsPage() {
             )}
           </div>
           <p className="text-xs text-muted-foreground">
-            تطبيق الموبايل بيتصل بالخادم من على واي فاي المحل. الخادم مقفول افتراضياً ولا يفتح غير على شبكتك الداخلية.
+            تطبيق الموبايل بيتصل بالخادم من على واي فاي المحل — ولو ثبّتت Tailscale على الكمبيوتر والموبايل هتتابع من أي حتة بره المحل كمان. الخادم مقفول افتراضياً.
           </p>
           {remote && (
             <>
@@ -1794,11 +1794,23 @@ export function SettingsPage() {
               </label>
 
               {remote.running && remote.addresses.length > 0 && (
-                <div className="space-y-1.5">
-                  <p className="text-xs text-muted-foreground font-bold">العنوان على Wi-Fi</p>
-                  {remote.addresses.map(addr => (
-                    <p key={addr} dir="ltr" className="font-mono text-xs bg-secondary/60 rounded-xl px-3 py-1.5">{`http://${addr}`}</p>
-                  ))}
+                <div className="space-y-2">
+                  {remote.lan.length > 0 && (
+                    <div className="space-y-1.5">
+                      <p className="text-xs text-muted-foreground font-bold">العنوان على Wi-Fi (جوّه المحل)</p>
+                      {remote.lan.map(addr => (
+                        <p key={addr} dir="ltr" className="font-mono text-xs bg-secondary/60 rounded-xl px-3 py-1.5">{`http://${addr}`}</p>
+                      ))}
+                    </div>
+                  )}
+                  {remote.remote.length > 0 && (
+                    <div className="space-y-1.5">
+                      <p className="text-xs text-muted-foreground font-bold">العنوان البعيد — Tailscale (من أي مكان)</p>
+                      {remote.remote.map(addr => (
+                        <p key={addr} dir="ltr" className="font-mono text-xs bg-green-500/10 text-green-400 rounded-xl px-3 py-1.5">{`http://${addr}`}</p>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
 
