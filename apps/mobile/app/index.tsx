@@ -1,37 +1,16 @@
-import { Button } from '@/components/ui/button';
-import { Text } from '@/components/ui/text';
 import { View } from '@/components/ui/view';
-import { useColor } from '@/hooks/useColor';
-import { Image } from 'expo-image';
-import { Link } from 'expo-router';
+import { useSession } from '@/lib/session';
+import { Redirect } from 'expo-router';
 import React from 'react';
 
-// Entry point for now; Phase 2 turns this into the onboarding → setup → app gate.
+/**
+ * Gate. Reads the persisted config, then sends the owner to setup (address +
+ * PIN) or straight to the board. Onboarding is added in the next slice.
+ */
 export default function Index() {
-  const muted = useColor('mutedForeground');
+  const { ready, serverUrl, signedIn } = useSession();
 
-  return (
-    <View
-      style={{
-        flex: 1,
-        alignItems: 'center',
-        justifyContent: 'center',
-        gap: 20,
-        padding: 28,
-      }}
-    >
-      <Image
-        source={require('../assets/images/logo.png')}
-        style={{ width: 152, height: 152 }}
-        contentFit='contain'
-      />
-      <Text variant='heading'>كرنش تايم</Text>
-      <Text variant='caption' style={{ textAlign: 'center', color: muted }}>
-        تطبيق المالك — الطلبات والورديات والتقارير من الموبايل
-      </Text>
-      <Link href='/board' asChild>
-        <Button style={{ alignSelf: 'stretch' }}>ابدأ</Button>
-      </Link>
-    </View>
-  );
+  if (!ready) return <View style={{ flex: 1 }} />;
+  if (!serverUrl || !signedIn) return <Redirect href='/setup' />;
+  return <Redirect href='/board' />;
 }

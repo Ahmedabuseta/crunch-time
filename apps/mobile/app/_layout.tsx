@@ -1,5 +1,6 @@
 import { useColorScheme } from '@/hooks/useColorScheme';
 import { fontsToLoad } from '@/lib/fonts';
+import { SessionProvider } from '@/lib/session';
 import { ThemeProvider } from '@/providers/theme-provider';
 import { Colors } from '@/theme/colors';
 import { useFonts } from 'expo-font';
@@ -38,7 +39,9 @@ export default function RootLayout() {
           has no web implementation, so on web this degrades to no persistence
           rather than erroring — the toggle itself still works there. */}
       <ThemeProvider storage={SecureStore} defaultMode='dark'>
-        <RootNavigator />
+        <SessionProvider>
+          <RootNavigator />
+        </SessionProvider>
       </ThemeProvider>
     </GestureHandlerRootView>
   );

@@ -1,5 +1,6 @@
 import { Icon } from '@/components/ui/icon';
 import { Text } from '@/components/ui/text';
+import { FONT_FAMILY } from '@/lib/fonts';
 import { useColor } from '@/hooks/useColor';
 import { BORDER_RADIUS, CORNERS, FONT_SIZE, HEIGHT } from '@/theme/globals';
 import { LucideProps } from 'lucide-react-native';
@@ -104,6 +105,7 @@ export const Input = forwardRef<TextInput, InputProps>(
     const getInputStyle = (): TextStyle => ({
       flex: 1,
       fontSize: FONT_SIZE,
+      fontFamily: FONT_FAMILY.regular,
       lineHeight: isTextarea ? 20 : undefined,
       color: disabled ? muted : error ? danger : textColor,
       paddingVertical: 0, // Remove default padding
@@ -515,6 +517,7 @@ export const GroupedInputItem = forwardRef<TextInput, GroupedInputItemProps>(
                 style={[
                   {
                     fontSize: FONT_SIZE,
+                    fontFamily: FONT_FAMILY.regular,
                     lineHeight: 20,
                     color: disabled ? muted : error ? danger : text,
                     textAlignVertical: 'top',
@@ -582,6 +585,7 @@ export const GroupedInputItem = forwardRef<TextInput, GroupedInputItemProps>(
                     {
                       flex: 1,
                       fontSize: FONT_SIZE,
+                      fontFamily: FONT_FAMILY.regular,
                       color: disabled ? muted : error ? danger : text,
                       paddingVertical: 0,
                     },
