@@ -15,9 +15,7 @@
       "package": "com.crunchtime.owner",
       "adaptiveIcon": {
         "backgroundColor": "#05070B",
-        "foregroundImage": "./assets/images/app-icon.png",
-        "backgroundImage": "./assets/images/splash.png",
-        "monochromeImage": "./assets/images/app-icon.png"
+        "foregroundImage": "./assets/images/app-icon.png"
       },
       "predictiveBackGestureEnabled": true
     },

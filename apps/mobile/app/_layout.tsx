@@ -21,25 +21,34 @@ import 'react-native-reanimated';
 I18nManager.allowRTL(true);
 I18nManager.forceRTL(true);
 
+// Hold the native splash until the app actually has something to show, so
+// there is never a blank frame between the two. We hide it ourselves below.
+void SplashScreen.preventAutoHideAsync().catch(() => {});
+
 SplashScreen.setOptions({
   duration: 200,
   fade: true,
 });
 
 export default function RootLayout() {
-  // Hold the first frame until Tajawal is in — otherwise Arabic paints in the
-  // system font and reflows a beat later. But never hold it longer than a
-  // moment: a font that fails to load (or hangs) must fall back to the system
-  // font rather than leaving a blank screen with no way forward.
+  // Tajawal is three small local files, so it is normally in before the first
+  // frame. If it is not almost immediately, something is wrong: a system-font
+  // first frame beats staring at the splash.
   const [fontsLoaded, fontError] = useFonts(fontsToLoad);
   const [fontWaited, setFontWaited] = useState(false);
 
   useEffect(() => {
-    const timer = setTimeout(() => setFontWaited(true), 1500);
+    const timer = setTimeout(() => setFontWaited(true), 500);
     return () => clearTimeout(timer);
   }, []);
 
-  if (!fontsLoaded && !fontError && !fontWaited) return null;
+  const ready = fontsLoaded || Boolean(fontError) || fontWaited;
+
+  useEffect(() => {
+    if (ready) void SplashScreen.hideAsync().catch(() => {});
+  }, [ready]);
+
+  if (!ready) return null;
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>

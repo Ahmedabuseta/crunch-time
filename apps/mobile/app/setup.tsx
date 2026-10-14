@@ -154,9 +154,18 @@ export default function SetupScreen() {
       )}
 
       <View style={{ height: 1, alignSelf: 'stretch', backgroundColor: border, opacity: 0.5 }} />
-      <Text variant='caption' style={{ textAlign: 'center', color: primary }}>
-        كرنش تايم — تطبيق المالك
-      </Text>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
+        <Text variant='caption' style={{ textAlign: 'center', color: primary }}>
+          كرنش تايم — تطبيق المالك
+        </Text>
+        <Text
+          variant='caption'
+          style={{ color: muted, textDecorationLine: 'underline' }}
+          onPress={() => router.push('/onboarding')}
+        >
+          شاهد التعريف
+        </Text>
+      </View>
     </ScrollView>
   );
 }
