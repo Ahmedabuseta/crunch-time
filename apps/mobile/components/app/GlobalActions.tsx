@@ -16,7 +16,6 @@ export function GlobalActions() {
 
   return (
     <ArcActionFab
-      footer='وصول سريع'
       actions={[
         { key: 'new', label: 'طلب جديد', icon: PlusCircle, onPress: () => router.push('/new') },
         { key: 'shift', label: 'الوردية', icon: Wallet, onPress: () => router.push('/shift') },

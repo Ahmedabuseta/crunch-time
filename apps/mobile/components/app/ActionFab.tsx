@@ -4,7 +4,7 @@ import { useColorScheme } from '@/hooks/useColorScheme';
 import { layoutOrbits, type OrbitSlot } from '@/lib/orbitLayout';
 import { TAB_BAR_GAP, TAB_BAR_HEIGHT } from '@/theme/globals';
 import { BlurView } from 'expo-blur';
-import { Plus, type LucideProps } from 'lucide-react-native';
+import { Menu, X, type LucideProps } from 'lucide-react-native';
 import React, { useState } from 'react';
 import { I18nManager, Platform, Pressable, StyleSheet, View } from 'react-native';
 import Animated, {
@@ -32,11 +32,9 @@ const COLUMN = 74;
  */
 export function ArcActionFab({
   actions,
-  footer,
   label = 'إجراءات سريعة',
 }: {
   actions: FabAction[];
-  footer?: string;
   label?: string;
 }) {
   const insets = useSafeAreaInsets();
@@ -45,7 +43,6 @@ export function ArcActionFab({
   const primary = useColor('primary');
   const primaryForeground = useColor('primaryForeground');
   const border = useColor('border');
-  const muted = useColor('mutedForeground');
   const foreground = useColor('foreground');
   const scheme = useColorScheme() ?? 'dark';
   const isRtl = Platform.OS !== 'web' && I18nManager.isRTL;
@@ -62,8 +59,18 @@ export function ArcActionFab({
   };
 
   const iconStyle = useAnimatedStyle(() => ({
-    transform: [{ rotate: `${progress.value * 45}deg` }],
+    transform: [{ rotate: `${progress.value * 90}deg` }],
   }));
+
+  const icon = (
+    <Animated.View style={iconStyle}>
+      {open ? (
+        <X size={26} color={primaryForeground} />
+      ) : (
+        <Menu size={26} color={primaryForeground} />
+      )}
+    </Animated.View>
+  );
 
   const button = (
     <Pressable
@@ -72,16 +79,13 @@ export function ArcActionFab({
       accessibilityLabel={open ? 'إغلاق' : label}
       style={[styles.fab, { backgroundColor: primary, bottom: lift, ...side }]}
     >
-      <Animated.View style={iconStyle}>
-        <Plus size={26} color={primaryForeground} />
-      </Animated.View>
+      {icon}
     </Pressable>
   );
 
   if (!open) return button;
 
   const slots = layoutOrbits(actions.length, isRtl, ITEM + 16);
-  const topMost = Math.min(...slots.map((slot) => slot.y));
   const anchorSide = isRtl ? { left: 20 + FAB / 2 } : { right: 20 + FAB / 2 };
 
   return (
@@ -93,7 +97,7 @@ export function ArcActionFab({
         accessibilityLabel='إغلاق'
       >
         <BlurView
-          intensity={45}
+          intensity={57}
           tint={scheme === 'dark' ? 'dark' : 'light'}
           blurMethod='dimezisBlurView'
           style={[StyleSheet.absoluteFill, styles.scrim]}
@@ -102,22 +106,6 @@ export function ArcActionFab({
 
       {/* A zero-size anchor on the button's centre; entries are placed around it. */}
       <View style={[styles.anchor, { bottom: lift + FAB / 2 }, anchorSide]} pointerEvents='box-none'>
-        {footer ? (
-          <Text
-            variant='caption'
-            style={{
-              position: 'absolute',
-              width: 220,
-              left: -110,
-              top: topMost - 34,
-              textAlign: 'center',
-              color: muted,
-            }}
-          >
-            {footer}
-          </Text>
-        ) : null}
-
         {slots.map((slot) => (
           <ArcEntry
             key={actions[slot.order].key}
@@ -142,9 +130,7 @@ export function ArcActionFab({
           accessibilityLabel='إغلاق'
           style={[styles.fab, { backgroundColor: primary, left: -FAB / 2, top: -FAB / 2 }]}
         >
-          <Animated.View style={iconStyle}>
-            <Plus size={26} color={primaryForeground} />
-          </Animated.View>
+          {icon}
         </Pressable>
       </View>
     </>
@@ -200,7 +186,7 @@ function ArcEntry({
         accessibilityLabel={action.label}
         style={[styles.item, { borderColor }]}
       >
-        <BlurView intensity={50} tint='default' blurMethod='dimezisBlurView' style={StyleSheet.absoluteFill} />
+        <BlurView intensity={62} tint='default' blurMethod='dimezisBlurView' style={StyleSheet.absoluteFill} />
         <Icon size={20} color={tint} />
       </Pressable>
       <Text style={{ color: textColor, fontSize: 11, fontWeight: '700', textAlign: 'center' }} numberOfLines={1}>

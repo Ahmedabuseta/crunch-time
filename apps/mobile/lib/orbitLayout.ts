@@ -16,7 +16,9 @@ export interface OrbitSlot {
  * would drop below it and off the bottom of the screen. */
 export const ARC_DEGREES = 88;
 export const INNER_RADIUS = 112;
-export const RING_GAP = 86;
+/** Comfortable clearance between one ring and the next — enough that the outer
+ * labels never read as belonging to the inner entries. */
+export const RING_GAP = 108;
 export const MAX_PER_RING = 4;
 
 export function layoutOrbits(count: number, isRtl: boolean, gap: number): OrbitSlot[] {
