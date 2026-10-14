@@ -4,6 +4,7 @@ import { SessionProvider } from '@/lib/session';
 import { ThemeProvider } from '@/providers/theme-provider';
 import { Colors } from '@/theme/colors';
 import { useFonts } from 'expo-font';
+import Constants, { ExecutionEnvironment } from 'expo-constants';
 import * as NavigationBar from 'expo-navigation-bar';
 import { Stack } from 'expo-router';
 import * as SecureStore from 'expo-secure-store';
@@ -91,13 +92,22 @@ function RootNavigator() {
   const backgroundColor =
     colorScheme === 'dark' ? Colors.dark.background : Colors.light.background;
 
+  // Expo Go draws its OWN opaque dark status bar and applies none of our
+  // app.json (that config is baked in at build time), so there is no way to
+  // recolour it from JS. The one thing we control is the icon colour, so there
+  // we always ask for light icons — otherwise dark icons land on its black bar
+  // and the clock disappears. A real build is translucent and edge-to-edge, so
+  // it follows the theme.
+  const isExpoGo = Constants.executionEnvironment === ExecutionEnvironment.StoreClient;
+  const statusBarStyle = isExpoGo || colorScheme === 'dark' ? 'light' : 'dark';
+
   return (
     // The window background is set once at launch and the system bars are
     // transparent in edge-to-edge, so the status-bar strip shows whatever is
     // behind it. Painting the theme colour here is what stops it staying black
     // (and the clock invisible) after switching to light.
     <View style={{ flex: 1, backgroundColor }}>
-      <StatusBar style={colorScheme === 'dark' ? 'light' : 'dark'} animated />
+      <StatusBar style={statusBarStyle} animated />
 
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name='(app)' options={{ headerShown: false }} />
