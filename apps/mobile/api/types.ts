@@ -164,6 +164,74 @@ export interface LoginResponse {
   expiresIn: number;
 }
 
+export interface Ingredient {
+  id: string;
+  name: string;
+  unit: string;
+  stockQuantity: number;
+  minStock: number;
+  costPerUnit: number;
+  purchaseQty: number;
+  active: boolean;
+  supplier: string | null;
+  secondarySupplier: string | null;
+  supplierRatio: number;
+  plannedCost: number;
+}
+
+export interface InventoryTransaction {
+  id: string;
+  ingredientId: string;
+  type: string;
+  quantity: number;
+  unitCost: number | null;
+  supplier: string | null;
+  referenceOrderId: string | null;
+  note: string | null;
+  createdAt: string;
+}
+
+export interface IngredientLedger {
+  ingredient: Ingredient | null;
+  currentStock: number;
+  openingBalance: number;
+  movements: (InventoryTransaction & { balance: number })[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+}
+
+export interface AppUser {
+  id: string;
+  name: string;
+  role: 'admin' | 'cashier';
+  active: boolean;
+  createdAt: string;
+  hourlyRate: number;
+  commissionRate: number;
+}
+
+export interface StoreSettings {
+  restaurantName?: string;
+  storeTagline?: string | null;
+  storePhone?: string | null;
+  storePhone2?: string | null;
+  storeAddress?: string | null;
+  taxNumber?: string | null;
+  vatNumber?: string | null;
+  receiptFooter?: string;
+  currencyLabel?: string;
+  taxRate?: number;
+  [key: string]: unknown;
+}
+
+export interface PrinterInfo {
+  name: string;
+  displayName: string;
+  isDefault: boolean;
+}
+
 export interface HealthResponse {
   ok: boolean;
   name: string;

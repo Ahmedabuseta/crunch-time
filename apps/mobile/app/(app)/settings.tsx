@@ -11,7 +11,7 @@ import { TAB_BAR_SPACE } from '@/theme/globals';
 import { useSession } from '@/lib/session';
 import Constants from 'expo-constants';
 import { useRouter } from 'expo-router';
-import { BarChart3, LogOut, Radio, Server, Sparkles, Wallet } from 'lucide-react-native';
+import { BarChart3, Boxes, LayoutGrid, LogOut, Package, Radio, Server, Sparkles, Store, Users, Wallet } from 'lucide-react-native';
 import React, { useEffect, useState } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -101,6 +101,30 @@ export default function MoreScreen() {
           </Button>
           <Button variant='secondary' icon={BarChart3} style={{ alignSelf: 'stretch' }} onPress={() => router.push('/reports')}>
             التقارير
+          </Button>
+        </Card>
+
+        <Card style={{ gap: 10 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <Boxes size={18} color={primary} />
+            <Text variant='subtitle' style={{ flex: 1 }}>
+              الإدارة
+            </Text>
+          </View>
+          <Button variant='secondary' icon={Package} style={{ alignSelf: 'stretch' }} onPress={() => router.push('/manage/products')}>
+            المنتجات
+          </Button>
+          <Button variant='secondary' icon={LayoutGrid} style={{ alignSelf: 'stretch' }} onPress={() => router.push('/manage/categories')}>
+            الأقسام
+          </Button>
+          <Button variant='secondary' icon={Boxes} style={{ alignSelf: 'stretch' }} onPress={() => router.push('/manage/inventory')}>
+            المخزون
+          </Button>
+          <Button variant='secondary' icon={Users} style={{ alignSelf: 'stretch' }} onPress={() => router.push('/manage/users')}>
+            الموظفين
+          </Button>
+          <Button variant='secondary' icon={Store} style={{ alignSelf: 'stretch' }} onPress={() => router.push('/manage/store')}>
+            بيانات المحل والنسخ الاحتياطي
           </Button>
         </Card>
 
