@@ -4,13 +4,14 @@ import { Redirect } from 'expo-router';
 import React from 'react';
 
 /**
- * Gate. Reads the persisted config, then sends the owner to setup (address +
- * PIN) or straight to the board. Onboarding is added in the next slice.
+ * Gate. Reads the persisted config, then sends the owner through onboarding,
+ * setup (address + PIN), or straight to the board when already signed in.
  */
 export default function Index() {
-  const { ready, serverUrl, signedIn } = useSession();
+  const { ready, onboardingDone, serverUrl, signedIn } = useSession();
 
   if (!ready) return <View style={{ flex: 1 }} />;
+  if (!onboardingDone) return <Redirect href='/onboarding' />;
   if (!serverUrl || !signedIn) return <Redirect href='/setup' />;
   return <Redirect href='/board' />;
 }
