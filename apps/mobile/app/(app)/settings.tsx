@@ -10,7 +10,7 @@ import { useColor } from '@/hooks/useColor';
 import { useSession } from '@/lib/session';
 import Constants from 'expo-constants';
 import { useRouter } from 'expo-router';
-import { BarChart3, LogOut, Radio, Server, Wallet } from 'lucide-react-native';
+import { BarChart3, LogOut, Radio, Server, Sparkles, Wallet } from 'lucide-react-native';
 import React, { useEffect, useState } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -18,7 +18,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 export default function MoreScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { serverUrl, signOut } = useSession();
+  const { serverUrl, signOut, resetOnboarding } = useSession();
 
   const primary = useColor('primary');
   const muted = useColor('mutedForeground');
@@ -111,6 +111,21 @@ export default function MoreScreen() {
             </Text>
             <ModeToggle />
           </View>
+        </Card>
+
+        <Card style={{ gap: 10 }}>
+          <Text variant='subtitle'>مساعدة</Text>
+          <Button
+            variant='secondary'
+            icon={Sparkles}
+            style={{ alignSelf: 'stretch' }}
+            onPress={async () => {
+              await resetOnboarding();
+              router.push('/onboarding');
+            }}
+          >
+            شاهد التعريف تاني
+          </Button>
         </Card>
 
         <Card style={{ gap: 10 }}>

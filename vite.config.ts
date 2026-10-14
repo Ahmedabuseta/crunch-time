@@ -11,6 +11,15 @@ export default defineConfig({
     },
   },
   base: './',
+  server: {
+    // The dev server shares this repo with the Expo app and the main-process
+    // build. Watching them made Vite full-reload the renderer whenever Metro or
+    // esbuild wrote a file — which threw the cashier back to the login screen
+    // mid-task. Only the renderer's own source is interesting.
+    watch: {
+      ignored: ['**/apps/**', '**/dist-electron/**', '**/release/**', '**/squashfs-root/**', '**/docker/**'],
+    },
+  },
   optimizeDeps: {
     exclude: ['better-sqlite3'],
   },

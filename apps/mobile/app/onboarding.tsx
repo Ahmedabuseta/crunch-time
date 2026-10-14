@@ -4,7 +4,7 @@ import { useColor } from '@/hooks/useColor';
 import { useSession } from '@/lib/session';
 import { withOpacity } from '@/theme/colors';
 import { Image } from 'expo-image';
-import { Redirect } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { BarChart3, Radio, Wallet } from 'lucide-react-native';
 import React from 'react';
 
@@ -49,12 +49,18 @@ function StepArt({ icon: Icon, color }: { icon: typeof BarChart3; color: string 
 }
 
 export default function OnboardingScreen() {
-  const { onboardingDone, completeOnboarding } = useSession();
+  const { completeOnboarding } = useSession();
+  const router = useRouter();
   const primary = useColor('primary');
   const blue = useColor('blue');
   const green = useColor('green');
 
-  if (onboardingDone) return <Redirect href='/setup' />;
+  // Always renderable — the gate only sends first-run users here, but المزيد can
+  // replay it. Finishing records the flag and moves on either way.
+  const finish = async () => {
+    await completeOnboarding();
+    router.replace('/setup');
+  };
 
   const steps: OnboardingStep[] = [
     {
@@ -90,8 +96,8 @@ export default function OnboardingScreen() {
   return (
     <Onboarding
       steps={steps}
-      onComplete={() => void completeOnboarding()}
-      onSkip={() => void completeOnboarding()}
+      onComplete={() => void finish()}
+      onSkip={() => void finish()}
       showSkip
       showProgress
       swipeEnabled

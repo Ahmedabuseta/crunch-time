@@ -67,18 +67,14 @@ export default function SetupScreen() {
       <Text variant='caption' style={{ textAlign: 'center', color: muted }}>
         {step === 'server'
           ? 'أسهل طريقة: امسح كود الربط من شاشة الكمبيوتر. أو اكتب عنوان الجهاز بنفسك.'
-          : 'اكتب الرقم السري اللي ظبّطته من إعدادات الخادم على الكمبيوتر.'}
+          : 'اكتب الرقم السري اللي ظبّطته من إعدادات الخادم على الكمبيوتر، أو امسح كود ربط جديد.'}
       </Text>
 
-      {step === 'server' ? (
-        <Button
-          onPress={() => router.push('/scan')}
-          icon={QrCode}
-          style={{ alignSelf: 'stretch' }}
-        >
-          امسح كود الربط
-        </Button>
-      ) : null}
+      {/* Always available — a returning owner lands on the PIN step, and the
+          scan is still the easiest way back in. */}
+      <Button onPress={() => router.push('/scan')} icon={QrCode} style={{ alignSelf: 'stretch' }}>
+        امسح كود الربط
+      </Button>
 
       <Card style={styles.card}>
         {step === 'server' ? (

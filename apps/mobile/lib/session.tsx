@@ -23,6 +23,8 @@ interface SessionValue {
   signedIn: boolean;
   onboardingDone: boolean;
   completeOnboarding: () => Promise<void>;
+  /** Lets the owner watch the intro again from المزيد. */
+  resetOnboarding: () => Promise<void>;
   /** Saves the address and probes /health. Throws ApiError when unreachable. */
   connect: (url: string) => Promise<void>;
   /** Address + one-time pairing code from the QR — signs in without a PIN. */
@@ -42,12 +44,19 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     let mounted = true;
     void (async () => {
-      const [cfg, done] = await Promise.all([loadApiConfig(), storage.getOnboardingDone()]);
-      if (!mounted) return;
-      setServerUrlState(cfg.baseUrl);
-      setSignedIn(Boolean(cfg.token));
-      setOnboardingDone(done);
-      setReady(true);
+      // Whatever happens — a slow keychain, a missing native module — the app
+      // must become usable. A hang here would be a permanent blank screen.
+      try {
+        const [cfg, done] = await Promise.all([loadApiConfig(), storage.getOnboardingDone()]);
+        if (!mounted) return;
+        setServerUrlState(cfg.baseUrl);
+        setSignedIn(Boolean(cfg.token));
+        setOnboardingDone(done);
+      } catch {
+        if (mounted) setOnboardingDone(false);
+      } finally {
+        if (mounted) setReady(true);
+      }
     })();
     return () => {
       mounted = false;
@@ -63,6 +72,11 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   const completeOnboarding = useCallback(async () => {
     await storage.setOnboardingDone(true);
     setOnboardingDone(true);
+  }, []);
+
+  const resetOnboarding = useCallback(async () => {
+    await storage.setOnboardingDone(false);
+    setOnboardingDone(false);
   }, []);
 
   const connect = useCallback(async (url: string) => {
@@ -93,8 +107,8 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const value = useMemo<SessionValue>(
-    () => ({ ready, serverUrl, signedIn, onboardingDone, completeOnboarding, connect, pair, signIn, signOut }),
-    [ready, serverUrl, signedIn, onboardingDone, completeOnboarding, connect, pair, signIn, signOut]
+    () => ({ ready, serverUrl, signedIn, onboardingDone, completeOnboarding, resetOnboarding, connect, pair, signIn, signOut }),
+    [ready, serverUrl, signedIn, onboardingDone, completeOnboarding, resetOnboarding, connect, pair, signIn, signOut]
   );
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;

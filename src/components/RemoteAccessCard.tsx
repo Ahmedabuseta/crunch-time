@@ -230,7 +230,14 @@ export function RemoteAccessCard() {
         شغّل الخادم، وبعدين اعرض كود الربط وامسحه بالموبايل بكاميرا التطبيق — مش محتاج تكتب عنوان ولا رقم سري.
       </p>
 
-      {remote && (
+      {!remote ? (
+        <div className="rounded-xl bg-secondary/40 p-3 space-y-2">
+          <p className="text-xs text-muted-foreground">جارٍ تحميل حالة الخادم…</p>
+          <Button size="sm" variant="outline" className="rounded-xl" onClick={() => void refreshRemote()}>
+            <RefreshCw className="h-3.5 w-3.5" /> تحميل الحالة
+          </Button>
+        </div>
+      ) : (
         <>
           <div className="flex flex-wrap items-center gap-2">
             <button

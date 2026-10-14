@@ -10,7 +10,7 @@ import * as SecureStore from 'expo-secure-store';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { setBackgroundColorAsync } from 'expo-system-ui';
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { I18nManager, Platform } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import 'react-native-reanimated';
@@ -28,10 +28,18 @@ SplashScreen.setOptions({
 
 export default function RootLayout() {
   // Hold the first frame until Tajawal is in — otherwise Arabic paints in the
-  // system font and reflows a beat later.
-  const [fontsLoaded] = useFonts(fontsToLoad);
+  // system font and reflows a beat later. But never hold it longer than a
+  // moment: a font that fails to load (or hangs) must fall back to the system
+  // font rather than leaving a blank screen with no way forward.
+  const [fontsLoaded, fontError] = useFonts(fontsToLoad);
+  const [fontWaited, setFontWaited] = useState(false);
 
-  if (!fontsLoaded) return null;
+  useEffect(() => {
+    const timer = setTimeout(() => setFontWaited(true), 1500);
+    return () => clearTimeout(timer);
+  }, []);
+
+  if (!fontsLoaded && !fontError && !fontWaited) return null;
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
