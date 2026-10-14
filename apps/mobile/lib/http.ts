@@ -20,6 +20,22 @@ export function normalizeBaseUrl(raw: string): string {
   return withScheme.replace(/\/+$/, '');
 }
 
+/** Derives the live-events socket URL from the HTTP base (http→ws, https→wss). */
+export function toWebSocketUrl(
+  baseUrl: string,
+  path: string,
+  params?: Record<string, string | null | undefined>
+): string {
+  const ws = baseUrl.replace(/^http:/i, 'ws:').replace(/^https:/i, 'wss:');
+  const query = params
+    ? Object.entries(params)
+        .filter(([, v]) => v !== undefined && v !== null && v !== '')
+        .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(String(v))}`)
+        .join('&')
+    : '';
+  return `${ws}${path}${query ? `?${query}` : ''}`;
+}
+
 export interface HttpConfig {
   baseUrl: string;
   token: string | null;

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { ApiError, createHttpClient, normalizeBaseUrl } from './http';
+import { ApiError, createHttpClient, normalizeBaseUrl, toWebSocketUrl } from './http';
 
 describe('normalizeBaseUrl', () => {
   it('adds a scheme when the owner types a bare host:port', () => {
@@ -15,6 +15,22 @@ describe('normalizeBaseUrl', () => {
   it('returns empty for empty input', () => {
     expect(normalizeBaseUrl('   ')).toBe('');
     expect(normalizeBaseUrl('')).toBe('');
+  });
+});
+
+describe('toWebSocketUrl', () => {
+  it('switches the scheme and carries the token', () => {
+    expect(toWebSocketUrl('http://10.0.0.2:4317', '/ws', { token: 'abc' })).toBe(
+      'ws://10.0.0.2:4317/ws?token=abc'
+    );
+    expect(toWebSocketUrl('https://pos.tail.ts.net:4317', '/ws', { token: 'a b' })).toBe(
+      'wss://pos.tail.ts.net:4317/ws?token=a%20b'
+    );
+  });
+
+  it('drops empty params', () => {
+    expect(toWebSocketUrl('http://h:1', '/ws')).toBe('ws://h:1/ws');
+    expect(toWebSocketUrl('http://h:1', '/ws', { token: null })).toBe('ws://h:1/ws');
   });
 });
 

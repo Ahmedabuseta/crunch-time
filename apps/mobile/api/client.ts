@@ -31,6 +31,11 @@ export function getApiBaseUrl(): string {
   return config.baseUrl;
 }
 
+/** The bearer token, e.g. to authenticate the live-events socket. */
+export function getToken(): string | null {
+  return config.token;
+}
+
 export function hasToken(): boolean {
   return Boolean(config.token);
 }
