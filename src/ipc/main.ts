@@ -5,7 +5,7 @@ import { ipcMain, app, BrowserWindow, dialog } from 'electron'
 import { runMigrations } from '../db/migrate'
 import { seedDatabase } from '../db/seed'
 import { createBackend, Backend } from '../backend'
-import { applyRemoteServer, getRemoteStatus } from '../server'
+import { applyRemoteServer, getRemoteStatus, setDesktopNotifier } from '../server'
 import { silentPrint } from './print'
 
 let backend: Backend | null = null
@@ -43,6 +43,13 @@ export async function initBackend() {
   runMigrations()
   await seedDatabase()
   registerIpcHandlers()
+  // A phone-side change (new order, status, driver) is pushed to every window
+  // so the desktop order board updates live instead of waiting for its poll.
+  setDesktopNotifier((channel, payload) => {
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.isDestroyed()) win.webContents.send('events:push', { channel, payload })
+    }
+  })
   // Bring the remote POS server up if the owner has it enabled (off by default).
   await applyRemoteServer(getBackend())
 }

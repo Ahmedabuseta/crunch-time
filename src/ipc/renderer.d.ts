@@ -58,6 +58,16 @@ export interface RemoteBridge {
   setPin: (pin: string) => Promise<{ ok: boolean; error?: string; status: RemoteStatus }>
 }
 
+export interface ServerPushEvent {
+  channel: string
+  payload: unknown
+}
+
+export interface EventsBridge {
+  /** Subscribes to phone-side changes pushed from the main process. Returns an unsubscribe fn. */
+  onPush: (cb: (e: ServerPushEvent) => void) => () => void
+}
+
 export interface Customer {
   id: string
   phone: string
@@ -108,6 +118,7 @@ export interface ApiBridge {
     update: (data: any) => Promise<{ ok: boolean }>
   }
   remote: RemoteBridge
+  events: EventsBridge
   discountCode: {
     list: () => Promise<any[]>
     create: (data: any) => Promise<{ id: string }>

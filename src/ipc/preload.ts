@@ -50,6 +50,16 @@ contextBridge.exposeInMainWorld('api', {
     setPin: (pin: string) => invoke('remote:setPin', pin),
   },
 
+  // ─── Server events (phone-side order changes, pushed live) ──
+  events: {
+    onPush: (cb: (e: { channel: string; payload: unknown }) => void) => {
+      if (!onIpc) return () => {}
+      const listener = (_e: unknown, payload: { channel: string; payload: unknown }) => cb(payload)
+      onIpc('events:push', listener)
+      return () => offIpc?.('events:push', listener)
+    },
+  },
+
   // ─── Discount codes ────────────────────────────────────────
   discountCode: {
     list: () => invoke('discountCode:list'),

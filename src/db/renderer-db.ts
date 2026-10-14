@@ -432,6 +432,8 @@ export const rendererApi = {
       return { ok: true, status: rendererApi.remote.get() }
     },
   },
+  // No server in the browser mock, so there are no pushed events to deliver.
+  events: { onPush: () => () => {} },
   discountCode: {
     list: () => T.discountCodes.select(),
     create: (data: any) => { const id = uuid(); T.discountCodes.insert({ id, ...data, active: true, usedCount: 0 }); return { id } },

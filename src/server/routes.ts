@@ -6,6 +6,7 @@ import type { FastifyInstance } from 'fastify'
 import type { Backend } from '../backend'
 import { getRemoteConfig, verifyRemotePin } from '../backend/settings'
 import { createRateLimiter } from './ratelimit'
+import { registerOrderRoutes } from './routes.orders'
 import {
   TOKEN_REFRESH_AFTER_MS,
   TOKEN_TTL_MS,
@@ -90,4 +91,7 @@ export function registerRoutes(app: FastifyInstance, backend: Backend) {
   app.get('/stations', async () => ({ stations: await backend.stations.listStations() }))
 
   app.get('/printers', async () => ({ printers: await backend.stations.listPrinters() }))
+
+  // ─── Orders ─────────────────────────────────────────────────
+  registerOrderRoutes(app, backend)
 }

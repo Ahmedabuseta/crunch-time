@@ -26,6 +26,7 @@ declare module 'electron' {
     close(): void
     setBounds(bounds: { x?: number; y?: number; width?: number; height?: number }): void
     webContents: {
+      send(channel: string, ...args: any[]): void
       print(opts: any, cb?: (success: boolean, reason: string) => void): void
       getPrintersAsync(): Promise<{ name: string; displayName?: string; isDefault?: boolean }[]>
       executeJavaScript(code: string): Promise<any>

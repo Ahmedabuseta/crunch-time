@@ -5,12 +5,13 @@
 // shop LAN (and later Tailscale). All business logic is reused from
 // src/backend/*, so the phone drives the exact same code as the desktop.
 import Fastify, { type FastifyInstance } from 'fastify'
-import { WebSocketServer, WebSocket } from 'ws'
+import { WebSocketServer } from 'ws'
 import { networkInterfaces } from 'os'
 import type { Backend } from '../backend'
 import { getRemoteConfig } from '../backend/settings'
 import { registerRoutes } from './routes'
 import { extractToken, verifyToken } from './tokens'
+import { addClient, closeAllClients, removeClient } from './ws'
 
 export interface StartResult {
   ok: boolean
@@ -22,22 +23,6 @@ let app: FastifyInstance | null = null
 let wss: WebSocketServer | null = null
 let boundPort: number | null = null
 let lastError: string | null = null
-const clients = new Set<WebSocket>()
-
-/** Push a server event to every connected phone (order board updates, …). */
-export function broadcast(channel: string, payload: unknown): void {
-  if (!wss || clients.size === 0) return
-  const data = JSON.stringify({ channel, payload })
-  for (const ws of clients) {
-    if (ws.readyState === WebSocket.OPEN) {
-      try {
-        ws.send(data)
-      } catch {
-        // a dead socket is removed by its own close handler
-      }
-    }
-  }
-}
 
 function lanAddresses(port: number): string[] {
   const out: string[] = []
@@ -82,8 +67,8 @@ export async function startRemoteServer(backend: Backend): Promise<StartResult> 
       return
     }
     socketServer.handleUpgrade(req, socket, head, (ws) => {
-      clients.add(ws)
-      const drop = () => clients.delete(ws)
+      addClient(ws)
+      const drop = () => removeClient(ws)
       ws.on('close', drop)
       ws.on('error', drop)
     })
@@ -111,14 +96,7 @@ export async function startRemoteServer(backend: Backend): Promise<StartResult> 
 }
 
 export async function stopRemoteServer(): Promise<void> {
-  for (const ws of clients) {
-    try {
-      ws.close()
-    } catch {
-      // already closing
-    }
-  }
-  clients.clear()
+  closeAllClients()
   if (wss) {
     try {
       wss.close()

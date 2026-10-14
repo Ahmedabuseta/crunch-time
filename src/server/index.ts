@@ -3,8 +3,10 @@ import type { Backend } from '../backend'
 import { getRemoteConfig } from '../backend/settings'
 import { getRemoteServerStatus, startRemoteServer, stopRemoteServer } from './server'
 
-export { startRemoteServer, stopRemoteServer, getRemoteServerStatus, broadcast } from './server'
+export { startRemoteServer, stopRemoteServer, getRemoteServerStatus } from './server'
 export type { StartResult } from './server'
+export { broadcast } from './ws'
+export { emitEvent, setDesktopNotifier } from './events'
 
 /**
  * Reads the Remote settings and starts/stops the server to match. Called at

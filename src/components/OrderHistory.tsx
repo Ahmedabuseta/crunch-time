@@ -117,8 +117,16 @@ export function OrderHistory() {
 
     window.addEventListener('focus', onFocus)
     document.addEventListener('visibilitychange', onVisibility)
+
+    // Live updates from the phone app: the remote server pushes order events,
+    // so a sale taken on a phone appears on this board without waiting for the poll.
+    const offPush = window.api.events?.onPush((e) => {
+      if (e.channel === 'order:created' || e.channel === 'order:updated') void load()
+    })
+
     return () => {
       mounted = false
+      offPush?.()
       window.clearInterval(timer)
       window.removeEventListener('focus', onFocus)
       document.removeEventListener('visibilitychange', onVisibility)
