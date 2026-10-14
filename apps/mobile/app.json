@@ -1,0 +1,52 @@
+{
+  "expo": {
+    "name": "كرنش تايم",
+    "slug": "crunch-time-owner",
+    "scheme": "crunchtime",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/app-icon.png",
+    "userInterfaceStyle": "automatic",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.crunchtime.owner"
+    },
+    "android": {
+      "package": "com.crunchtime.owner",
+      "adaptiveIcon": {
+        "backgroundColor": "#05070B",
+        "foregroundImage": "./assets/images/app-icon.png",
+        "backgroundImage": "./assets/images/splash.png",
+        "monochromeImage": "./assets/images/app-icon.png"
+      },
+      "predictiveBackGestureEnabled": true
+    },
+    "web": {
+      "output": "static",
+      "favicon": "./assets/images/app-icon.png"
+    },
+    "plugins": [
+      "expo-asset",
+      "expo-router",
+      "expo-web-browser",
+      "expo-secure-store",
+      "expo-font",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/images/app-icon.png",
+          "imageWidth": 220,
+          "resizeMode": "contain",
+          "backgroundColor": "#05070B",
+          "dark": {
+            "backgroundColor": "#05070B"
+          }
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true,
+      "reactCompiler": true
+    }
+  }
+}
