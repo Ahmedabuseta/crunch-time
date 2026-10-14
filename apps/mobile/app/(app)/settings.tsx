@@ -1,4 +1,5 @@
 import { getApiBaseUrl } from '@/api/client';
+import { ActionFab } from '@/components/app/ActionFab';
 import { api } from '@/api/endpoints';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -55,6 +56,7 @@ export default function MoreScreen() {
     ]);
 
   return (
+    <>
     <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingTop: insets.top + 12, paddingBottom: TAB_BAR_SPACE + 20 }}>
       <View style={styles.header}>
         <Text variant='title'>المزيد</Text>
@@ -104,28 +106,16 @@ export default function MoreScreen() {
           </Button>
         </Card>
 
-        <Card style={{ gap: 10 }}>
+        <Card style={{ gap: 6 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
             <Boxes size={18} color={primary} />
             <Text variant='subtitle' style={{ flex: 1 }}>
               الإدارة
             </Text>
           </View>
-          <Button variant='secondary' icon={Package} style={{ alignSelf: 'stretch' }} onPress={() => router.push('/manage/products')}>
-            المنتجات
-          </Button>
-          <Button variant='secondary' icon={LayoutGrid} style={{ alignSelf: 'stretch' }} onPress={() => router.push('/manage/categories')}>
-            الأقسام
-          </Button>
-          <Button variant='secondary' icon={Boxes} style={{ alignSelf: 'stretch' }} onPress={() => router.push('/manage/inventory')}>
-            المخزون
-          </Button>
-          <Button variant='secondary' icon={Users} style={{ alignSelf: 'stretch' }} onPress={() => router.push('/manage/users')}>
-            الموظفين
-          </Button>
-          <Button variant='secondary' icon={Store} style={{ alignSelf: 'stretch' }} onPress={() => router.push('/manage/store')}>
-            بيانات المحل والنسخ الاحتياطي
-          </Button>
+          <Text variant='caption' style={{ color: muted }}>
+            منتجات · أقسام · مخزون · موظفين · بيانات المحل. اضغط الزر العائم تحت للوصول السريع.
+          </Text>
         </Card>
 
         <Card style={{ gap: 10 }}>
@@ -171,7 +161,19 @@ export default function MoreScreen() {
           </Text>
         </Pressable>
       </View>
-    </ScrollView>
+      </ScrollView>
+
+      <ActionFab
+        footer='إدارة المحل'
+        actions={[
+          { key: 'products', label: 'المنتجات', icon: Package, onPress: () => router.push('/manage/products') },
+          { key: 'categories', label: 'الأقسام', icon: LayoutGrid, onPress: () => router.push('/manage/categories') },
+          { key: 'inventory', label: 'المخزون', icon: Boxes, onPress: () => router.push('/manage/inventory') },
+          { key: 'users', label: 'الموظفين', icon: Users, onPress: () => router.push('/manage/users') },
+          { key: 'store', label: 'بيانات المحل', icon: Store, onPress: () => router.push('/manage/store') },
+        ]}
+      />
+    </>
   );
 }
 
