@@ -20,7 +20,7 @@ const {
 } = await import('../backend')
 const { runMigrations } = await import('../db/migrate')
 const { seedDatabase } = await import('../db/seed')
-const { closeSqlite } = await import('../db/client')
+const { getSqlite, closeSqlite } = await import('../db/client')
 const { applyRemoteServer, stopRemoteServer, getRemoteStatus } = await import('../server')
 const { signToken, verifyToken } = await import('../server/tokens')
 
@@ -128,6 +128,54 @@ describe('remote server: PIN change revokes tokens', () => {
     expect(relogin.status).toBe(200)
     const fresh = (await relogin.json()).token
     expect((await authed('/menu', fresh)).status).toBe(200)
+  })
+})
+
+describe('remote server: pairing (QR)', () => {
+  it('exchanges a one-time code for a session, then burns it', async () => {
+    backend.session.setUser({ id: 'test-admin', role: 'admin' })
+    const created = backend.settings.createRemotePairCode()
+    expect(created.ok).toBe(true)
+    const code = (created as { code: string }).code
+
+    const first = await fetch(`${base}/auth/pair`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ code }),
+    })
+    expect(first.status).toBe(200)
+    const token = (await first.json()).token
+    expect(typeof token).toBe('string')
+
+    // The token it handed back is a real session.
+    expect((await authed('/menu', token)).status).toBe(200)
+
+    // Single use: the same code can never be replayed.
+    const second = await fetch(`${base}/auth/pair`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ code }),
+    })
+    expect(second.status).toBe(401)
+  })
+
+  it('rejects a code that was never issued', async () => {
+    const res = await fetch(`${base}/auth/pair`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ code: '000000' }),
+    })
+    expect(res.status).toBe(401)
+  })
+
+  it('refuses to issue a code until a PIN exists', async () => {
+    backend.session.setUser({ id: 'test-admin', role: 'admin' })
+    getSqlite().prepare("UPDATE settings SET remote_pin_hash = NULL WHERE id = 'settings'").run()
+    try {
+      expect(backend.settings.createRemotePairCode().ok).toBe(false)
+    } finally {
+      await backend.settings.setRemotePin('1234')
+    }
   })
 })
 

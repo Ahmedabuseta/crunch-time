@@ -48,6 +48,20 @@ contextBridge.exposeInMainWorld('api', {
     get: () => invoke('remote:get'),
     set: (data: unknown) => invoke('remote:set', data),
     setPin: (pin: string) => invoke('remote:setPin', pin),
+    generatePin: () => invoke('remote:generatePin'),
+    pairCode: () => invoke('remote:pairCode'),
+    clearPairCode: () => invoke('remote:clearPairCode'),
+  },
+
+  // ─── Tailscale (remote access helper) ──────────────────────
+  tailscale: {
+    status: () => invoke('tailscale:status'),
+    install: () => invoke('tailscale:install'),
+    up: () => invoke('tailscale:up'),
+    funnelStatus: () => invoke('tailscale:funnelStatus'),
+    funnelEnable: (localPort: number, publicPort?: number) =>
+      invoke('tailscale:funnelEnable', localPort, publicPort),
+    funnelDisable: (publicPort?: number) => invoke('tailscale:funnelDisable', publicPort),
   },
 
   // ─── Server events (phone-side order changes, pushed live) ──

@@ -267,6 +267,10 @@ export const settings = sqliteTable('settings', {
   remotePort: integer('remote_port').notNull().default(4317),
   remotePinHash: text('remote_pin_hash'),
   remoteSecret: text('remote_secret'),
+  // Single-use pairing code (shown as a QR on the PC so a phone can sign in
+  // without typing the address and PIN). Short-lived and cleared on use.
+  remotePairCode: text('remote_pair_code'),
+  remotePairExpires: text('remote_pair_expires'),
 })
 
 // ─── Kitchen Stations (print routing: categories → printer) ────

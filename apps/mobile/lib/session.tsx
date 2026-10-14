@@ -25,6 +25,8 @@ interface SessionValue {
   completeOnboarding: () => Promise<void>;
   /** Saves the address and probes /health. Throws ApiError when unreachable. */
   connect: (url: string) => Promise<void>;
+  /** Address + one-time pairing code from the QR — signs in without a PIN. */
+  pair: (url: string, code: string) => Promise<void>;
   signIn: (pin: string) => Promise<void>;
   signOut: () => Promise<void>;
 }
@@ -75,14 +77,24 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     setSignedIn(true);
   }, []);
 
+  const pair = useCallback(
+    async (url: string, code: string) => {
+      await connect(url);
+      const res = await api.pair(code);
+      await setToken(res.token);
+      setSignedIn(true);
+    },
+    [connect]
+  );
+
   const signOut = useCallback(async () => {
     await clearSession();
     setSignedIn(false);
   }, []);
 
   const value = useMemo<SessionValue>(
-    () => ({ ready, serverUrl, signedIn, onboardingDone, completeOnboarding, connect, signIn, signOut }),
-    [ready, serverUrl, signedIn, onboardingDone, completeOnboarding, connect, signIn, signOut]
+    () => ({ ready, serverUrl, signedIn, onboardingDone, completeOnboarding, connect, pair, signIn, signOut }),
+    [ready, serverUrl, signedIn, onboardingDone, completeOnboarding, connect, pair, signIn, signOut]
   );
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;

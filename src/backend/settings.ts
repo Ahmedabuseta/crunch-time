@@ -1,6 +1,6 @@
 // Settings + discount codes.
 import { and, eq, sql } from 'drizzle-orm'
-import { randomBytes } from 'crypto'
+import { randomBytes, randomInt } from 'crypto'
 import { getDb, getSqlite } from '../db/client'
 import * as schema from '../db/schema'
 import { hardDelete, uuid } from './shared'
@@ -81,7 +81,7 @@ export async function setRemotePin(pin: string) {
   if (clean.length < 4) return { ok: false, error: 'الرقم السري لازم يكون 4 أرقام على الأقل' }
   if (clean.length > 64) return { ok: false, error: 'الرقم السري طويل جداً' }
   const pinHash = await hashPin(clean)
-  patchSettings({ remotePinHash: pinHash, remoteSecret: randomBytes(32).toString('hex') })
+  patchSettings({ remotePinHash: pinHash, remoteSecret: randomBytes(32).toString('hex'), remotePairCode: null, remotePairExpires: null })
   return { ok: true }
 }
 
@@ -94,6 +94,69 @@ export async function verifyRemotePin(pin: string): Promise<boolean> {
   } catch {
     return false
   }
+}
+
+// ─── Pairing (scan a QR instead of typing the address and PIN) ──────
+export const PAIR_CODE_TTL_MS = 10 * 60 * 1000
+
+function sixDigits(): string {
+  return String(randomInt(100000, 1000000))
+}
+
+/**
+ * Creates a random PIN so the owner never has to invent one. The plaintext is
+ * returned once for display — only the hash is kept, and the signing secret is
+ * rotated, so any phone already paired is signed out.
+ */
+export async function generateRemotePin() {
+  requireAdmin()
+  const pin = sixDigits()
+  const pinHash = await hashPin(pin)
+  patchSettings({
+    remotePinHash: pinHash,
+    remoteSecret: randomBytes(32).toString('hex'),
+    remotePairCode: null,
+    remotePairExpires: null,
+  })
+  writeAudit({ action: 'remote.pin.generate', entity: 'settings', entityId: 'settings', after: { generated: true } })
+  return { ok: true, pin }
+}
+
+/** Issues a short-lived, single-use code for the pairing QR. */
+export function createRemotePairCode() {
+  requireAdmin()
+  const { pinHash } = getRemoteConfig()
+  if (!pinHash) return { ok: false as const, error: 'حدّد الرقم السري للهاتف الأول' }
+  const code = sixDigits()
+  const expiresAt = new Date(Date.now() + PAIR_CODE_TTL_MS).toISOString()
+  patchSettings({ remotePairCode: code, remotePairExpires: expiresAt })
+  return { ok: true as const, code, expiresAt }
+}
+
+export function clearRemotePairCode() {
+  requireAdmin()
+  patchSettings({ remotePairCode: null, remotePairExpires: null })
+  return { ok: true }
+}
+
+/**
+ * Checks a pairing code and burns it. No admin check: this runs on the HTTP
+ * server, where there is no desktop session — possession of a live, unexpired
+ * code is the credential, exactly like the PIN.
+ */
+export function consumeRemotePairCode(code: string): boolean {
+  const db = getDb()
+  const row = db.select({ pairCode: settings.remotePairCode, expires: settings.remotePairExpires })
+    .from(settings).where(eq(settings.id, 'settings')).get()
+  const supplied = String(code ?? '').trim()
+  if (!row?.pairCode || !supplied) return false
+  if (supplied !== row.pairCode) return false
+  if (!row.expires || row.expires < new Date().toISOString()) {
+    patchSettings({ remotePairCode: null, remotePairExpires: null })
+    return false
+  }
+  patchSettings({ remotePairCode: null, remotePairExpires: null })
+  return true
 }
 
 export async function updateSettings(data: any, opts?: { listPrinters?: () => Promise<any[]> }) {

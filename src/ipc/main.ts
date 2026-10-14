@@ -6,6 +6,14 @@ import { runMigrations } from '../db/migrate'
 import { seedDatabase } from '../db/seed'
 import { createBackend, Backend } from '../backend'
 import { applyRemoteServer, getRemoteStatus, setDesktopNotifier } from '../server'
+import {
+  disableFunnel,
+  enableFunnel,
+  getFunnelStatus,
+  getTailscaleStatus,
+  installTailscale,
+  tailscaleUp,
+} from '../backend/tailscale'
 import { silentPrint } from './print'
 
 let backend: Backend | null = null
@@ -716,4 +724,25 @@ export function registerIpcHandlers() {
     const res = await b.settings.setRemotePin(pin)
     return { ...res, status: getRemoteStatus() }
   })
+
+  // Let the app invent the PIN so the owner never has to.
+  ipcMain.handle('remote:generatePin', async () => {
+    const res = await b.settings.generateRemotePin()
+    return { ...res, status: getRemoteStatus() }
+  })
+
+  // Single-use code for the pairing QR (10 minutes).
+  ipcMain.handle('remote:pairCode', () => b.settings.createRemotePairCode())
+  ipcMain.handle('remote:clearPairCode', () => b.settings.clearRemotePairCode())
+
+  // ═══════════════════════════════════════════════════════════
+  // TAILSCALE (remote access helper)
+  // ═══════════════════════════════════════════════════════════
+  ipcMain.handle('tailscale:status', () => getTailscaleStatus())
+  ipcMain.handle('tailscale:install', () => installTailscale())
+  ipcMain.handle('tailscale:up', () => tailscaleUp())
+  ipcMain.handle('tailscale:funnelStatus', () => getFunnelStatus())
+  ipcMain.handle('tailscale:funnelEnable', (_e, localPort: number, publicPort?: number) =>
+    enableFunnel(localPort, publicPort))
+  ipcMain.handle('tailscale:funnelDisable', (_e, publicPort?: number) => disableFunnel(publicPort))
 }

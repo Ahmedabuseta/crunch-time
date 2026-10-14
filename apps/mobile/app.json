@@ -32,6 +32,12 @@
       "expo-secure-store",
       "expo-font",
       [
+        "expo-camera",
+        {
+          "cameraPermission": "التطبيق محتاج الكاميرا عشان تمسح كود ربط الخادم."
+        }
+      ],
+      [
         "expo-splash-screen",
         {
           "image": "./assets/images/app-icon.png",

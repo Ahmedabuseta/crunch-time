@@ -63,6 +63,10 @@ export const api = {
   login: (pin: string) =>
     request<LoginResponse>('/auth/login', { method: 'POST', body: { pin }, auth: false }),
 
+  /** Exchange a single-use pairing code (from the QR) for a session. */
+  pair: (code: string) =>
+    request<LoginResponse>('/auth/pair', { method: 'POST', body: { code }, auth: false }),
+
   // ─── Menu ───────────────────────────────────────────────────
   menu: () => request<Menu>('/menu'),
   productOptions: (id: string) => request<ProductOptions>(`/menu/products/${id}/options`),

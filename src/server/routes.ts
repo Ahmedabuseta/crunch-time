@@ -4,8 +4,10 @@
 // admin gate lives in the IPC session, which the server never uses).
 import type { FastifyInstance } from 'fastify'
 import type { Backend } from '../backend'
-import { getRemoteConfig, verifyRemotePin } from '../backend/settings'
+import { consumeRemotePairCode, getRemoteConfig, verifyRemotePin } from '../backend/settings'
+import { withDeviceLabel, writeAudit } from '../backend/audit'
 import { createRateLimiter } from './ratelimit'
+import { deviceLabel } from './util'
 import { registerOrderRoutes } from './routes.orders'
 import { registerMoneyRoutes } from './routes.money'
 import { registerCatalogRoutes } from './routes.catalog'
@@ -23,10 +25,31 @@ import {
 } from './tokens'
 
 // Paths reachable without a token.
-const PUBLIC_PATHS = new Set(['/health', '/auth/login'])
+const PUBLIC_PATHS = new Set(['/health', '/auth/login', '/auth/pair'])
 
 // 8 wrong PINs from one IP inside 5 minutes locks that IP out for 10 minutes.
 const loginLimiter = createRateLimiter({ max: 8, windowMs: 5 * 60_000, lockMs: 10 * 60_000 })
+
+// Funnel puts this server on the public internet, where guessing can come from
+// many addresses at once. On top of the per-IP limit, a global brake pauses
+// login and pairing for everyone after 40 failures in 15 minutes.
+const globalLoginLimiter = createRateLimiter({ max: 40, windowMs: 15 * 60_000, lockMs: 15 * 60_000 })
+
+const GLOBAL_KEY = 'all'
+
+/** null when allowed, otherwise the Arabic "too many attempts" reply. */
+function throttle(ip: string) {
+  const globalWait = globalLoginLimiter.retryAfter(GLOBAL_KEY)
+  if (globalWait !== null) return `محاولات كثيرة — انتظر ${globalWait} ثانية`
+  const wait = loginLimiter.retryAfter(ip)
+  if (wait !== null) return `محاولات كثيرة — انتظر ${wait} ثانية`
+  return null
+}
+
+function recordAuthFailure(ip: string) {
+  loginLimiter.recordFailure(ip)
+  globalLoginLimiter.recordFailure(GLOBAL_KEY)
+}
 
 /** Builds the auth guard + registers every route on the instance. */
 export function registerRoutes(app: FastifyInstance, backend: Backend) {
@@ -62,9 +85,9 @@ export function registerRoutes(app: FastifyInstance, backend: Backend) {
 
   app.post('/auth/login', async (req, reply) => {
     const ip = req.ip || 'unknown'
-    const wait = loginLimiter.retryAfter(ip)
-    if (wait !== null) {
-      return reply.code(429).send({ ok: false, error: `محاولات كثيرة — انتظر ${wait} ثانية`, retryAfter: wait })
+    const blocked = throttle(ip)
+    if (blocked) {
+      return reply.code(429).send({ ok: false, error: blocked, retryAfter: 60 })
     }
     const cfg = getRemoteConfig()
     if (!cfg.pinHash || !cfg.secret) {
@@ -73,10 +96,33 @@ export function registerRoutes(app: FastifyInstance, backend: Backend) {
     const pin = String((req.body as any)?.pin ?? '')
     const ok = await verifyRemotePin(pin)
     if (!ok) {
-      loginLimiter.recordFailure(ip)
+      recordAuthFailure(ip)
       return reply.code(401).send({ ok: false, error: 'الرقم السري غلط' })
     }
     loginLimiter.reset(ip)
+    return { ok: true, token: signToken(cfg.secret), expiresIn: TOKEN_TTL_MS }
+  })
+
+  // Exchange a single-use pairing code (from the QR on the PC) for a session —
+  // the owner never types the address or the PIN.
+  app.post('/auth/pair', async (req, reply) => {
+    const ip = req.ip || 'unknown'
+    const blocked = throttle(ip)
+    if (blocked) {
+      return reply.code(429).send({ ok: false, error: blocked, retryAfter: 60 })
+    }
+    const cfg = getRemoteConfig()
+    if (!cfg.secret) {
+      return reply.code(401).send({ ok: false, error: 'الخادم غير جاهز — لم يتم تحديد الرقم السري بعد' })
+    }
+    const body = (req.body || {}) as any
+    if (!consumeRemotePairCode(String(body.code ?? ''))) {
+      recordAuthFailure(ip)
+      return reply.code(401).send({ ok: false, error: 'كود الربط غلط أو انتهت صلاحيته — اعمل كود جديد من الكمبيوتر' })
+    }
+    loginLimiter.reset(ip)
+    withDeviceLabel(deviceLabel(req.headers, body), () =>
+      writeAudit({ action: 'remote.pair', entity: 'settings', entityId: 'settings', after: { paired: true } }))
     return { ok: true, token: signToken(cfg.secret), expiresIn: TOKEN_TTL_MS }
   })
 

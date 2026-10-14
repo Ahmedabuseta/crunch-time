@@ -12,16 +12,37 @@ same colour palette as the till.
 ## Before you start: turn the server on
 
 1. On the shop PC, open **الإعدادات → النظام → الخادم البعيد**.
-2. Set a **PIN** for the phone, then flip **تشغيل الخادم** on.
-3. Copy the address the card shows:
-   - **Wi-Fi (inside the shop)** — `http://192.168.x.x:4317`
-   - **Tailscale (from anywhere)** — `http://100.x.y.z:4317`, shown once
-     Tailscale is installed and signed in on the PC.
+2. Press **توليد رقم سري تلقائي** — no need to invent one.
+3. Flip **تشغيل الخادم** on.
+4. Press **إظهار كود الربط** and leave the QR on screen.
 
-   Install [Tailscale](https://tailscale.com) (free tier) on **both** the PC and
-   the phone, sign both in to the same account, and the remote address works
-   from any network. The server already listens on `0.0.0.0`, so nothing else
-   needs changing on the PC.
+Then, in the app, tap **امسح كود الربط** and point the camera at it. That's the
+whole setup — the address and the code travel in the QR, and the code is
+single-use with a 10-minute life. (Typing the address and PIN by hand still
+works as a fallback.)
+
+## Getting in from outside the shop
+
+The PC can publish the POS through **Tailscale Funnel**, which gives a real
+HTTPS URL with no app on the phone and no Cloudflare account:
+
+1. On the PC card, press **تثبيت Tailscale** (or install it yourself) and then
+   **تسجيل الدخول**. Sign-in opens a browser — that step is always manual,
+   it is your Tailscale account.
+2. In the Tailscale admin console, enable **HTTPS certificates** and the
+   **Funnel** node attribute for your tailnet (one-time, per tailnet).
+3. Press **تشغيل الوصول من أي مكان**. The card shows the public URL, e.g.
+   `https://shop.tailnet-name.ts.net`, and the pairing QR now carries it.
+
+Funnel runs with `--bg`, so it is **permanent**: it is registered with the
+Tailscale service and survives reboots until you press
+**إيقاف الوصول من أي مكان**. It only listens on 443/8443/10000, so the PC
+proxies that to the server's own port.
+
+> A Funnel URL is **public**. The PIN is the only gate, so use the generated
+> one, and note the server also applies a global lockout after repeated
+> failures. If you would rather stay off the public internet, use the
+> Tailscale address instead (both are shown on the card).
 
 ## Run the app
 

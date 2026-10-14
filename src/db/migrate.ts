@@ -128,6 +128,8 @@ export function runMigrations() {
   ensureColumn(db, 'settings', 'remote_port', 'INTEGER NOT NULL DEFAULT 4317')
   ensureColumn(db, 'settings', 'remote_pin_hash', 'TEXT')
   ensureColumn(db, 'settings', 'remote_secret', 'TEXT')
+  ensureColumn(db, 'settings', 'remote_pair_code', 'TEXT')
+  ensureColumn(db, 'settings', 'remote_pair_expires', 'TEXT')
   ensureColumn(db, 'orders', 'status_reason', 'TEXT')
   ensureColumn(db, 'orders', 'refunded_amount', 'REAL NOT NULL DEFAULT 0')
   ensureColumn(db, 'order_items', 'item_discount', 'REAL NOT NULL DEFAULT 0')

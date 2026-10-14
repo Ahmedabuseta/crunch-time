@@ -60,6 +60,48 @@ export interface RemoteBridge {
   get: () => Promise<RemoteStatus>
   set: (data: { enabled?: boolean; port?: number }) => Promise<{ ok: boolean; error?: string; status: RemoteStatus }>
   setPin: (pin: string) => Promise<{ ok: boolean; error?: string; status: RemoteStatus }>
+  /** Creates a random PIN for the owner; the plaintext is returned once. */
+  generatePin: () => Promise<{ ok: boolean; pin?: string; error?: string; status: RemoteStatus }>
+  /** Single-use, 10-minute code embedded in the pairing QR. */
+  pairCode: () => Promise<{ ok: boolean; code?: string; expiresAt?: string; error?: string }>
+  clearPairCode: () => Promise<{ ok: boolean }>
+}
+
+export interface TailscaleStatus {
+  installed: boolean
+  online: boolean
+  ipv4: string | null
+  dnsName: string | null
+  binary: string | null
+  error: string | null
+  canAutoInstall: boolean
+}
+
+export interface TailscaleActionResult {
+  ok: boolean
+  action: string
+  message: string
+  error?: string
+  url?: string
+}
+
+export interface FunnelStatus {
+  available: boolean
+  enabled: boolean
+  /** Public HTTPS URL for the phone, e.g. https://machine.tailnet.ts.net */
+  url: string | null
+  dnsName: string | null
+  publicPort: number | null
+  error: string | null
+}
+
+export interface TailscaleBridge {
+  status: () => Promise<TailscaleStatus>
+  install: () => Promise<TailscaleActionResult>
+  up: () => Promise<TailscaleActionResult>
+  funnelStatus: () => Promise<FunnelStatus>
+  funnelEnable: (localPort: number, publicPort?: number) => Promise<TailscaleActionResult>
+  funnelDisable: (publicPort?: number) => Promise<TailscaleActionResult>
 }
 
 export interface ServerPushEvent {
@@ -122,6 +164,7 @@ export interface ApiBridge {
     update: (data: any) => Promise<{ ok: boolean }>
   }
   remote: RemoteBridge
+  tailscale: TailscaleBridge
   events: EventsBridge
   discountCode: {
     list: () => Promise<any[]>

@@ -7,14 +7,15 @@ import { View } from '@/components/ui/view';
 import { useColor } from '@/hooks/useColor';
 import { useSession } from '@/lib/session';
 import { Image } from 'expo-image';
-import { Redirect } from 'expo-router';
-import { ArrowLeft, Lock, Server } from 'lucide-react-native';
+import { Redirect, useRouter } from 'expo-router';
+import { ArrowLeft, Lock, QrCode, Server } from 'lucide-react-native';
 import React, { useState } from 'react';
 import { ScrollView, StyleSheet } from 'react-native';
 
 type Step = 'server' | 'pin';
 
 export default function SetupScreen() {
+  const router = useRouter();
   const { serverUrl, signedIn, connect, signIn } = useSession();
   const primary = useColor('primary');
   const muted = useColor('mutedForeground');
@@ -65,9 +66,19 @@ export default function SetupScreen() {
       <Text variant='title'>ربط الخادم</Text>
       <Text variant='caption' style={{ textAlign: 'center', color: muted }}>
         {step === 'server'
-          ? 'اكتب عنوان الجهاز اللي شغال عليه الكاشير. يعمل على الواي فاي أو عبر Tailscale من أي مكان.'
+          ? 'أسهل طريقة: امسح كود الربط من شاشة الكمبيوتر. أو اكتب عنوان الجهاز بنفسك.'
           : 'اكتب الرقم السري اللي ظبّطته من إعدادات الخادم على الكمبيوتر.'}
       </Text>
+
+      {step === 'server' ? (
+        <Button
+          onPress={() => router.push('/scan')}
+          icon={QrCode}
+          style={{ alignSelf: 'stretch' }}
+        >
+          امسح كود الربط
+        </Button>
+      ) : null}
 
       <Card style={styles.card}>
         {step === 'server' ? (

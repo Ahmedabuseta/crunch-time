@@ -17,6 +17,9 @@ declare module 'electron' {
   export const contextBridge: {
     exposeInMainWorld(apiKey: string, api: Record<string, any>): void
   }
+  export const shell: {
+    openExternal(url: string): Promise<void>
+  }
   export class BrowserWindow {
     constructor(opts?: any)
     static getAllWindows(): BrowserWindow[]

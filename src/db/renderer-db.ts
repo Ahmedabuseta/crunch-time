@@ -433,9 +433,31 @@ export const rendererApi = {
       T.settings.update(r => r.id === 'settings', { remotePinHash: 'mock' })
       return { ok: true, status: rendererApi.remote.get() }
     },
+    // Browser dev has no server, so there is nothing to pair with.
+    generatePin: () => ({
+      ok: false,
+      error: 'وضع المتصفح — استخدم تطبيق الكمبيوتر',
+      status: rendererApi.remote.get(),
+    }),
+    pairCode: () => ({ ok: false, error: 'وضع المتصفح — استخدم تطبيق الكمبيوتر' }),
+    clearPairCode: () => ({ ok: true }),
   },
   // No server in the browser mock, so there are no pushed events to deliver.
   events: { onPush: () => () => {} },
+  // Nor is Tailscale available outside the desktop app.
+  tailscale: {
+    status: async () => ({
+      installed: false, online: false, ipv4: null, dnsName: null,
+      binary: null, error: 'وضع المتصفح', canAutoInstall: false,
+    }),
+    install: async () => ({ ok: false, action: 'none', message: 'وضع المتصفح' }),
+    up: async () => ({ ok: false, action: 'none', message: 'وضع المتصفح' }),
+    funnelStatus: async () => ({
+      available: false, enabled: false, url: null, dnsName: null, publicPort: null, error: 'وضع المتصفح',
+    }),
+    funnelEnable: async () => ({ ok: false, action: 'none', message: 'وضع المتصفح' }),
+    funnelDisable: async () => ({ ok: false, action: 'none', message: 'وضع المتصفح' }),
+  },
   discountCode: {
     list: () => T.discountCodes.select(),
     create: (data: any) => { const id = uuid(); T.discountCodes.insert({ id, ...data, active: true, usedCount: 0 }); return { id } },
