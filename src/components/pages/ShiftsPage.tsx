@@ -15,7 +15,7 @@ import { DatePicker } from '@/components/ui/date-picker'
 import { toast } from '@/components/ui/toast'
 import type { ViewMode } from '@/components/ui/view-toggle'
 
-export function ShiftsPage() {
+export function ShiftsPage({ onOpenShiftReport }: { onOpenShiftReport: (shiftId: string) => void }) {
   const shifts = useShiftStore((s) => s.shifts)
   const currentShift = useShiftStore((s) => s.currentShift)
   const fetch = useShiftStore((s) => s.fetch)
@@ -277,9 +277,11 @@ export function ShiftsPage() {
         onFilterChange={(v) => { setStatusFilter(v); list.setPage(1) }}
       />
 
+      <p className="text-[10px] text-muted-foreground px-5 pb-1">اضغط على أي وردية لعرض تقريرها التفصيلي</p>
+
       {view === 'table' ? (
         <div className="flex-1 p-5 overflow-auto">
-          <DataTable columns={columns} data={list.items} keyExtractor={(s) => s.id} sort={list.sort} onSortChange={list.setSort} />
+          <DataTable columns={columns} data={list.items} keyExtractor={(s) => s.id} sort={list.sort} onSortChange={list.setSort} onRowClick={(s) => onOpenShiftReport(s.id)} />
         </div>
       ) : (
         <ScrollArea className="flex-1 p-5">
@@ -288,9 +290,13 @@ export function ShiftsPage() {
             const recon = reconciliations[s.id]
             const isOpen = s.status === 'open'
             return (
-              <div key={s.id} className="border-2 rounded-2xl bg-card p-4 space-y-3">
-                {/* Header */}
-                <div className="flex items-center gap-3">
+              <div key={s.id} className="border-2 rounded-2xl bg-card overflow-hidden">
+                {/* Header — click opens the full shift report */}
+                <div
+                  className="p-4 space-y-3 cursor-pointer hover:bg-secondary/20 transition-colors"
+                  onClick={() => onOpenShiftReport(s.id)}
+                >
+                  <div className="flex items-center gap-3">
                   <div className={cn("w-9 h-9 rounded-xl flex items-center justify-center", isOpen ? "bg-green-500/10" : "bg-secondary")}>
                     {isOpen ? <Unlock className="h-4 w-4 text-green-500" /> : <Lock className="h-4 w-4 text-muted-foreground" />}
                   </div>
@@ -308,6 +314,7 @@ export function ShiftsPage() {
                   <span className={cn("text-[10px] font-bold rounded-full px-2.5 py-0.5", isOpen ? "bg-green-500/10 text-green-500" : "bg-secondary text-muted-foreground")}>
                     {isOpen ? 'مفتوحة' : 'مغلقة'}
                   </span>
+                </div>
                 </div>
 
                 {/* Closed shift reconciliation */}

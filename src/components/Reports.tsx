@@ -69,11 +69,11 @@ const ANAL_CARDS: { id: string; tab: TabId; label: string }[] = [
   { id: 'dio', tab: 'inventory', label: 'أيام التغطية' },
 ]
 
-const AXI_TICK = { fontSize: 9, fill: 'rgba(148,163,184,0.85)' }
-const GRID_STROKE = 'rgba(148,163,184,0.15)'
-const CURSOR_FILL = 'rgba(148,163,184,0.08)'
+export const AXI_TICK = { fontSize: 9, fill: 'rgba(148,163,184,0.85)' }
+export const GRID_STROKE = 'rgba(148,163,184,0.15)'
+export const CURSOR_FILL = 'rgba(148,163,184,0.08)'
 
-const shortName = (n: string) => (n.length > 10 ? n.slice(0, 10) + '…' : n)
+export const shortName = (n: string) => (n.length > 10 ? n.slice(0, 10) + '…' : n)
 
 export function Reports() {
   const {

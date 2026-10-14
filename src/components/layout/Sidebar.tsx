@@ -7,6 +7,7 @@ export type Page =
   | 'menu' | 'orders' | 'delivery' | 'my-shift'
   | 'reports' | 'products' | 'categories' | 'addons' | 'modifiers'
   | 'inventory' | 'users' | 'shifts' | 'cash-drawer' | 'settings'
+  | 'shift-report'
 
 interface SidebarProps {
   current: Page

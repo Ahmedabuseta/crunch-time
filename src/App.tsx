@@ -21,6 +21,7 @@ import { ModifiersPage } from '@/components/pages/ModifiersPage'
 import { InventoryPage } from '@/components/pages/InventoryPage'
 import { UsersPage } from '@/components/pages/UsersPage'
 import { ShiftsPage } from '@/components/pages/ShiftsPage'
+import { ShiftReportPage } from '@/components/pages/ShiftReportPage'
 import { MyShiftPage } from '@/components/pages/MyShiftPage'
 import { CashDrawerPage } from '@/components/pages/CashDrawerPage'
 import { SettingsPage } from '@/components/pages/SettingsPage'
@@ -41,6 +42,8 @@ function App() {
   const [cartOpen, setCartOpen] = useState(false)
   const [themeMode, setThemeModeLocal] = useState<ThemeMode>(getThemeMode)
   const cartCount = useCartStore((s) => s.itemCount)()
+  // Shift whose report is open on the shift-report detail page.
+  const [shiftReportId, setShiftReportId] = useState<string | null>(null)
 
   const fetchCategories = useCategoryStore((s) => s.fetch)
   const fetchProducts = useProductStore((s) => s.fetch)
@@ -134,7 +137,7 @@ function App() {
   }
   const isAdmin = currentUser.role === 'admin'
 
-  const adminPages: Page[] = ['reports', 'products', 'categories', 'addons', 'modifiers', 'inventory', 'users', 'shifts', 'cash-drawer', 'settings']
+  const adminPages: Page[] = ['reports', 'products', 'categories', 'addons', 'modifiers', 'inventory', 'users', 'shifts', 'cash-drawer', 'settings', 'shift-report']
   if (!isAdmin && adminPages.includes(page)) {
     setPage('menu')
   }
@@ -165,7 +168,8 @@ function App() {
       case 'modifiers': return <ModifiersPage />
       case 'inventory': return <InventoryPage />
       case 'users': return <UsersPage />
-      case 'shifts': return <ShiftsPage />
+      case 'shifts': return <ShiftsPage onOpenShiftReport={(id) => { setShiftReportId(id); setPage('shift-report') }} />
+      case 'shift-report': return <ShiftReportPage shiftId={shiftReportId} onBack={() => setPage('shifts')} />
       case 'cash-drawer': return <CashDrawerPage />
       case 'settings': return <SettingsPage />
       default: return <ProductGrid category={category} />
@@ -260,7 +264,7 @@ function App() {
       </div>
 
       {/* Mobile admin nav strip — only on admin pages */}
-      {isAdmin && !(['menu', 'orders', 'my-shift'] as Page[]).includes(page) && (
+      {isAdmin && !(['menu', 'orders', 'my-shift', 'shift-report'] as Page[]).includes(page) && (
         <div className="lg:hidden shrink-0">
           <Sidebar current={page} onNavigate={setPage} />
         </div>

@@ -23,5 +23,10 @@ export interface ShiftReport {
   totalRevenue: number
   openingCash: number
   closingCash: number | null
+  expectedCash: number
   cashDifference: number | null
+  payments: { method: string; count: number; total: number }[]
+  topItems: { name: string; emoji: string; qty: number; revenue: number }[]
+  hourly: { hour: number; orderCount: number; revenue: number }[]
+  movements: { type: string; amount: number }[]
 }

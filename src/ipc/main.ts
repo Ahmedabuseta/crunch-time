@@ -2408,17 +2408,69 @@ export function registerIpcHandlers() {
       expectedCash += m.amount * sign
     }
 
+    // Payment method breakdown for the shift
+    const payAgg: Record<string, { method: string; count: number; total: number }> = {}
+    for (const o of shiftOrders) {
+      const method = o.paymentType || 'cash'
+      if (!payAgg[method]) payAgg[method] = { method, count: 0, total: 0 }
+      payAgg[method].count++
+      payAgg[method].total += o.total
+    }
+
+    // Top 5 items by quantity in the shift
+    const productMap = new Map(db.select().from(products).all().map(p => [p.id, p]))
+    const itemAgg: Record<string, { productId: string; qty: number; revenue: number }> = {}
+    for (const o of shiftOrders) {
+      for (const item of db.select().from(orderItems).where(eq(orderItems.orderId, o.id)).all()) {
+        if (!itemAgg[item.productId]) itemAgg[item.productId] = { productId: item.productId, qty: 0, revenue: 0 }
+        itemAgg[item.productId].qty += item.quantity
+        itemAgg[item.productId].revenue += item.unitPrice * item.quantity
+      }
+    }
+    const topItems = Object.values(itemAgg)
+      .sort((a, b) => b.qty - a.qty)
+      .slice(0, 5)
+      .map(t => {
+        const p = productMap.get(t.productId)
+        return { name: p?.name || 'غير معروف', emoji: p?.emoji || '', qty: t.qty, revenue: r2(t.revenue) }
+      })
+
+    // Revenue by hour — only hours with activity in the shift
+    const hourAgg: Record<number, { orderCount: number; revenue: number }> = {}
+    for (const o of shiftOrders) {
+      const h = new Date(o.createdAt).getHours()
+      if (!hourAgg[h]) hourAgg[h] = { orderCount: 0, revenue: 0 }
+      hourAgg[h].orderCount++
+      hourAgg[h].revenue += o.total
+    }
+    const hourly = Object.entries(hourAgg)
+      .map(([hour, data]) => ({ hour: Number(hour), orderCount: data.orderCount, revenue: r2(data.revenue) }))
+      .sort((a, b) => a.hour - b.hour)
+
+    // Cash movements aggregated by type (opening/closing are the shift's bookends)
+    const movAgg: Record<string, number> = {}
+    for (const m of movs) {
+      if (m.type === 'OPENING' || m.type === 'CLOSING') continue
+      const sign = ['SALE', 'CASH_IN'].includes(m.type) ? 1 : -1
+      movAgg[m.type] = (movAgg[m.type] || 0) + m.amount * sign
+    }
+    const movements = Object.entries(movAgg).map(([type, amount]) => ({ type, amount: r2(amount) }))
+
     return {
       shiftId,
       userName: user?.name || 'غير معروف',
       startedAt: shift.startedAt,
       endedAt: shift.endedAt,
       orderCount: shiftOrders.length,
-      totalRevenue: shiftOrders.reduce((s, o) => s + o.total, 0),
+      totalRevenue: r2(shiftOrders.reduce((s, o) => s + o.total, 0)),
       openingCash: shift.openingCash,
       closingCash: shift.closingCash,
-      expectedCash,
-      cashDifference: shift.closingCash != null ? shift.closingCash - expectedCash : null,
+      expectedCash: r2(expectedCash),
+      cashDifference: shift.closingCash != null ? r2(shift.closingCash - expectedCash) : null,
+      payments: Object.values(payAgg).map(p => ({ ...p, total: r2(p.total) })),
+      topItems,
+      hourly,
+      movements,
     }
   })
 
