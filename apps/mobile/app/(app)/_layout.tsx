@@ -44,9 +44,12 @@ export default function AppTabsLayout() {
         },
         tabBarBackground: () => (
           <BlurView
-            intensity={70}
+            intensity={90}
             tint={isDark ? 'dark' : 'light'}
             blurMethod='dimezisBlurViewSdk31Plus'
+            // Divides the Android blur strength; the default 4 reads much
+            // weaker than iOS at the same intensity.
+            blurReductionFactor={2}
             style={StyleSheet.absoluteFill}
           />
         ),
