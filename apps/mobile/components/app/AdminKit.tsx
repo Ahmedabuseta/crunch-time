@@ -7,10 +7,13 @@ import { useRouter } from 'expo-router';
 import { ArrowRight, Search } from 'lucide-react-native';
 import React from 'react';
 import {
+  ActivityIndicator,
   Pressable,
   RefreshControl,
   ScrollView,
   StyleSheet,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
   type ViewStyle,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -23,6 +26,10 @@ export function AdminScreen({
   refreshing,
   onRefresh,
   right,
+  onEndReached,
+  loadingMore,
+  hasMore,
+  listSummary,
 }: {
   title: string;
   subtitle?: string;
@@ -30,17 +37,36 @@ export function AdminScreen({
   refreshing?: boolean;
   onRefresh?: () => void;
   right?: React.ReactNode;
+  /** Paged lists: called when the list is scrolled near its end. */
+  onEndReached?: () => void;
+  loadingMore?: boolean;
+  hasMore?: boolean;
+  /** "٢٥ من ٤١٢" — shown under the list once everything is loaded. */
+  listSummary?: string;
 }) {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const muted = useColor('mutedForeground');
   const primary = useColor('primary');
 
+  // Far enough out that the next page has arrived before the user reaches the
+  // bottom, so the list does not visibly stall.
+  const NEAR_BOTTOM = 240;
+
+  const handleScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    if (!onEndReached || loadingMore || !hasMore) return;
+    const { layoutMeasurement, contentOffset, contentSize } = event.nativeEvent;
+    const remaining = contentSize.height - (contentOffset.y + layoutMeasurement.height);
+    if (remaining < NEAR_BOTTOM) onEndReached();
+  };
+
   return (
     <ScrollView
       style={{ flex: 1 }}
       keyboardShouldPersistTaps='handled'
       contentContainerStyle={{ paddingTop: insets.top + 8, paddingBottom: TAB_BAR_SPACE + 20 }}
+      onScroll={onEndReached ? handleScroll : undefined}
+      scrollEventThrottle={onEndReached ? 160 : undefined}
       refreshControl={
         onRefresh ? (
           <RefreshControl refreshing={Boolean(refreshing)} onRefresh={onRefresh} tintColor={primary} />
@@ -63,6 +89,24 @@ export function AdminScreen({
       </View>
 
       <View style={{ paddingHorizontal: 16, gap: 12 }}>{children}</View>
+
+      {loadingMore ? (
+        <View style={styles.listFooter}>
+          <ActivityIndicator color={primary} />
+        </View>
+      ) : hasMore && onEndReached ? (
+        <Pressable onPress={onEndReached} style={styles.listFooter}>
+          <Text variant='caption' style={{ color: primary, fontWeight: '700' }}>
+            حمّل المزيد
+          </Text>
+        </Pressable>
+      ) : listSummary ? (
+        <View style={styles.listFooter}>
+          <Text variant='caption' style={{ color: muted }}>
+            {listSummary}
+          </Text>
+        </View>
+      ) : null}
     </ScrollView>
   );
 }
@@ -225,6 +269,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingBottom: 12,
   },
+  listFooter: { paddingVertical: 18, alignItems: 'center' },
   searchRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   row: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   leading: { width: 28, alignItems: 'center' },

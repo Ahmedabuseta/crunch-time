@@ -7,6 +7,9 @@ export const FONT_FAMILY = {
   regular: 'Tajawal-Regular',
   medium: 'Tajawal-Medium',
   bold: 'Tajawal-Bold',
+  // Latin display face for the wordmark — Tajawal's Latin is fine for UI, but
+  // "Crunch Time" wants a heavier, rounder geometric that matches the logo.
+  display: 'Poppins-ExtraBold',
 } as const;
 
 // Relative requires: Metro does not resolve the `@/` alias inside require().
@@ -14,6 +17,7 @@ export const fontsToLoad = {
   'Tajawal-Regular': require('../assets/fonts/Tajawal-Regular.ttf'),
   'Tajawal-Medium': require('../assets/fonts/Tajawal-Medium.ttf'),
   'Tajawal-Bold': require('../assets/fonts/Tajawal-Bold.ttf'),
+  'Poppins-ExtraBold': require('../assets/fonts/Poppins-ExtraBold.ttf'),
 } as const;
 
 export function tajawalForWeight(weight?: TextStyle['fontWeight']): string {

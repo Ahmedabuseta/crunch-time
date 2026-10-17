@@ -1,18 +1,19 @@
 import { getApiBaseUrl } from '@/api/client';
-import { api } from '@/api/endpoints';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
 import { Text } from '@/components/ui/text';
 import { View } from '@/components/ui/view';
 import { ModeToggle } from '@/components/ui/mode-toggle';
+import { useHealth } from '@/hooks/queries/store';
 import { useColor } from '@/hooks/useColor';
+import { useOnlineStatus } from '@/hooks/useOnlineStatus';
 import { TAB_BAR_SPACE } from '@/theme/globals';
 import { useSession } from '@/lib/session';
 import Constants from 'expo-constants';
 import { useRouter } from 'expo-router';
 import { BarChart3, Boxes, LogOut, Radio, Server, Sparkles, Wallet } from 'lucide-react-native';
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -28,25 +29,16 @@ export default function MoreScreen() {
   const green = useColor('green');
   const red = useColor('red');
 
-  const [reachable, setReachable] = useState<boolean | null>(null);
-
-  useEffect(() => {
-    let mounted = true;
-    const ping = async () => {
-      try {
-        await api.health();
-        if (mounted) setReachable(true);
-      } catch {
-        if (mounted) setReachable(false);
-      }
-    };
-    void ping();
-    const timer = setInterval(ping, 15000);
-    return () => {
-      mounted = false;
-      clearInterval(timer);
-    };
-  }, []);
+  const online = useOnlineStatus();
+  const health = useHealth({ refetchInterval: 15000 });
+  // null until the first answer, so the badge shows "..." rather than a guess.
+  const reachable: boolean | null = !online
+    ? false
+    : health.isSuccess
+      ? true
+      : health.isError
+        ? false
+        : null;
 
   const confirmSignOut = () =>
     Alert.alert('تسجيل الخروج', 'هتحتاج الرقم السري تاني للدخول.', [

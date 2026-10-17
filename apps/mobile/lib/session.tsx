@@ -6,6 +6,7 @@ import {
   setToken,
   setUnauthorizedHandler,
 } from '@/api/client';
+import { resetQueryCache } from '@/lib/queryClient';
 import { storage } from '@/lib/storage';
 import React, {
   createContext,
@@ -39,7 +40,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   const [ready, setReady] = useState(false);
   const [serverUrl, setServerUrlState] = useState('');
   const [signedIn, setSignedIn] = useState(false);
-  const [onboardingDone, setOnboardingDone] = useState(true);
+  const [onboardingDone, setOnboardingDone] = useState(false);
 
   useEffect(() => {
     let mounted = true;
@@ -49,9 +50,21 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       try {
         const [cfg, done] = await Promise.all([loadApiConfig(), storage.getOnboardingDone()]);
         if (!mounted) return;
+        const hasServer = Boolean(cfg.baseUrl);
+        if (__DEV__) {
+          console.log('[session] boot', {
+            onboardingDone: done && hasServer,
+            hasServer,
+            hasToken: Boolean(cfg.token),
+          });
+        }
         setServerUrlState(cfg.baseUrl);
         setSignedIn(Boolean(cfg.token));
-        setOnboardingDone(done);
+        // "Onboarding done" only means something once the install is actually
+        // set up. A stored flag from an intro that was skipped before ever
+        // connecting must not hide the intro for good, so it counts only
+        // alongside a server address.
+        setOnboardingDone(done && hasServer);
       } catch {
         if (mounted) setOnboardingDone(false);
       } finally {
@@ -63,9 +76,13 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
-  // Any 401 (expired token, PIN changed on the PC) drops us back to setup.
+  // Any 401 (expired token, PIN changed on the PC) drops us back to setup, and
+  // takes the cached business data with it.
   useEffect(() => {
-    setUnauthorizedHandler(() => setSignedIn(false));
+    setUnauthorizedHandler(() => {
+      void resetQueryCache();
+      setSignedIn(false);
+    });
     return () => setUnauthorizedHandler(null);
   }, []);
 
@@ -82,7 +99,13 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   const connect = useCallback(async (url: string) => {
     const saved = await setServerUrl(url);
     setServerUrlState(saved);
+    // A different server means a different shop: nothing cached still applies.
+    await resetQueryCache();
     await api.health();
+    // Reaching a live server is what "set up" means, so this — not the intro
+    // being dismissed — is where the onboarding flag is recorded.
+    await storage.setOnboardingDone(true);
+    setOnboardingDone(true);
   }, []);
 
   const signIn = useCallback(async (pin: string) => {
@@ -102,6 +125,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   );
 
   const signOut = useCallback(async () => {
+    await resetQueryCache();
     await clearSession();
     setSignedIn(false);
   }, []);

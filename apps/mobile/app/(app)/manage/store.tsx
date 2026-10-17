@@ -1,4 +1,3 @@
-import { api } from '@/api/endpoints';
 import type { PrinterInfo, StoreSettings } from '@/api/types';
 import { AdminScreen, Field } from '@/components/app/AdminKit';
 import { Button } from '@/components/ui/button';
@@ -6,58 +5,58 @@ import { Card } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Text } from '@/components/ui/text';
 import { View } from '@/components/ui/view';
+import { useSaveSettings, useTriggerBackup } from '@/hooks/mutations/store';
+import { useBackupStatus, usePrinters, useSettings } from '@/hooks/queries/store';
 import { useColor } from '@/hooks/useColor';
 import { Database, Printer, Store } from 'lucide-react-native';
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { Alert } from 'react-native';
+
+// A stable empty draft, and the one place settings become form strings.
+const EMPTY_SETTINGS_DRAFT: Record<string, string> = {};
+
+function settingsToDraft(s: StoreSettings): Record<string, string> {
+  return {
+    restaurantName: String(s.restaurantName ?? ''),
+    storeTagline: String(s.storeTagline ?? ''),
+    storePhone: String(s.storePhone ?? ''),
+    storePhone2: String(s.storePhone2 ?? ''),
+    storeAddress: String(s.storeAddress ?? ''),
+    taxNumber: String(s.taxNumber ?? ''),
+    vatNumber: String(s.vatNumber ?? ''),
+    receiptFooter: String(s.receiptFooter ?? ''),
+    currencyLabel: String(s.currencyLabel ?? ''),
+    taxRate: String(Math.round(Number(s.taxRate ?? 0) * 100)),
+  };
+}
 
 export default function StoreScreen() {
   const muted = useColor('mutedForeground');
   const green = useColor('green');
 
-  const [draft, setDraft] = useState<Record<string, string>>({});
-  const [printers, setPrinters] = useState<PrinterInfo[]>([]);
-  const [backup, setBackup] = useState<{ lastBackup: string | null; backupCount: number } | null>(null);
-  const [loading, setLoading] = useState(true);
+  const settingsQuery = useSettings();
+  const printersQuery = usePrinters();
+  const backupQuery = useBackupStatus();
+  const saveSettings = useSaveSettings();
+  const triggerBackup = useTriggerBackup();
+
+  const printers: PrinterInfo[] = printersQuery.data?.printers ?? [];
+  const backup = backupQuery.data?.status ?? null;
+
+  const [edits, setEdits] = useState<Record<string, string>>({});
   const [refreshing, setRefreshing] = useState(false);
   const [busy, setBusy] = useState(false);
 
-  const load = useCallback(async () => {
-    try {
-      const [settings, printersRes, backupRes] = await Promise.all([
-        api.settings(),
-        api.printers().catch(() => ({ printers: [] as PrinterInfo[] })),
-        api.backupStatus().catch(() => null),
-      ]);
-      const s = settings.settings as StoreSettings;
-      setDraft({
-        restaurantName: String(s.restaurantName ?? ''),
-        storeTagline: String(s.storeTagline ?? ''),
-        storePhone: String(s.storePhone ?? ''),
-        storePhone2: String(s.storePhone2 ?? ''),
-        storeAddress: String(s.storeAddress ?? ''),
-        taxNumber: String(s.taxNumber ?? ''),
-        vatNumber: String(s.vatNumber ?? ''),
-        receiptFooter: String(s.receiptFooter ?? ''),
-        currencyLabel: String(s.currencyLabel ?? ''),
-        taxRate: String(Math.round(Number(s.taxRate ?? 0) * 100)),
-      });
-      setPrinters(printersRes.printers ?? []);
-      setBackup(backupRes?.status ?? null);
-    } catch (err: any) {
-      Alert.alert('تعذّر تحميل بيانات المحل', err?.message ?? '');
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
+  // Derived draft: the cached settings are the base, typed edits sit on top, so
+  // a background refetch never clobbers what the owner is writing.
+  const settings = settingsQuery.data?.settings as StoreSettings | undefined;
+  const base = settings ? settingsToDraft(settings) : null;
+  const draft: Record<string, string> = base ? { ...base, ...edits } : EMPTY_SETTINGS_DRAFT;
+  const loading = !base && settingsQuery.isLoading;
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await load();
+    await Promise.all([settingsQuery.refetch(), printersQuery.refetch(), backupQuery.refetch()]);
     setRefreshing(false);
   };
 
@@ -77,9 +76,8 @@ export default function StoreScreen() {
       };
       const percent = Number(draft.taxRate);
       if (Number.isFinite(percent) && percent >= 0) payload.taxRate = percent / 100;
-      await api.saveSettings(payload);
+      await saveSettings.mutateAsync(payload);
       Alert.alert('تم', 'اتحفظت بيانات المحل — هتظهر على الإيصالات الجاية.');
-      await load();
     } catch (err: any) {
       Alert.alert('تعذّر الحفظ', err?.message ?? '');
     } finally {
@@ -90,9 +88,8 @@ export default function StoreScreen() {
   const runBackup = async () => {
     setBusy(true);
     try {
-      const res: any = await api.triggerBackup();
+      const res: any = await triggerBackup.mutateAsync();
       Alert.alert(res?.ok ? 'تم النسخ الاحتياطي' : 'تعذّر النسخ', res?.message || res?.error || '');
-      await load();
     } catch (err: any) {
       Alert.alert('تعذّر النسخ', err?.message ?? '');
     } finally {
@@ -104,7 +101,7 @@ export default function StoreScreen() {
     <Field
       label={label}
       value={draft[key] ?? ''}
-      onChange={(v) => setDraft((prev) => ({ ...prev, [key]: v }))}
+      onChange={(v) => setEdits((prev) => ({ ...prev, [key]: v }))}
       placeholder={placeholder}
       keyboardType={keyboardType}
     />

@@ -18,3 +18,11 @@ export const SPACING = {
 export const TAB_BAR_HEIGHT = 64;
 export const TAB_BAR_GAP = 14;
 export const TAB_BAR_SPACE = TAB_BAR_HEIGHT + TAB_BAR_GAP * 2;
+
+// One frost for the whole app — the tab bar, the dial and the cart surfaces all
+// read the same. Medium strength with a see-through tint; nothing opaque is
+// painted over it, so the screen behind keeps showing through.
+export const BLUR_INTENSITY = 55;
+/** Divides the Android blur strength so the values above read as medium there.
+ * The library default (4) is much weaker than iOS at the same intensity. */
+export const BLUR_REDUCTION = 2;

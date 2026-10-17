@@ -154,18 +154,12 @@ export default function SetupScreen() {
       )}
 
       <View style={{ height: 1, alignSelf: 'stretch', backgroundColor: border, opacity: 0.5 }} />
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
-        <Text variant='caption' style={{ textAlign: 'center', color: primary }}>
-          كرنش تايم — تطبيق المالك
-        </Text>
-        <Text
-          variant='caption'
-          style={{ color: muted, textDecorationLine: 'underline' }}
-          onPress={() => router.push('/onboarding')}
-        >
-          شاهد التعريف
-        </Text>
-      </View>
+      <Button variant='ghost' onPress={() => router.push('/onboarding')} style={{ alignSelf: 'stretch' }}>
+        شاهد التعريف تاني
+      </Button>
+      <Text variant='caption' style={{ textAlign: 'center', color: primary }}>
+        كرنش تايم — تطبيق المالك
+      </Text>
     </ScrollView>
   );
 }

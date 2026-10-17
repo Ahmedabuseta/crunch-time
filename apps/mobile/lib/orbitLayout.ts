@@ -12,16 +12,24 @@ export interface OrbitSlot {
   order: number;
 }
 
-/** The fan stays inside the quarter above the button; past 90° the far entries
- * would drop below it and off the bottom of the screen. */
+/** The fan is centred on the button, so it spans this much to each side of
+ * straight up. Past ~45° the outer entries drop level with the button and read
+ * as belonging to the bar rather than the dial. */
 export const ARC_DEGREES = 88;
-export const INNER_RADIUS = 112;
+export const INNER_RADIUS = 96;
 /** Comfortable clearance between one ring and the next — enough that the outer
  * labels never read as belonging to the inner entries. */
-export const RING_GAP = 108;
+export const RING_GAP = 84;
 export const MAX_PER_RING = 4;
 
-export function layoutOrbits(count: number, isRtl: boolean, gap: number): OrbitSlot[] {
+/**
+ * Places `count` entries on concentric arcs above the button, centred on it.
+ *
+ * The button is docked in the middle of the tab bar, so the fan is symmetric
+ * and needs no RTL mirroring: an Arabic layout puts the bar's groups either
+ * side of it, and the arcs are the same either way.
+ */
+export function layoutOrbits(count: number, gap: number): OrbitSlot[] {
   if (count <= 0) return [];
 
   const rings = Math.max(1, Math.ceil(count / MAX_PER_RING));
@@ -44,12 +52,12 @@ export function layoutOrbits(count: number, isRtl: boolean, gap: number): OrbitS
     radius = ring === 0 ? Math.max(INNER_RADIUS, needed) : Math.max(radius + RING_GAP, needed);
 
     for (let i = 0; i < size; i++) {
-      // A lone entry sits in the middle of the fan rather than at its edge.
-      const degrees = size > 1 ? i * step : ARC_DEGREES / 2;
+      // Angles run −ARC/2 … +ARC/2, so the ring straddles straight up.
+      const degrees = size > 1 ? i * step - ARC_DEGREES / 2 : 0;
       const radians = (degrees * Math.PI) / 180;
       slots.push({
-        x: (isRtl ? 1 : -1) * Math.sin(radians) * radius,
-        y: -Math.cos(radians) * radius,
+        x: Math.round(Math.sin(radians) * radius),
+        y: Math.round(-Math.cos(radians) * radius),
         ring,
         order: order++,
       });

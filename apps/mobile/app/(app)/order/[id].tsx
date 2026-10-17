@@ -1,4 +1,3 @@
-import { api } from '@/api/endpoints';
 import type { DeliveryProfile, Order } from '@/api/types';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -7,6 +6,9 @@ import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Text } from '@/components/ui/text';
 import { View } from '@/components/ui/view';
+import { useAssignDriver, usePrintOrder, useUpdateOrderStatus } from '@/hooks/mutations/orders';
+import { useOrder } from '@/hooks/queries/orders';
+import { useDeliveryProfiles } from '@/hooks/queries/reference';
 import { useColor } from '@/hooks/useColor';
 import { TAB_BAR_SPACE } from '@/theme/globals';
 import {
@@ -19,7 +21,7 @@ import {
 } from '@/lib/format';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { ArrowRight, ChefHat, Printer, Truck, X } from 'lucide-react-native';
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { Alert, Pressable, RefreshControl, ScrollView, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -52,37 +54,29 @@ export default function OrderDetailScreen() {
     REFUNDED: warning,
   };
 
-  const [order, setOrder] = useState<Order | null>(null);
-  const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
   const [refreshing, setRefreshing] = useState(false);
   const [showReason, setShowReason] = useState(false);
   const [reason, setReason] = useState('');
   const [showDrivers, setShowDrivers] = useState(false);
-  const [profiles, setProfiles] = useState<DeliveryProfile[]>([]);
   const [notice, setNotice] = useState('');
 
-  const load = useCallback(async () => {
-    if (!id) return;
-    try {
-      const res = await api.order(String(id));
-      setOrder(res.order);
-      setError('');
-    } catch (err: any) {
-      setError(err?.message ?? 'تعذّر تحميل الطلب');
-    } finally {
-      setLoading(false);
-    }
-  }, [id]);
+  const orderQuery = useOrder(id);
+  const order: Order | null = orderQuery.data?.order ?? null;
+  const loading = orderQuery.isLoading;
+  const error = orderQuery.error ? (orderQuery.error as Error).message : '';
 
-  useEffect(() => {
-    void load();
-  }, [load]);
+  // Fetched only once the driver picker is opened.
+  const driversQuery = useDeliveryProfiles(showDrivers);
+  const profiles: DeliveryProfile[] = driversQuery.data?.profiles ?? [];
+
+  const updateStatusMutation = useUpdateOrderStatus();
+  const assignDriverMutation = useAssignDriver();
+  const printOrderMutation = usePrintOrder();
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await load();
+    await orderQuery.refetch();
     setRefreshing(false);
   };
 
@@ -91,7 +85,6 @@ export default function OrderDetailScreen() {
     setNotice('');
     try {
       await fn();
-      await load();
       setNotice(successMessage);
     } catch (err: any) {
       Alert.alert('تعذّر التنفيذ', err?.message ?? 'حاول مرة أخرى');
@@ -100,15 +93,7 @@ export default function OrderDetailScreen() {
     }
   };
 
-  const openDriverPicker = async () => {
-    try {
-      const res = await api.deliveryProfiles();
-      setProfiles(res.profiles);
-      setShowDrivers(true);
-    } catch (err: any) {
-      Alert.alert('تعذّر تحميل الديلفري', err?.message ?? '');
-    }
-  };
+  const openDriverPicker = () => setShowDrivers(true);
 
   const doRefund = (status: 'CANCELLED' | 'REFUNDED') => {
     const text = reason.trim();
@@ -123,7 +108,10 @@ export default function OrderDetailScreen() {
         text: verb,
         style: 'destructive',
         onPress: () =>
-          void run(() => api.updateOrderStatus(String(id), status, text), `تم ${verb} الطلب`),
+          void run(
+            () => updateStatusMutation.mutateAsync({ id: String(id), status, reason: text }),
+            `تم ${verb} الطلب`
+          ),
       },
     ]);
   };
@@ -264,7 +252,10 @@ export default function OrderDetailScreen() {
                       key={p.id}
                       style={[styles.driverRow, { borderColor: border }]}
                       onPress={() =>
-                        void run(() => api.assignDriver(order.id, p.id), `تم تعيين ${p.name}`)
+                        void run(
+                          () => assignDriverMutation.mutateAsync({ id: order.id, profileId: p.id }),
+                          `تم تعيين ${p.name}`
+                        )
                       }
                     >
                       <Truck size={16} color={blue} />
@@ -303,7 +294,12 @@ export default function OrderDetailScreen() {
                 icon={Printer}
                 disabled={busy}
                 style={{ alignSelf: 'stretch' }}
-                onPress={() => void run(() => api.printOrder(order.id, 'receipt'), 'اتبعت الإيصال')}
+                onPress={() =>
+                  void run(
+                    () => printOrderMutation.mutateAsync({ id: order.id, kind: 'receipt' }),
+                    'اتبعت الإيصال'
+                  )
+                }
               >
                 إيصال
               </Button>
@@ -314,7 +310,12 @@ export default function OrderDetailScreen() {
                 icon={ChefHat}
                 disabled={busy}
                 style={{ alignSelf: 'stretch' }}
-                onPress={() => void run(() => api.printOrder(order.id, 'kitchen'), 'اتبعت تذكرة المطبخ')}
+                onPress={() =>
+                  void run(
+                    () => printOrderMutation.mutateAsync({ id: order.id, kind: 'kitchen' }),
+                    'اتبعت تذكرة المطبخ'
+                  )
+                }
               >
                 المطبخ
               </Button>

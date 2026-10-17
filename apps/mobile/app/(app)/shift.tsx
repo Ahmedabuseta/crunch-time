@@ -1,5 +1,4 @@
-import { api } from '@/api/endpoints';
-import type { CashMovement, Shift } from '@/api/types';
+import type { CashMovement } from '@/api/types';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -7,12 +6,14 @@ import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Text } from '@/components/ui/text';
 import { View } from '@/components/ui/view';
+import { useCashMovement, useCloseShift, useOpenShift } from '@/hooks/mutations/shift';
+import { useCashDrawer, useCurrentShift } from '@/hooks/queries/shift';
 import { useColor } from '@/hooks/useColor';
 import { TAB_BAR_SPACE } from '@/theme/globals';
 import { fmtMoneyInt, fmtTime } from '@/lib/format';
 import { useRouter } from 'expo-router';
 import { ArrowRight, BarChart3, DoorOpen, DoorClosed, Minus, Plus } from 'lucide-react-native';
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { Alert, Pressable, RefreshControl, ScrollView, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -35,10 +36,17 @@ export default function ShiftScreen() {
   const green = useColor('green');
   const red = useColor('red');
 
-  const [shift, setShift] = useState<Shift | null>(null);
-  const [movements, setMovements] = useState<CashMovement[]>([]);
-  const [expected, setExpected] = useState<number | null>(null);
-  const [loading, setLoading] = useState(true);
+  const shiftQuery = useCurrentShift();
+  const shift = shiftQuery.data?.shift ?? null;
+  const drawerQuery = useCashDrawer(shift?.id);
+  const movements: CashMovement[] = drawerQuery.data?.movements ?? [];
+  const expected = drawerQuery.data?.expected?.expected ?? null;
+  const loading = shiftQuery.isLoading;
+
+  const openShiftMutation = useOpenShift();
+  const closeShiftMutation = useCloseShift();
+  const cashMovementMutation = useCashMovement();
+
   const [busy, setBusy] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [openingCash, setOpeningCash] = useState('0');
@@ -47,32 +55,9 @@ export default function ShiftScreen() {
   const [moveAmount, setMoveAmount] = useState('');
   const [moveNote, setMoveNote] = useState('');
 
-  const load = useCallback(async () => {
-    try {
-      const res = await api.currentShift();
-      setShift(res.shift);
-      if (res.shift) {
-        const drawer = await api.cashDrawer(res.shift.id).catch(() => null);
-        setMovements(drawer?.movements ?? []);
-        setExpected(drawer?.expected?.expected ?? null);
-      } else {
-        setMovements([]);
-        setExpected(null);
-      }
-    } catch (err: any) {
-      Alert.alert('تعذّر تحميل الوردية', err?.message ?? '');
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
-
   const onRefresh = async () => {
     setRefreshing(true);
-    await load();
+    await Promise.all([shiftQuery.refetch(), drawerQuery.refetch()]);
     setRefreshing(false);
   };
 
@@ -80,7 +65,6 @@ export default function ShiftScreen() {
     setBusy(true);
     try {
       await fn();
-      await load();
       Alert.alert('تم', message);
     } catch (err: any) {
       Alert.alert('تعذّر التنفيذ', err?.message ?? 'حاول مرة أخرى');
@@ -98,7 +82,7 @@ export default function ShiftScreen() {
     }
     Alert.alert('إغلاق الوردية', `متأكد من إغلاق الوردية رقم ${shift.number}؟`, [
       { text: 'رجوع', style: 'cancel' },
-      { text: 'إغلاق', style: 'destructive', onPress: () => void run(() => api.closeShift(shift.id, value), 'تم إغلاق الوردية') },
+      { text: 'إغلاق', style: 'destructive', onPress: () => void run(() => closeShiftMutation.mutateAsync({ id: shift.id, closingCash: value }), 'تم إغلاق الوردية') },
     ]);
   };
 
@@ -121,6 +105,12 @@ export default function ShiftScreen() {
       </View>
 
       <View style={{ paddingHorizontal: 16, gap: 12 }}>
+        {shiftQuery.error ? (
+          <Text variant='caption' style={{ color: red, textAlign: 'center' }}>
+            {(shiftQuery.error as Error).message}
+          </Text>
+        ) : null}
+
         {loading ? (
           <Skeleton height={160} style={{ borderRadius: 18 }} />
         ) : !shift ? (
@@ -142,7 +132,9 @@ export default function ShiftScreen() {
               icon={DoorOpen}
               disabled={busy}
               style={{ alignSelf: 'stretch' }}
-              onPress={() => void run(() => api.openShift(Number(openingCash) || 0), 'تم فتح الوردية')}
+              onPress={() =>
+                void run(() => openShiftMutation.mutateAsync(Number(openingCash) || 0), 'تم فتح الوردية')
+              }
             >
               بدء الوردية
             </Button>
@@ -226,7 +218,7 @@ export default function ShiftScreen() {
                 onPress={async () => {
                   await run(
                     () =>
-                      api.cashMovement({
+                      cashMovementMutation.mutateAsync({
                         shiftId: shift.id,
                         type: moveType,
                         amount: Number(moveAmount) || 0,

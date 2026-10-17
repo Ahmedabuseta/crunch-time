@@ -1,11 +1,15 @@
 // Money and date helpers mirroring the till (src/lib/format.ts). Money is whole
 // pounds everywhere, on both sides.
+//
+// Numerals are Western (`en-US`), matching the till exactly: `ar-EG` renders
+// Arabic-Indic digits, so the phone would show ١٢٣ where the PC shows 123.
+// Dates and times keep `ar-EG` because the till does the same for those.
 
 export const fmtMoney = (value: number | null | undefined): string =>
   String(Math.round(Number(value) || 0));
 
 export const fmtMoneyInt = (value: number | null | undefined): string =>
-  Number(value || 0).toLocaleString('ar-EG', { maximumFractionDigits: 0 });
+  Number(value || 0).toLocaleString('en-US', { maximumFractionDigits: 0 });
 
 export function fmtTime(iso: string | Date): string {
   const d = iso instanceof Date ? iso : new Date(iso);

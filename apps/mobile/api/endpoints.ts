@@ -1,5 +1,6 @@
 // One typed function per server route the app uses.
 import { request } from './client';
+import type { DiscountRule } from '@/lib/discount';
 import type {
   Addon,
   AppUser,
@@ -16,11 +17,14 @@ import type {
   PrinterInfo,
   Product,
   ProductOptions,
+  RecipeLine,
   Shift,
+  ShiftSummary,
+  SubRecipe,
   ZReport,
 } from './types';
 
-function qs(query?: Record<string, string | number | undefined | null>): string {
+function qs(query?: Record<string, unknown>): string {
   if (!query) return '';
   const parts = Object.entries(query)
     .filter(([, v]) => v !== undefined && v !== null && v !== '')
@@ -35,6 +39,8 @@ export interface CreateOrderPayload {
   tax: number;
   deliveryFee: number;
   total: number;
+  /** Dine-in only — the table the order is served at. */
+  tableNumber?: string;
   items: {
     productId: string;
     quantity: number;
@@ -42,6 +48,8 @@ export interface CreateOrderPayload {
     note?: string;
     modifiers?: unknown;
     addons?: string[];
+    /** Per-line discount, sent only for the employee product-of-the-day code. */
+    itemDiscount?: number;
   }[];
   customerName?: string;
   customerPhone?: string;
@@ -64,6 +72,29 @@ export interface Customer {
   lastOrderAt: string | null;
 }
 
+/** Paging metadata the list routes return next to their own key. */
+export interface PagedMeta {
+  /** The size of the whole match, not of the page. */
+  total: number;
+  page: number;
+  pageSize: number;
+  hasMore: boolean;
+}
+
+/** A type alias, not an interface: only these get an implicit index signature,
+ * which is what lets them be passed to the query-string builder. */
+export type ListParams = {
+  sort?: string;
+  dir?: 'asc' | 'desc';
+  page?: number;
+  pageSize?: number;
+  search?: string;
+};
+
+/** The server's ceiling. For the few callers that genuinely need the whole list
+ * — a picker that filters locally — rather than a page of it. */
+export const ALL_ROWS = 200;
+
 export const api = {
   // ─── Auth / health ──────────────────────────────────────────
   health: () => request<HealthResponse>('/health', { auth: false }),
@@ -79,8 +110,17 @@ export const api = {
   productOptions: (id: string) => request<ProductOptions>(`/menu/products/${id}/options`),
 
   // ─── Orders ─────────────────────────────────────────────────
-  orders: (filters?: { status?: string; orderType?: string; search?: string }) =>
-    request<{ orders: Order[] }>(`/orders${qs(filters)}`),
+  orders: (
+    filters?: {
+      status?: string;
+      orderType?: string;
+      paymentType?: string;
+      /** A driver's profile id, or the 'NONE' sentinel for unassigned. */
+      deliveryProfileId?: string;
+      from?: string;
+      to?: string;
+    } & ListParams
+  ) => request<{ orders: Order[] } & PagedMeta>(`/orders${qs(filters)}`),
   order: (id: string) => request<{ order: Order }>(`/orders/${id}`),
   createOrder: (body: CreateOrderPayload, idempotencyKey: string) =>
     request<{ ok: boolean; id: string; order: Order }>('/orders', {
@@ -133,6 +173,44 @@ export const api = {
   report: <T = unknown>(name: string, query?: Record<string, string | number | undefined>) =>
     request<{ report: T }>(`/reports/${name}${qs(query)}`),
 
+  /** Every shift in a range, with its cash position — the shift report list. */
+  shiftSummary: (query?: { from?: string; to?: string }) =>
+    request<{ report: ShiftSummary }>(`/reports/shift-summary${qs(query)}`),
+  /** One shift in full: revenue, cash difference, payments, top items, hourly. */
+  shiftReport: (id: string) =>
+    request<{ report: ZReport }>(`/reports/shift/${encodeURIComponent(id)}`),
+
+  // ─── Discount codes ─────────────────────────────────────────
+  //
+  // There is deliberately no `useDiscountCode` here: `POST /orders` already
+  // marks the code used as one of its side effects, so calling `/use` as well
+  // would count every phone order twice.
+  validateDiscountCode: (code: string) =>
+    request<{ validation: { valid: boolean; error?: string; discount?: DiscountRule } }>(
+      '/discount-codes/validate',
+      { method: 'POST', body: { code } }
+    ),
+
+  /** Not paged: it feeds a locally-filtered picker, not a list you scroll. */
+  subRecipes: () => request<{ subRecipes: SubRecipe[] }>('/sub-recipes'),
+
+  // ─── Recipes (what a product consumes) ──────────────────────
+  //
+  // A line is either an ingredient or a sub-recipe. On an edit both ids must be
+  // sent — the server assigns whatever is missing to null, so omitting one
+  // would silently clear it.
+  productRecipes: (productId: string) =>
+    request<{ recipes: RecipeLine[] }>(`/products/${encodeURIComponent(productId)}/recipes`),
+  upsertRecipe: (body: {
+    id?: string;
+    productId: string;
+    ingredientId?: string | null;
+    subRecipeId?: string | null;
+    quantityPerUnit: number;
+  }) => request<{ id: string }>('/recipes', { method: 'POST', body }),
+  deleteRecipe: (id: string) =>
+    request<{ ok: boolean }>(`/recipes/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+
   // ─── Settings / backup ──────────────────────────────────────
   settings: () => request<{ settings: Record<string, unknown> }>('/settings'),
   audit: (query?: { limit?: number; entity?: string }) => request<{ entries: any[] }>(`/audit${qs(query)}`),
@@ -140,7 +218,8 @@ export const api = {
   triggerBackup: () => request<{ ok: boolean; path?: string; message?: string }>('/backup', { method: 'POST', body: {} }),
 
   // ─── Admin: catalogue ───────────────────────────────────────
-  categories: () => request<{ categories: Category[] }>('/categories'),
+  categories: (params?: ListParams) =>
+    request<{ categories: Category[] } & PagedMeta>(`/categories${qs(params)}`),
   createCategory: (body: Record<string, unknown>) =>
     request<{ id: string }>('/categories', { method: 'POST', body }),
   updateCategory: (id: string, body: Record<string, unknown>) =>
@@ -148,8 +227,13 @@ export const api = {
   deleteCategory: (id: string, hard = false) =>
     request<{ ok: boolean }>(`/categories/${id}${hard ? '?hard=1' : ''}`, { method: 'DELETE' }),
 
-  products: (categoryId?: string) =>
-    request<{ products: Product[] }>(`/products${qs({ categoryId })}`),
+  products: (params?: { categoryId?: string } & ListParams) =>
+    request<{ products: Product[] } & PagedMeta>(`/products${qs(params)}`),
+  /** One product, for the edit form — instead of downloading the list and
+   * searching it, which a paged list would no longer give you. */
+  product: (id: string) => request<{ product: Product }>(`/products/${encodeURIComponent(id)}`),
+  /** One category, same reason. */
+  category: (id: string) => request<{ category: Category }>(`/categories/${encodeURIComponent(id)}`),
   createProduct: (body: Record<string, unknown>) =>
     request<{ id: string }>('/products', { method: 'POST', body }),
   updateProduct: (id: string, body: Record<string, unknown>) =>
@@ -166,7 +250,12 @@ export const api = {
     request<{ ok: boolean }>(`/addons/${id}${hard ? '?hard=1' : ''}`, { method: 'DELETE' }),
 
   // ─── Admin: inventory ───────────────────────────────────────
-  ingredients: () => request<{ ingredients: Ingredient[] }>('/ingredients'),
+  ingredients: (params?: { low?: string } & ListParams) =>
+    request<{ ingredients: Ingredient[] } & PagedMeta>(`/ingredients${qs(params as any)}`),
+  /** One ingredient, for the edit form — instead of downloading the list and
+   * searching it, which a paged list would no longer give you. */
+  ingredient: (id: string) =>
+    request<{ ingredient: Ingredient }>(`/ingredients/${encodeURIComponent(id)}`),
   createIngredient: (body: Record<string, unknown>) =>
     request<{ id: string }>('/ingredients', { method: 'POST', body }),
   updateIngredient: (id: string, body: Record<string, unknown>) =>
@@ -186,7 +275,10 @@ export const api = {
     request<{ ledger: IngredientLedger }>(`/ingredients/${id}/transactions${qs(query as any)}`),
 
   // ─── Admin: users ───────────────────────────────────────────
-  users: () => request<{ users: AppUser[] }>('/users'),
+  users: (params?: { role?: string } & ListParams) =>
+    request<{ users: AppUser[] } & PagedMeta>(`/users${qs(params as any)}`),
+  /** One user, for the edit form. */
+  user: (id: string) => request<{ user: AppUser }>(`/users/${encodeURIComponent(id)}`),
   createUser: (body: Record<string, unknown>) =>
     request<{ id: string }>('/users', { method: 'POST', body }),
   updateUser: (id: string, body: Record<string, unknown>) =>

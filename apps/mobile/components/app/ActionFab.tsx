@@ -2,11 +2,12 @@ import { Text } from '@/components/ui/text';
 import { useColor } from '@/hooks/useColor';
 import { useColorScheme } from '@/hooks/useColorScheme';
 import { layoutOrbits, type OrbitSlot } from '@/lib/orbitLayout';
-import { TAB_BAR_GAP, TAB_BAR_HEIGHT } from '@/theme/globals';
+import { BUTTON_WIDTH } from '@/lib/tabBarLayout';
+import { BLUR_INTENSITY, BLUR_REDUCTION, TAB_BAR_GAP, TAB_BAR_HEIGHT } from '@/theme/globals';
 import { BlurView } from 'expo-blur';
-import { Menu, X, type LucideProps } from 'lucide-react-native';
+import { X, Zap, type LucideProps } from 'lucide-react-native';
 import React, { useState } from 'react';
-import { I18nManager, Platform, Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 import Animated, {
   type SharedValue,
   useAnimatedStyle,
@@ -22,36 +23,44 @@ export interface FabAction {
   onPress: () => void;
 }
 
-const FAB = 58;
+/** The button's width, shared with the tab bar so its middle gap and its pills
+ * are sized to match. */
+const FAB = BUTTON_WIDTH;
 const ITEM = 50;
 const COLUMN = 74;
 
+/** The Android blur samples a screen rather than the window, so the button
+ * needs the same target the tab bar uses. */
+type BlurTarget = { current: View | null };
+
 /**
- * A floating button that fans its actions out along one or more concentric
- * arcs, over a blurred scrim. Entries fly out of the button on a stagger.
+ * The app's quick-action dial. Its button is docked in the free space in the
+ * middle of the tab bar, and the entries fan out above it on one or more
+ * concentric, symmetric arcs over a blurred scrim.
  */
 export function ArcActionFab({
   actions,
   label = 'إجراءات سريعة',
+  blurTarget,
 }: {
   actions: FabAction[];
   label?: string;
+  blurTarget?: BlurTarget;
 }) {
   const insets = useSafeAreaInsets();
   const [open, setOpen] = useState(false);
 
   const primary = useColor('primary');
-  const primaryForeground = useColor('primaryForeground');
+  const yellow = useColor('yellow');
   const border = useColor('border');
   const foreground = useColor('foreground');
   const scheme = useColorScheme() ?? 'dark';
-  const isRtl = Platform.OS !== 'web' && I18nManager.isRTL;
 
   const progress = useSharedValue(0);
-  const lift = TAB_BAR_GAP + insets.bottom + TAB_BAR_HEIGHT + 16;
-  // Physical left/right: react-native-web has no logical insets, so the
-  // mirrored corner is chosen explicitly.
-  const side = isRtl ? { left: 20 } : { right: 20 };
+
+  // Docked inside the bar rather than floating above it: the anchor is the
+  // button's centre, which is the middle of the bar.
+  const centre = TAB_BAR_GAP + insets.bottom + TAB_BAR_HEIGHT / 2;
 
   const toggle = (next: boolean) => {
     setOpen(next);
@@ -64,48 +73,37 @@ export function ArcActionFab({
 
   const icon = (
     <Animated.View style={iconStyle}>
-      {open ? (
-        <X size={26} color={primaryForeground} />
-      ) : (
-        <Menu size={26} color={primaryForeground} />
-      )}
+      {open ? <X size={24} color={yellow} /> : <Zap size={24} color={yellow} />}
     </Animated.View>
   );
 
-  const button = (
-    <Pressable
-      onPress={() => toggle(!open)}
-      accessibilityRole='button'
-      accessibilityLabel={open ? 'إغلاق' : label}
-      style={[styles.fab, { backgroundColor: primary, bottom: lift, ...side }]}
-    >
-      {icon}
-    </Pressable>
-  );
-
-  if (!open) return button;
-
-  const slots = layoutOrbits(actions.length, isRtl, ITEM + 16);
-  const anchorSide = isRtl ? { left: 20 + FAB / 2 } : { right: 20 + FAB / 2 };
+  const slots = open ? layoutOrbits(actions.length, ITEM + 16) : [];
 
   return (
     <>
-      <Pressable
-        style={StyleSheet.absoluteFill}
-        onPress={() => toggle(false)}
-        accessibilityRole='button'
-        accessibilityLabel='إغلاق'
-      >
-        <BlurView
-          intensity={57}
-          tint={scheme === 'dark' ? 'dark' : 'light'}
-          blurMethod='dimezisBlurView'
-          style={[StyleSheet.absoluteFill, styles.scrim]}
-        />
-      </Pressable>
+      {open ? (
+        <Pressable
+          style={StyleSheet.absoluteFill}
+          onPress={() => toggle(false)}
+          accessibilityRole='button'
+          accessibilityLabel='إغلاق'
+        >
+          <BlurView
+            intensity={BLUR_INTENSITY}
+            tint={scheme === 'dark' ? 'dark' : 'light'}
+            blurMethod='dimezisBlurView'
+            blurReductionFactor={BLUR_REDUCTION}
+            blurTarget={blurTarget}
+            style={[StyleSheet.absoluteFill, styles.scrim]}
+          />
+        </Pressable>
+      ) : null}
 
-      {/* A zero-size anchor on the button's centre; entries are placed around it. */}
-      <View style={[styles.anchor, { bottom: lift + FAB / 2 }, anchorSide]} pointerEvents='box-none'>
+      {/* A zero-size anchor at the button's centre; entries are placed around it. */}
+      <View
+        style={[styles.anchor, { bottom: centre, left: '50%' }]}
+        pointerEvents='box-none'
+      >
         {slots.map((slot) => (
           <ArcEntry
             key={actions[slot.order].key}
@@ -117,6 +115,7 @@ export function ArcActionFab({
             borderColor={border}
             tint={primary}
             textColor={foreground}
+            blurTarget={blurTarget}
             onPress={() => {
               toggle(false);
               actions[slot.order].onPress();
@@ -124,16 +123,60 @@ export function ArcActionFab({
           />
         ))}
 
-        <Pressable
-          onPress={() => toggle(false)}
-          accessibilityRole='button'
-          accessibilityLabel='إغلاق'
-          style={[styles.fab, { backgroundColor: primary, left: -FAB / 2, top: -FAB / 2 }]}
+        <GlassButton
+          onPress={() => toggle(!open)}
+          label={open ? 'إغلاق' : label}
+          tint={scheme === 'dark' ? 'dark' : 'light'}
+          borderColor={border}
+          blurTarget={blurTarget}
+          style={styles.centred}
         >
           {icon}
-        </Pressable>
+        </GlassButton>
       </View>
     </>
+  );
+}
+
+/**
+ * The dial button: a transparent blurred-glass disc with a yellow glyph. The
+ * yellow lives in the icon, not a fill, so the screen behind still shows
+ * through the glass.
+ */
+function GlassButton({
+  onPress,
+  label,
+  tint,
+  borderColor,
+  blurTarget,
+  style,
+  children,
+}: {
+  onPress: () => void;
+  label: string;
+  tint: 'dark' | 'light';
+  borderColor: string;
+  blurTarget?: BlurTarget;
+  style?: StyleProp<ViewStyle>;
+  children: React.ReactNode;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole='button'
+      accessibilityLabel={label}
+      style={[styles.fab, { borderColor }, style]}
+    >
+      <BlurView
+        intensity={BLUR_INTENSITY}
+        tint={tint}
+        blurMethod='dimezisBlurView'
+        blurReductionFactor={BLUR_REDUCTION}
+        blurTarget={blurTarget}
+        style={StyleSheet.absoluteFill}
+      />
+      {children}
+    </Pressable>
   );
 }
 
@@ -147,6 +190,7 @@ function ArcEntry({
   borderColor,
   tint,
   textColor,
+  blurTarget,
   onPress,
 }: {
   action: FabAction;
@@ -157,6 +201,7 @@ function ArcEntry({
   borderColor: string;
   tint: string;
   textColor: string;
+  blurTarget?: BlurTarget;
   onPress: () => void;
 }) {
   const animated = useAnimatedStyle(() => {
@@ -186,7 +231,14 @@ function ArcEntry({
         accessibilityLabel={action.label}
         style={[styles.item, { borderColor }]}
       >
-        <BlurView intensity={62} tint='default' blurMethod='dimezisBlurView' style={StyleSheet.absoluteFill} />
+        <BlurView
+          intensity={BLUR_INTENSITY}
+          tint='default'
+          blurMethod='dimezisBlurView'
+          blurReductionFactor={BLUR_REDUCTION}
+          blurTarget={blurTarget}
+          style={StyleSheet.absoluteFill}
+        />
         <Icon size={20} color={tint} />
       </Pressable>
       <Text style={{ color: textColor, fontSize: 11, fontWeight: '700', textAlign: 'center' }} numberOfLines={1}>
@@ -204,7 +256,11 @@ const styles = StyleSheet.create({
     borderRadius: FAB / 2,
     alignItems: 'center',
     justifyContent: 'center',
+    borderWidth: 1,
+    overflow: 'hidden',
   },
+  /** Centres the button on the zero-size anchor. */
+  centred: { left: -FAB / 2, top: -FAB / 2 },
   scrim: { backgroundColor: 'rgba(0,0,0,0.4)' },
   anchor: { position: 'absolute', width: 0, height: 0 },
   column: { position: 'absolute', width: COLUMN, alignItems: 'center', gap: 4 },

@@ -1,21 +1,20 @@
-import { usePathname, useRouter } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { BarChart3, Boxes, Package, PlusCircle, Users, Wallet } from 'lucide-react-native';
 import React from 'react';
+import { View } from 'react-native';
 import { ArcActionFab } from './ActionFab';
 
-// Screens whose own buttons sit in the same corner — a floating menu there
-// would cover a form's save/print actions, so it steps aside.
-const HIDDEN_PREFIXES = ['/manage', '/order'];
-
-/** The app-wide quick-action dial, mounted once in the (app) layout. */
-export function GlobalActions() {
-  const pathname = usePathname();
+/**
+ * The app-wide quick-action dial, mounted once in the (app) layout. It stays
+ * put on every screen — including the manage and order pages — so it reads as
+ * part of the chrome, exactly like the tab bar does.
+ */
+export function GlobalActions({ blurTarget }: { blurTarget?: { current: View | null } }) {
   const router = useRouter();
-
-  if (HIDDEN_PREFIXES.some((prefix) => pathname.startsWith(prefix))) return null;
 
   return (
     <ArcActionFab
+      blurTarget={blurTarget}
       actions={[
         { key: 'new', label: 'طلب جديد', icon: PlusCircle, onPress: () => router.push('/new') },
         { key: 'shift', label: 'الوردية', icon: Wallet, onPress: () => router.push('/shift') },

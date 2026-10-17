@@ -1,8 +1,16 @@
+import { api } from '@/api/endpoints';
+import type { DeliveryProfile, Order } from '@/api/types';
+import { FilterSelect } from '@/components/app/FilterSelect';
 import { Card } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Text } from '@/components/ui/text';
 import { View } from '@/components/ui/view';
 import { useColor } from '@/hooks/useColor';
+import { usePagedQuery } from '@/hooks/queries/paged';
+import { useDailySummary } from '@/hooks/queries/reports';
+import { useOnlineStatus } from '@/hooks/useOnlineStatus';
+import { STALE } from '@/lib/cachePolicy';
+import { DATE_PRESETS, dateRange, type DatePreset } from '@/lib/dateRanges';
 import {
   ORDER_STATUS_LABELS,
   ORDER_TYPE_LABELS,
@@ -10,34 +18,100 @@ import {
   fmtMoneyInt,
   fmtTime,
 } from '@/lib/format';
-import { useOrderFeed } from '@/lib/useOrderFeed';
+import { rangeLabel } from '@/lib/listQuery';
+import { qk } from '@/lib/queryKeys';
+import { useOrderSocket } from '@/lib/useOrderSocket';
 import { TAB_BAR_SPACE } from '@/theme/globals';
-import type { Order } from '@/api/types';
 import { useRouter } from 'expo-router';
 import { ChefHat, Radio, ShoppingBag, Truck, UtensilsCrossed } from 'lucide-react-native';
-import React, { useState } from 'react';
-import { Pressable, RefreshControl, ScrollView, StyleSheet } from 'react-native';
+import React, { useCallback, useEffect, useState } from 'react';
+import {
+  ActivityIndicator,
+  Pressable,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-type Filter = { key: string; label: string };
+/** Sentinel for "delivery with no driver assigned yet". */
+const NO_DRIVER = 'NONE';
 
-const FILTERS: Filter[] = [
-  { key: '', label: 'الكل' },
-  { key: 'COMPLETED', label: ORDER_STATUS_LABELS.COMPLETED },
-  { key: 'CANCELLED', label: ORDER_STATUS_LABELS.CANCELLED },
-  { key: 'REFUNDED', label: ORDER_STATUS_LABELS.REFUNDED },
+const STATUS_OPTIONS = [
+  { value: '', label: 'كل الحالات' },
+  { value: 'COMPLETED', label: ORDER_STATUS_LABELS.COMPLETED },
+  { value: 'CANCELLED', label: ORDER_STATUS_LABELS.CANCELLED },
+  { value: 'REFUNDED', label: ORDER_STATUS_LABELS.REFUNDED },
+];
+
+const TYPE_OPTIONS = [
+  { value: '', label: 'كل الأنواع' },
+  { value: 'dine-in', label: 'صالة' },
+  { value: 'takeaway', label: 'تيك أوي' },
+  { value: 'delivery', label: 'توصيل' },
 ];
 
 export default function BoardScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const [status, setStatus] = useState('');
-  const { orders, loading, error, live, reload } = useOrderFeed(status);
+
+  const [drivers, setDrivers] = useState<DeliveryProfile[]>([]);
+  const [driverFilter, setDriverFilter] = useState('');
+  const [datePreset, setDatePreset] = useState<DatePreset>('');
+
+  const { live } = useOrderSocket();
+  const online = useOnlineStatus();
+  const connected = live && online;
+
+  // Server-side paging: status/type/date are filters, so changing one changes
+  // the query key and the list restarts from page one. The rows already loaded
+  // are re-read on a live event (see useOrderSocket).
+  const load = useCallback(
+    (params: Record<string, string | number | undefined>) =>
+      api
+        .orders(params as Parameters<typeof api.orders>[0])
+        .then((res) => ({ items: res.orders, total: res.total, hasMore: res.hasMore })),
+    []
+  );
+
+  const paged = usePagedQuery<Order>({
+    keyFor: (query) => qk.paged('orders', query),
+    load,
+    initialSort: 'createdAt',
+    initialDir: 'desc',
+    pageSize: 30,
+    staleTime: STALE.live,
+  });
+
+  const { filters, setFilter, setFilters } = paged;
+
+  useEffect(() => {
+    void api
+      .deliveryProfiles()
+      .then((res) => setDrivers(res.profiles))
+      .catch(() => {});
+  }, []);
+
+  // Driver is not a server filter, so it narrows the rows already loaded.
+  const orders = driverFilter
+    ? paged.items.filter((order) => {
+        if (driverFilter === NO_DRIVER) {
+          return order.orderType === 'delivery' && !order.deliveryProfileId;
+        }
+        return order.deliveryProfileId === driverFilter;
+      })
+    : paged.items;
+
+  const daily = useDailySummary();
+  const summary = daily.data?.report;
 
   const primary = useColor('primary');
   const muted = useColor('mutedForeground');
   const border = useColor('border');
   const card = useColor('card');
+  const text = useColor('text');
   const secondary = useColor('secondary');
   const green = useColor('green');
   const red = useColor('red');
@@ -49,78 +123,134 @@ export default function BoardScreen() {
     REFUNDED: warning,
   };
 
-  const [refreshing, setRefreshing] = useState(false);
-  const onRefresh = async () => {
-    setRefreshing(true);
-    await reload();
-    setRefreshing(false);
+  const driverOptions = [
+    { value: '', label: 'كل السائقين' },
+    { value: NO_DRIVER, label: 'بدون سائق' },
+    ...drivers.map((d) => ({ value: d.id, label: d.name })),
+  ];
+
+  const hasFilters = Boolean(filters.status || filters.orderType || driverFilter || datePreset);
+
+  const clearFilters = () => {
+    setFilters({});
+    setDriverFilter('');
+    setDatePreset('');
+  };
+
+  const onDate = (value: string) => {
+    const preset = value as DatePreset;
+    setDatePreset(preset);
+    const { from, to } = dateRange(preset);
+    setFilters((prev) => ({ ...prev, from, to }));
+  };
+
+  // Fetch the next page before the list visibly reaches the bottom.
+  const NEAR_BOTTOM = 240;
+  const onScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    if (!paged.hasMore || paged.loadingMore) return;
+    const { layoutMeasurement, contentOffset, contentSize } = event.nativeEvent;
+    const remaining = contentSize.height - (contentOffset.y + layoutMeasurement.height);
+    if (remaining < NEAR_BOTTOM) paged.loadMore();
   };
 
   return (
     <ScrollView
       style={{ flex: 1 }}
       contentContainerStyle={{ paddingTop: insets.top + 12, paddingBottom: TAB_BAR_SPACE + 16 }}
+      onScroll={onScroll}
+      scrollEventThrottle={160}
       refreshControl={
-        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={primary} />
+        <RefreshControl refreshing={paged.refreshing} onRefresh={paged.refresh} tintColor={primary} />
       }
     >
       <View style={styles.header}>
         <View style={{ flex: 1, gap: 2 }}>
           <Text variant='title'>الطلبات</Text>
           <Text variant='caption' style={{ color: muted }}>
-            {orders.length} طلب {status ? `— ${ORDER_STATUS_LABELS[status] ?? ''}` : ''}
+            {rangeLabel(paged.items.length, paged.total)}
           </Text>
         </View>
-        <View
-          style={[
-            styles.livePill,
-            { backgroundColor: live ? `${green}22` : secondary },
-          ]}
-        >
-          <Radio size={13} color={live ? green : muted} />
-          <Text variant='caption' style={{ color: live ? green : muted, fontSize: 12 }}>
-            {live ? 'مباشر' : 'غير متصل'}
+        <View style={[styles.livePill, { backgroundColor: connected ? `${green}22` : secondary }]}>
+          <Radio size={13} color={connected ? green : muted} />
+          <Text variant='caption' style={{ color: connected ? green : muted, fontSize: 12 }}>
+            {connected ? 'مباشر' : 'غير متصل'}
           </Text>
         </View>
+      </View>
+
+      <View style={styles.stats}>
+        <Stat
+          label='طلبات النهاردة'
+          value={summary ? String(summary.totalOrders) : '—'}
+          card={card}
+          border={border}
+          muted={muted}
+          text={text}
+        />
+        <Stat
+          label='مبيعات النهاردة'
+          value={summary ? `${fmtMoneyInt(summary.totalRevenue)} ج.م` : '—'}
+          card={card}
+          border={border}
+          muted={muted}
+          text={text}
+          tint={primary}
+        />
+        <Stat
+          label='متوسط الفاتورة'
+          value={summary ? `${fmtMoneyInt(summary.avgOrderValue)} ج.م` : '—'}
+          card={card}
+          border={border}
+          muted={muted}
+          text={text}
+        />
       </View>
 
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.filters}
+        contentContainerStyle={styles.filterRow}
       >
-        {FILTERS.map((f) => {
-          const active = status === f.key;
-          return (
-            <Pressable
-              key={f.key || 'all'}
-              onPress={() => setStatus(f.key)}
-              style={[
-                styles.chip,
-                {
-                  backgroundColor: active ? primary : card,
-                  borderColor: active ? primary : border,
-                },
-              ]}
-            >
-              <Text
-                variant='caption'
-                style={{ color: active ? '#0F0A03' : muted, fontWeight: '600' }}
-              >
-                {f.label}
-              </Text>
-            </Pressable>
-          );
-        })}
+        <FilterSelect
+          label='الحالة'
+          value={filters.status ?? ''}
+          options={STATUS_OPTIONS}
+          onChange={(value) => setFilter('status', value)}
+        />
+        <FilterSelect
+          label='النوع'
+          value={filters.orderType ?? ''}
+          options={TYPE_OPTIONS}
+          onChange={(value) => setFilter('orderType', value)}
+        />
+        <FilterSelect
+          label='السائق'
+          value={driverFilter}
+          options={driverOptions}
+          onChange={setDriverFilter}
+        />
+        <FilterSelect
+          label='التاريخ'
+          value={datePreset}
+          options={DATE_PRESETS}
+          onChange={onDate}
+        />
+        {hasFilters ? (
+          <Pressable onPress={clearFilters} style={[styles.clearChip, { borderColor: border }]}>
+            <Text variant='caption' style={{ color: muted, fontWeight: '700' }}>
+              مسح
+            </Text>
+          </Pressable>
+        ) : null}
       </ScrollView>
 
-      {error ? (
+      {paged.error ? (
         <Text variant='caption' style={{ color: red, textAlign: 'center', paddingHorizontal: 20 }}>
-          {error}
+          {paged.error}
         </Text>
       ) : null}
 
-      {loading ? (
+      {paged.loading ? (
         <View style={{ paddingHorizontal: 16, gap: 12 }}>
           {[0, 1, 2].map((i) => (
             <Skeleton key={i} height={96} style={{ borderRadius: 18 }} />
@@ -131,7 +261,7 @@ export default function BoardScreen() {
           <ChefHat size={40} color={muted} />
           <Text variant='subtitle'>لا توجد طلبات</Text>
           <Text variant='caption' style={{ color: muted, textAlign: 'center' }}>
-            {status ? 'مفيش طلبات بالحالة دي' : 'أول ما يتعمل طلب هيظهر هنا على طول'}
+            {hasFilters ? 'مفيش طلبات بالفلاتر دي' : 'أول ما يتعمل طلب هيظهر هنا على طول'}
           </Text>
         </View>
       ) : (
@@ -148,7 +278,49 @@ export default function BoardScreen() {
           ))}
         </View>
       )}
+
+      {paged.loadingMore ? (
+        <View style={styles.footer}>
+          <ActivityIndicator color={primary} />
+        </View>
+      ) : paged.hasMore ? (
+        <Pressable onPress={paged.loadMore} style={styles.footer}>
+          <Text variant='caption' style={{ color: primary, fontWeight: '700' }}>
+            حمّل المزيد
+          </Text>
+        </Pressable>
+      ) : null}
     </ScrollView>
+  );
+}
+
+/** A compact top-line number: today's orders, sales, average ticket. */
+function Stat({
+  label,
+  value,
+  card,
+  border,
+  muted,
+  text,
+  tint,
+}: {
+  label: string;
+  value: string;
+  card: string;
+  border: string;
+  muted: string;
+  text: string;
+  tint?: string;
+}) {
+  return (
+    <View style={[styles.stat, { backgroundColor: card, borderColor: border }]}>
+      <Text variant='caption' style={{ color: muted, fontSize: 11 }} numberOfLines={1}>
+        {label}
+      </Text>
+      <Text style={{ fontWeight: '700', fontSize: 15, color: tint ?? text }} numberOfLines={1}>
+        {value}
+      </Text>
+    </View>
   );
 }
 
@@ -233,13 +405,18 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     borderRadius: 999,
   },
-  filters: { gap: 8, paddingHorizontal: 16, paddingBottom: 14 },
-  chip: {
-    paddingHorizontal: 14,
+  stats: { flexDirection: 'row', gap: 8, paddingHorizontal: 16, paddingBottom: 12 },
+  stat: {
+    flex: 1,
+    gap: 2,
+    paddingHorizontal: 10,
     paddingVertical: 8,
-    borderRadius: 999,
+    borderRadius: 16,
     borderWidth: 1,
   },
+  filterRow: { gap: 8, paddingHorizontal: 16, paddingBottom: 14 },
+  clearChip: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 999, borderWidth: 1 },
+  footer: { paddingVertical: 18, alignItems: 'center' },
   empty: { alignItems: 'center', gap: 8, paddingTop: 60, paddingHorizontal: 32 },
   row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   statusPill: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999 },

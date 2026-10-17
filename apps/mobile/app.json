@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "كرنش تايم",
-    "slug": "crunch-time-owner",
+    "slug": "crunch-time",
     "scheme": "crunchtime",
     "version": "0.1.0",
     "orientation": "portrait",
@@ -17,7 +17,11 @@
         "backgroundColor": "#05070B",
         "foregroundImage": "./assets/images/app-icon.png"
       },
-      "predictiveBackGestureEnabled": true
+      "predictiveBackGestureEnabled": true,
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO"
+      ]
     },
     "androidStatusBar": {
       "translucent": true,
@@ -56,6 +60,13 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "9a6d00c8-b273-40a6-9ca6-657943ac302c"
+      }
+    },
+    "owner": "shinbingos-team"
   }
 }

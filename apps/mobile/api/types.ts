@@ -202,6 +202,35 @@ export interface IngredientLedger {
   totalPages: number;
 }
 
+/**
+ * One line of a product's recipe. The server returns a union of two shapes:
+ * a line is *either* an ingredient or a sub-recipe, and the fields belonging to
+ * the other kind come back null. `lineCost` is computed server-side.
+ */
+export interface RecipeLine {
+  id: string;
+  ingredientId: string | null;
+  subRecipeId: string | null;
+  quantityPerUnit: number;
+  ingredientName: string | null;
+  subRecipeName: string | null;
+  unit: string | null;
+  subRecipeUnit: string | null;
+  costPerUnit: number | null;
+  subRecipeCostPerUnit: number | null;
+  lineCost: number;
+}
+
+/** A reusable prepared component (صوص، عجينة) that a recipe can include. */
+export interface SubRecipe {
+  id: string;
+  name: string;
+  unit: string;
+  active: boolean;
+  costPerUnit: number;
+  ingredientCount: number;
+}
+
 export interface AppUser {
   id: string;
   name: string;
@@ -230,6 +259,40 @@ export interface PrinterInfo {
   name: string;
   displayName: string;
   isDefault: boolean;
+}
+
+// ─── Reports: shifts ──────────────────────────────────────────
+export interface ShiftSummaryRow {
+  id: string;
+  userName: string;
+  startedAt: string;
+  endedAt: string | null;
+  status: 'open' | 'closed';
+  /** Whole hours the shift ran, or null while it is still open. */
+  duration: number | null;
+  orderCount: number;
+  revenue: number;
+  openingCash: number;
+  closingCash: number | null;
+  expectedCash: number;
+  /** counted − expected; null while the shift is open. */
+  difference: number | null;
+  breakdown: Record<string, number>;
+}
+
+export interface ShiftSummary {
+  totalShifts: number;
+  closedCount: number;
+  openCount: number;
+  totalRevenue: number;
+  totalOrders: number;
+  avgRevenuePerShift: number;
+  avgOrdersPerShift: number;
+  totalExpectedCash: number;
+  totalActualCash: number;
+  totalShorts: number;
+  totalOverages: number;
+  shifts: ShiftSummaryRow[];
 }
 
 export interface HealthResponse {
