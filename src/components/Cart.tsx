@@ -39,6 +39,7 @@ interface LastOrder {
   orderNote?: string
   total: number
   orderType: string
+  tableNumber?: string
   customerName?: string
   customerPhone?: string
   customerAddress?: string
@@ -60,6 +61,7 @@ export function Cart() {
   const deliveryNote = useCartStore((s) => s.deliveryNote)
   const deliveryProfileId = useCartStore((s) => s.deliveryProfileId)
   const deliveryProfileName = useCartStore((s) => s.deliveryProfileName)
+  const tableNumber = useCartStore((s) => s.tableNumber)
   const paymentType = useCartStore((s) => s.paymentType)
   const setPaymentType = useCartStore((s) => s.setPaymentType)
   const discountCode = useCartStore((s) => s.discountCode)
@@ -162,6 +164,7 @@ const handleCheckout = async () => {
       if (!deliveryAddress.trim()) { setValidationError('اكتب العنوان'); return }
       if (zones.length > 0 && !deliveryZoneId) { setValidationError('اختار منطقة التوصيل'); return }
     }
+    if (orderType === 'dine-in' && !tableNumber.trim()) { setValidationError('اكتب رقم الترابيزة لطلب الصالة'); return }
 
     try {
       const cartItems = [...items]
@@ -178,6 +181,7 @@ const handleCheckout = async () => {
       const createdAt = new Date()
       const result = await createOrder({
         orderType,
+        tableNumber: orderType === 'dine-in' ? tableNumber.trim() || undefined : undefined,
         customerName: orderType === 'delivery' ? customerName : undefined,
         customerPhone: orderType === 'delivery' ? deliveryPhone : undefined,
         customerAddress: orderType === 'delivery' ? deliveryAddress : undefined,
@@ -213,6 +217,7 @@ const handleCheckout = async () => {
         deliveryProfileName: orderType === 'delivery' ? deliveryProfileName || undefined : undefined,
         discountAmount, discountCode: appliedDiscount ? discountCode : undefined,
         orderNote: orderNote.trim() || undefined, total, orderType,
+        tableNumber: orderType === 'dine-in' ? tableNumber.trim() || undefined : undefined,
         customerName: customerName || undefined,
         customerPhone: deliveryPhone || undefined, customerAddress: deliveryAddress || undefined,
         paymentType, cashierName: currentUser?.name, createdAt,
@@ -228,6 +233,7 @@ const handleCheckout = async () => {
         const printed = await printOrderPack({
           order: {
             id: result, orderType,
+            tableNumber: orderType === 'dine-in' ? tableNumber.trim() || undefined : undefined,
             customerName: customerName || undefined,
             customerPhone: deliveryPhone || undefined,
             customerAddress: deliveryAddress || undefined,
@@ -375,7 +381,7 @@ const handleCheckout = async () => {
         <div className="h-px bg-border mx-4" />
         <ScrollArea className="flex-1 p-4">
           <div className="bg-white rounded-xl overflow-hidden shadow-lg">
-            <Receipt orderId={lastOrder.id} items={lastOrder.items} subtotal={lastOrder.subtotal} tax={lastOrder.tax} taxRate={lastOrder.taxRate} deliveryFee={lastOrder.deliveryFee} deliveryZoneName={lastOrder.deliveryZoneName} deliveryNote={lastOrder.deliveryNote} deliveryProfileName={lastOrder.deliveryProfileName} discountAmount={lastOrder.discountAmount} discountCode={lastOrder.discountCode} orderNote={lastOrder.orderNote} total={lastOrder.total} orderType={lastOrder.orderType} customerName={lastOrder.customerName} customerPhone={lastOrder.customerPhone} customerAddress={lastOrder.customerAddress} paymentType={lastOrder.paymentType} cashierName={lastOrder.cashierName} createdAt={lastOrder.createdAt} info={normalizeReceiptInfo(settings)} />
+            <Receipt orderId={lastOrder.id} items={lastOrder.items} subtotal={lastOrder.subtotal} tax={lastOrder.tax} taxRate={lastOrder.taxRate} deliveryFee={lastOrder.deliveryFee} deliveryZoneName={lastOrder.deliveryZoneName} deliveryNote={lastOrder.deliveryNote} deliveryProfileName={lastOrder.deliveryProfileName} discountAmount={lastOrder.discountAmount} discountCode={lastOrder.discountCode} orderNote={lastOrder.orderNote} total={lastOrder.total} orderType={lastOrder.orderType} tableNumber={lastOrder.tableNumber} customerName={lastOrder.customerName} customerPhone={lastOrder.customerPhone} customerAddress={lastOrder.customerAddress} paymentType={lastOrder.paymentType} cashierName={lastOrder.cashierName} createdAt={lastOrder.createdAt} info={normalizeReceiptInfo(settings)} />
           </div>
         </ScrollArea>
         <div className="p-4"><Button className="w-full rounded-2xl h-11 font-black" onClick={handleNewOrder}>طلب جديد</Button></div>

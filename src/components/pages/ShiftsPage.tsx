@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Plus, Lock, Unlock, AlertTriangle, CheckCircle, Wallet, TrendingDown, TrendingUp, ChevronDown, ChevronUp } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { monthStart, today } from '@/lib/dates'
 import { fmtMoney } from '@/lib/format'
 import { ListToolbar } from '@/components/ui/list-toolbar'
 import { DataTable, type DataColumn } from '@/components/ui/data-table'
@@ -32,8 +33,8 @@ export function ShiftsPage({ onOpenShiftReport }: { onOpenShiftReport: (shiftId:
   const [reconciliations, setReconciliations] = useState<Record<string, any>>({})
   const [view, setView] = useState<ViewMode>('table')
   const [statusFilter, setStatusFilter] = useState<string | null>(null)
-  const [dateFrom, setDateFrom] = useState('')
-  const [dateTo, setDateTo] = useState('')
+  const [dateFrom, setDateFrom] = useState(monthStart())
+  const [dateTo, setDateTo] = useState(today())
   const [currentExpected, setCurrentExpected] = useState<{ expected: number; breakdown: Record<string, number> } | null>(null)
   const [openError, setOpenError] = useState('')
   const [closeWarning, setCloseWarning] = useState<{ type: 'short' | 'over'; amount: number } | null>(null)
@@ -254,6 +255,17 @@ export function ShiftsPage({ onOpenShiftReport }: { onOpenShiftReport: (shiftId:
 
       {/* Date range filter */}
       <div className="flex items-center gap-2 px-5 pt-3">
+        <button
+          onClick={() => { setDateFrom(monthStart()); setDateTo(today()) }}
+          className={cn(
+            "px-3 py-2 rounded-full text-xs font-bold border transition-colors cursor-pointer shrink-0",
+            dateFrom === monthStart() && dateTo === today()
+              ? "bg-primary text-primary-foreground border-primary"
+              : "bg-card text-muted-foreground border-border hover:text-foreground"
+          )}
+        >
+          من بداية الشهر
+        </button>
         <DatePicker value={dateFrom} onChange={setDateFrom} placeholder="من تاريخ" className="w-44" />
         <span className="text-xs text-muted-foreground shrink-0">إلى</span>
         <DatePicker value={dateTo} onChange={setDateTo} placeholder="إلى تاريخ" className="w-44" />

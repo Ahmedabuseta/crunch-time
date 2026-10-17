@@ -1,5 +1,5 @@
 // Users.
-import { and, eq } from 'drizzle-orm'
+import { and, asc, desc, eq, sql } from 'drizzle-orm'
 import { getDb } from '../db/client'
 import * as schema from '../db/schema'
 import { hashPin, verifyPin as verifyPinHash } from '../lib/auth'
@@ -9,10 +9,71 @@ import { hardDelete } from './shared'
 
 const { users } = schema
 
+/**
+ * The public shape of a user. Deliberately a projection, not `select()`: the
+ * row also holds the pin hash, and that must never leave the server — the
+ * desktop's IPC and the phone's HTTP both read users through these functions.
+ */
+const USER_COLUMNS = {
+  id: users.id,
+  name: users.name,
+  role: users.role,
+  active: users.active,
+  createdAt: users.createdAt,
+  hourlyRate: users.hourlyRate,
+  commissionRate: users.commissionRate,
+}
+
 export function listUsers() {
   const db = getDb()
-  return db.select({ id: users.id, name: users.name, role: users.role, active: users.active, createdAt: users.createdAt, hourlyRate: users.hourlyRate, commissionRate: users.commissionRate })
-    .from(users).where(eq(users.active, true))
+  return db.select(USER_COLUMNS).from(users).where(eq(users.active, true))
+}
+
+/** Sortable user fields. */
+export const USER_SORTS = {
+  name: users.name,
+  createdAt: users.createdAt,
+  role: users.role,
+} as const
+
+export type UserSortKey = keyof typeof USER_SORTS
+
+export function listUsersPaged(options: {
+  search?: string
+  role?: string
+  limit: number
+  offset: number
+  sort?: UserSortKey
+  dir?: 'asc' | 'desc'
+}) {
+  const db = getDb()
+  const conditions = [eq(users.active, true)]
+  if (options.role) conditions.push(eq(users.role, options.role))
+  if (options.search) {
+    conditions.push(sql`LOWER(${users.name}) LIKE ${`%${options.search.toLowerCase()}%`}`)
+  }
+  const where = and(...conditions)
+
+  const total = Number(
+    db.select({ count: sql<number>`COUNT(*)` }).from(users).where(where).get()?.count ?? 0
+  )
+  const column = USER_SORTS[options.sort ?? 'name']
+  const items = db.select(USER_COLUMNS).from(users).where(where)
+    // Tiebroken by id, so two people with the same name cannot make page 2
+    // repeat a row from page 1.
+    .orderBy(options.dir === 'desc' ? desc(column) : asc(column), asc(users.id))
+    .limit(options.limit)
+    .offset(options.offset)
+    .all() as any[]
+
+  return { items, total }
+}
+
+/** One user, for the edit form — which otherwise had to download the whole list
+ * and search it, and would miss the record once the list pages. */
+export function getUserById(id: string) {
+  const db = getDb()
+  return db.select(USER_COLUMNS).from(users).where(eq(users.id, id)).get() ?? null
 }
 
 // Admin passwords must be complex — 8+ characters,

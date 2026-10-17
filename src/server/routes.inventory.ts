@@ -3,6 +3,7 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify'
 import type { Backend } from '../backend'
 import { mutate } from './route-helpers'
+import { readListQuery, pageMeta, flag } from './list-query'
 
 const hardOpt = (req: FastifyRequest) => {
   const q = (req.query || {}) as any
@@ -11,7 +12,27 @@ const hardOpt = (req: FastifyRequest) => {
 
 export function registerInventoryRoutes(app: FastifyInstance, backend: Backend) {
   // ─── Ingredients ────────────────────────────────────────────
-  app.get('/ingredients', async () => ({ ingredients: await backend.inventory.listIngredients() }))
+  app.get('/ingredients', async (req) => {
+    const query = readListQuery(req, {
+      sortable: ['name', 'stock', 'cost'],
+      defaultSort: 'name',
+      defaultDir: 'asc',
+    })
+    const { items, total } = await backend.inventory.listIngredientsPaged({
+      search: query.search || undefined,
+      lowOnly: flag(query, 'low'),
+      limit: query.pageSize,
+      offset: query.offset,
+      sort: query.sort as any,
+      dir: query.dir,
+    })
+    return { ingredients: items, ...pageMeta(query, total) }
+  })
+  app.get('/ingredients/:id', async (req, reply) => {
+    const ingredient = await backend.inventory.getIngredientById((req.params as any).id)
+    if (!ingredient) return reply.code(404).send({ ok: false, error: 'المادة غير موجودة' })
+    return { ingredient }
+  })
   app.post('/ingredients', async (req) =>
     mutate(req, { action: 'ingredient.create', entity: 'ingredient' }, () => backend.inventory.createIngredient(req.body)))
   app.put('/ingredients/:id', async (req) =>

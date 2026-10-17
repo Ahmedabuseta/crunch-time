@@ -4,7 +4,7 @@ import { useCartStore } from '@/services/cart/cart.store'
 import { useCustomerStore } from '@/services/customer/customer.store'
 import { useDeliveryStore, useProfileStore } from '@/services/delivery/delivery.store'
 import { cn } from '@/lib/utils'
-import { Truck, UtensilsCrossed, ShoppingBag, MapPin, Phone, User, Clock, StickyNote } from 'lucide-react'
+import { Truck, UtensilsCrossed, ShoppingBag, MapPin, Phone, User, Clock, StickyNote, Hash } from 'lucide-react'
 
 export function OrderTypeSelector() {
   const orderType = useCartStore((s) => s.orderType)
@@ -22,6 +22,8 @@ export function OrderTypeSelector() {
   const deliveryProfileId = useCartStore((s) => s.deliveryProfileId)
   const setDeliveryProfileId = useCartStore((s) => s.setDeliveryProfileId)
   const setDeliveryProfileName = useCartStore((s) => s.setDeliveryProfileName)
+  const tableNumber = useCartStore((s) => s.tableNumber)
+  const setTableNumber = useCartStore((s) => s.setTableNumber)
   const zones = useDeliveryStore((s) => s.zones)
   const fetchZones = useDeliveryStore((s) => s.fetch)
   const profiles = useProfileStore((s) => s.profiles)
@@ -168,8 +170,14 @@ export function OrderTypeSelector() {
       )}
 
       {orderType === 'dine-in' && (
-        <div className="animate-slide-up text-xs text-muted-foreground text-center py-2">
-          طلب صالة
+        <div className="animate-slide-up space-y-1.5">
+          <div className="relative">
+            <Hash className={iconCls} />
+            <input type="text" inputMode="numeric" placeholder="رقم الترابيزة" value={tableNumber}
+              onChange={e => setTableNumber(e.target.value.replace(/[^0-9]/g, '').slice(0, 3))}
+              className={inputCls} dir="ltr" />
+          </div>
+          <p className="text-[11px] text-muted-foreground text-center">يظهر رقم الترابيزة على الإيصال وتذكرة المطبخ</p>
         </div>
       )}
 

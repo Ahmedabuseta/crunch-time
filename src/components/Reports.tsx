@@ -18,13 +18,7 @@ import {
 import { cn } from '@/lib/utils'
 import { DataTable, sortRows, type SortState } from '@/components/ui/data-table'
 import { Emoji } from '@/components/Emoji'
-
-const pad = (n: number) => String(n).padStart(2, '0')
-const fmtLocal = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
-const today = () => fmtLocal(new Date())
-const daysAgo = (n: number) => { const d = new Date(); d.setDate(d.getDate() - n); return fmtLocal(d) }
-const monthStart = () => fmtLocal(new Date(new Date().getFullYear(), new Date().getMonth(), 1))
-const weekStart = () => { const d = new Date(); d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); return fmtLocal(d) }
+import { daysAgo, monthStart, today, weekStart } from '@/lib/dates'
 
 const formatDuration = (hours: number): string => {
   if (hours < 1 / 60) return '0'
@@ -40,7 +34,7 @@ const PRESETS: { id: string; label: string; days: number; range: () => Range }[]
   { id: 'yesterday', label: 'أمس', days: 7, range: () => ({ from: daysAgo(1), to: daysAgo(1) }) },
   { id: '7d', label: 'آخر 7 أيام', days: 7, range: () => ({ from: daysAgo(6), to: today() }) },
   { id: 'week', label: 'هذا الأسبوع', days: 7, range: () => ({ from: weekStart(), to: today() }) },
-  { id: 'month', label: 'هذا الشهر', days: 30, range: () => ({ from: monthStart(), to: today() }) },
+  { id: 'month', label: 'من بداية الشهر', days: 30, range: () => ({ from: monthStart(), to: today() }) },
   { id: '30d', label: 'آخر 30 يوم', days: 30, range: () => ({ from: daysAgo(29), to: today() }) },
   { id: 'all', label: 'الكل', days: 90, range: () => ({ from: undefined, to: undefined }) },
 ]
@@ -83,9 +77,9 @@ export function Reports() {
   } = useReportStore()
 
   const [tab, setTab] = useState<TabId>('overview')
-  const [active, setActive] = useState<string>('7d')
-  const [trendDays, setTrendDays] = useState(7)
-  const [range, setRange] = useState<Range>({ from: daysAgo(6), to: today() })
+  const [active, setActive] = useState<string>('month')
+  const [trendDays, setTrendDays] = useState(30)
+  const [range, setRange] = useState<Range>({ from: monthStart(), to: today() })
   const [abcSort, setAbcSort] = useState<SortState<any> | null>(null)
   const [turnoverSort, setTurnoverSort] = useState<SortState<any> | null>(null)
   const [ppvSort, setPpvSort] = useState<SortState<any> | null>(null)
@@ -107,7 +101,7 @@ export function Reports() {
     document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }
 
-  useEffect(() => { load(daysAgo(6), today(), 7) }, [])
+  useEffect(() => { load(monthStart(), today(), 30) }, [])
 
   const applyPreset = (id: string) => {
     const p = PRESETS.find(x => x.id === id)!

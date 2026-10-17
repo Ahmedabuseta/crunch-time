@@ -687,6 +687,7 @@ export const rendererApi = {
 
       T.orders.insert({
         id, status: 'COMPLETED', orderType: data.orderType,
+        tableNumber: data.orderType === 'dine-in' ? (String(data.tableNumber || '').trim() || null) : null,
         customerName: data.customerName || null, customerPhone: data.customerPhone || null, customerAddress: data.customerAddress || null,
         // Money is always whole pounds — the mock never persists a float total.
         subtotal: Math.round(Number(data.subtotal) || 0),

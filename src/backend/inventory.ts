@@ -1,5 +1,5 @@
 // Inventory: ingredients, recipes, sub-recipes, restock, transactions.
-import { and, eq, sql } from 'drizzle-orm'
+import { and, asc, desc, eq, sql } from 'drizzle-orm'
 import { getDb, getSqlite } from '../db/client'
 import * as schema from '../db/schema'
 import { deductInventory, listRecipeRows, now, recomputeProductCost, r2, uuid } from './shared'
@@ -15,6 +15,57 @@ const {
 export function listIngredients() {
   const db = getDb()
   return db.select().from(ingredients).where(eq(ingredients.active, true))
+}
+
+/** Sortable ingredient fields. */
+export const INGREDIENT_SORTS = {
+  name: ingredients.name,
+  stock: ingredients.stockQuantity,
+  cost: ingredients.costPerUnit,
+} as const
+
+export type IngredientSortKey = keyof typeof INGREDIENT_SORTS
+
+/**
+ * A page of ingredients. `lowOnly` is what the inventory screen calls "تحت
+ * الحد": at or below the minimum, which is the same condition the alerts use.
+ */
+export function listIngredientsPaged(options: {
+  search?: string
+  lowOnly?: boolean
+  limit: number
+  offset: number
+  sort?: IngredientSortKey
+  dir?: 'asc' | 'desc'
+}) {
+  const db = getDb()
+  const conditions = [eq(ingredients.active, true)]
+  if (options.search) {
+    conditions.push(sql`LOWER(${ingredients.name}) LIKE ${`%${options.search.toLowerCase()}%`}`)
+  }
+  if (options.lowOnly) {
+    conditions.push(sql`${ingredients.stockQuantity} <= ${ingredients.minStock}`)
+  }
+  const where = and(...conditions)
+
+  const total = Number(
+    db.select({ count: sql<number>`COUNT(*)` }).from(ingredients).where(where).get()?.count ?? 0
+  )
+  const column = INGREDIENT_SORTS[options.sort ?? 'name']
+  const items = db.select().from(ingredients).where(where)
+    // The id is a tiebreaker, so two ingredients sharing a name cannot make
+    // page 2 repeat a row from page 1.
+    .orderBy(options.dir === 'desc' ? desc(column) : asc(column), asc(ingredients.id))
+    .limit(options.limit)
+    .offset(options.offset)
+    .all() as any[]
+
+  return { items, total }
+}
+
+export function getIngredientById(id: string) {
+  const db = getDb()
+  return db.select().from(ingredients).where(eq(ingredients.id, id)).get() ?? null
 }
 
 export function createIngredient(data: any) {

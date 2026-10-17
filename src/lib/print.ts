@@ -27,6 +27,8 @@ export interface PrintItem {
 export interface PrintOrder {
   id: string
   orderType: string
+  /** Dine-in only: shown on the receipt and every kitchen ticket. */
+  tableNumber?: string | null
   customerName?: string | null
   customerPhone?: string | null
   customerAddress?: string | null
@@ -290,7 +292,7 @@ ${fontLink}
 <body><div class="ticket">
   <div class="center" style="border-bottom:1px dashed #000;padding-bottom:3px;margin-bottom:4px">
     <p style="font-size:15px;font-weight:900;line-height:1.1">${esc(stationName)}</p>
-    <p style="font-size:13px;font-weight:900;line-height:1.1">${esc(orderTypeLabel(o.orderType))} · ${esc(o.id)}</p>
+    <p style="font-size:13px;font-weight:900;line-height:1.1">${esc(orderTypeLabel(o.orderType))}${o.orderType === 'dine-in' && o.tableNumber ? ` · ترابيزة ${esc(o.tableNumber)}` : ''} · ${esc(o.id)}</p>
     <p style="font-size:9px;line-height:1.1">${esc(now.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' }))}</p>
   </div>
   ${o.note ? `<div style="font-size:11px;font-weight:700;border-right:1px solid #000;padding-right:4px;margin-bottom:4px;line-height:1.1">${esc(o.note)}</div>` : ''}
@@ -355,6 +357,7 @@ ${fontLink}
   <div class="row"><span>التاريخ</span><span style="font-weight:700">${esc(dateStr)}</span></div>
   <div class="row"><span>الوقت</span><span style="font-weight:700">${esc(timeStr)}</span></div>
   <div class="row"><span>نوع الطلب</span><span style="font-weight:700">${esc(orderTypeLabel(o.orderType))}</span></div>
+  ${o.orderType === 'dine-in' && o.tableNumber ? `<div class="row"><span>الترابيزة</span><span style="font-weight:700">${esc(o.tableNumber)}</span></div>` : ''}
   <div class="row"><span>طريقة الدفع</span><span style="font-weight:700">${esc(paymentLabel(o.paymentType))}</span></div>
   ${info.showCashier ? `<div class="row"><span>الكاشير</span><span style="font-weight:700">${esc(o.cashierName || '—')}</span></div>` : ''}
   ${o.note ? `<div class="item-note" style="margin-top:3px">ملاحظة الطلب: ${esc(o.note)}</div>` : ''}

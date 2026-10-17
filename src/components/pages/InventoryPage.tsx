@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Plus, Package, AlertTriangle, Pencil, X, History, TrendingDown, TrendingUp, ShieldAlert } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { monthStart, today } from '@/lib/dates'
 import { fmtMoney } from '@/lib/format'
 import { EmojiPicker } from '@/components/ui/emoji-picker'
 import { ListToolbar } from '@/components/ui/list-toolbar'
@@ -56,8 +57,8 @@ export function InventoryPage() {
   const [restockSupplier, setRestockSupplier] = useState('')
   const [lastPpv, setLastPpv] = useState<{ name: string; ppv: number } | null>(null)
   const [movTypeFilter, setMovTypeFilter] = useState<string | null>(null)
-  const [movFrom, setMovFrom] = useState('')
-  const [movTo, setMovTo] = useState('')
+  const [movFrom, setMovFrom] = useState(monthStart())
+  const [movTo, setMovTo] = useState(today())
   const [movPage, setMovPage] = useState(1)
 
   useEffect(() => { fetchIngredients(); fetchAlerts() }, [])

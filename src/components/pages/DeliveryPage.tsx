@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Truck, Phone, Wallet, Bike } from 'lucide-react'
+import { monthStart, today } from '@/lib/dates'
 import { fmtMoney } from '@/lib/format'
 import { SortButton, sortRows, toggleSort, type SortState } from '@/components/ui/data-table'
 import type { DriverSummary } from '@/services/report/report.types'
@@ -19,8 +20,6 @@ function clock(iso: string) {
   const h12 = h % 12 || 12
   return `${h12}:${m} ${period}`
 }
-
-const today = () => new Date().toISOString().slice(0, 10)
 
 /**
  * Delivery workflow hub (shared top tab — cashier and admin both land here).
@@ -42,7 +41,7 @@ export function DeliveryPage({ onAssigned }: { onAssigned?: () => void }) {
   const [driverSort, setDriverSort] = useState<SortState<any> | null>(null)
 
   // Settlement (admin only)
-  const [from, setFrom] = useState(today())
+  const [from, setFrom] = useState(monthStart())
   const [to, setTo] = useState(today())
   const [summary, setSummary] = useState<DriverSummary | null>(null)
   const [summaryLoading, setSummaryLoading] = useState(false)

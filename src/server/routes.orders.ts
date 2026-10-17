@@ -11,6 +11,7 @@ import { emitEvent } from './events'
 import { asOwner } from './privileges'
 import { deviceLabel } from './util'
 import { mutate } from './route-helpers'
+import { readListQuery, pageMeta } from './list-query'
 
 const ORDER_TYPES = new Set(['dine-in', 'takeaway', 'delivery'])
 const ORDER_STATUSES = new Set(['COMPLETED', 'CANCELLED', 'REFUNDED'])
@@ -92,6 +93,12 @@ export function registerOrderRoutes(app: FastifyInstance, backend: Backend) {
   // ─── List / read ────────────────────────────────────────────
   app.get('/orders', async (req) => {
     const q = (req.query || {}) as any
+    const query = readListQuery(req, {
+      sortable: ['createdAt', 'total', 'id'],
+      defaultSort: 'createdAt',
+      defaultDir: 'desc',
+    })
+
     const filters: any = {}
     if (q.status) filters.status = String(q.status)
     if (q.orderType) filters.orderType = String(q.orderType)
@@ -99,7 +106,17 @@ export function registerOrderRoutes(app: FastifyInstance, backend: Backend) {
     if (q.search) filters.search = String(q.search)
     if (q.from) filters.from = String(q.from)
     if (q.to) filters.to = String(q.to)
-    return { orders: await backend.orders.listOrders(filters) }
+    if (q.deliveryProfileId) filters.deliveryProfileId = String(q.deliveryProfileId)
+
+    const { items, total } = await backend.orders.listOrdersPaged({
+      filters,
+      limit: query.pageSize,
+      offset: query.offset,
+      sort: query.sort as any,
+      dir: query.dir,
+    })
+    // Same key as before, with the paging metadata alongside it.
+    return { orders: items, ...pageMeta(query, total) }
   })
 
   app.get('/orders/:id', async (req, reply) => {

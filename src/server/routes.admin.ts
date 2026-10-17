@@ -2,6 +2,7 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify'
 import type { Backend } from '../backend'
 import { mutate } from './route-helpers'
+import { readListQuery, pageMeta, filter } from './list-query'
 
 const hardOpt = (req: FastifyRequest) => {
   const q = (req.query || {}) as any
@@ -10,7 +11,27 @@ const hardOpt = (req: FastifyRequest) => {
 
 export function registerAdminRoutes(app: FastifyInstance, backend: Backend) {
   // ─── Users ──────────────────────────────────────────────────
-  app.get('/users', async () => ({ users: await backend.users.listUsers() }))
+  app.get('/users', async (req) => {
+    const query = readListQuery(req, {
+      sortable: ['name', 'createdAt', 'role'],
+      defaultSort: 'name',
+      defaultDir: 'asc',
+    })
+    const { items, total } = await backend.users.listUsersPaged({
+      search: query.search || undefined,
+      role: filter(query, 'role'),
+      limit: query.pageSize,
+      offset: query.offset,
+      sort: query.sort as any,
+      dir: query.dir,
+    })
+    return { users: items, ...pageMeta(query, total) }
+  })
+  app.get('/users/:id', async (req, reply) => {
+    const user = await backend.users.getUserById((req.params as any).id)
+    if (!user) return reply.code(404).send({ ok: false, error: 'الموظف غير موجود' })
+    return { user }
+  })
   app.post('/users', async (req) =>
     mutate(req, { action: 'user.create', entity: 'user' }, () => backend.users.createUser(req.body)))
   app.put('/users/:id', async (req) =>

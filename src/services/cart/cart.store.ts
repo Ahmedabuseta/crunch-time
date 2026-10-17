@@ -25,6 +25,8 @@ interface CartStore {
   deliveryNote: string
   deliveryProfileId: string
   deliveryProfileName: string
+  /** Dine-in only: the table the order is served at. */
+  tableNumber: string
   addItem: (product: Product, modifiers?: CartItemModifier[]) => string
   removeItem: (lineId: string) => void
   updateQuantity: (lineId: string, quantity: number) => void
@@ -43,6 +45,7 @@ interface CartStore {
   setDeliveryNote: (note: string) => void
   setDeliveryProfileId: (id: string) => void
   setDeliveryProfileName: (name: string) => void
+  setTableNumber: (num: string) => void
   clearCart: () => void
   subtotal: () => number
   itemCount: () => number
@@ -61,6 +64,7 @@ export const useCartStore = create<CartStore>((set, get) => ({
   deliveryNote: '',
   deliveryProfileId: '',
   deliveryProfileName: '',
+  tableNumber: '',
 
   addItem: (product, modifiers = []) => {
     const state = get()
@@ -128,8 +132,9 @@ export const useCartStore = create<CartStore>((set, get) => ({
   setDeliveryNote: (note) => set({ deliveryNote: note }),
   setDeliveryProfileId: (id) => set({ deliveryProfileId: id }),
   setDeliveryProfileName: (name) => set({ deliveryProfileName: name }),
+  setTableNumber: (num) => set({ tableNumber: num }),
 
-  clearCart: () => set({ items: [], deliveryAddress: '', deliveryPhone: '', customerName: '', discountCode: '', orderNote: '', deliveryZoneId: '', deliveryNote: '', deliveryProfileId: '', deliveryProfileName: '' }),
+  clearCart: () => set({ items: [], deliveryAddress: '', deliveryPhone: '', customerName: '', discountCode: '', orderNote: '', deliveryZoneId: '', deliveryNote: '', deliveryProfileId: '', deliveryProfileName: '', tableNumber: '' }),
 
   subtotal: () => get().items.reduce((sum, i) => {
     const addonTotal = i.addons.reduce((s, a) => s + a.price * (a.qty || 1), 0)

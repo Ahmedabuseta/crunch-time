@@ -1,5 +1,5 @@
 // Orders — creation, listing, status workflow, driver assignment, delete.
-import { and, desc, eq, gte, inArray, like, lte, or, sql } from 'drizzle-orm'
+import { and, asc, desc, eq, gte, inArray, isNull, like, lte, or, sql } from 'drizzle-orm'
 import { getDb, getSqlite } from '../db/client'
 import * as schema from '../db/schema'
 import { getOpenShiftId, now, rollbackInventory, rollbackInventoryPartial, uuid } from './shared'
@@ -35,6 +35,7 @@ export function createOrder(data: any) {
     id,
     status: 'COMPLETED',
     orderType: data.orderType,
+    tableNumber: data.orderType === 'dine-in' ? (String(data.tableNumber || '').trim() || null) : null,
     customerName: data.customerName || null,
     customerPhone: data.customerPhone || null,
     customerAddress: data.customerAddress || null,
@@ -123,8 +124,9 @@ export function createOrder(data: any) {
   return { id }
 }
 
-export function listOrders(filters?: any) {
-  const db = getDb()
+/** The WHERE clauses the plain list, the paged list and its count all share —
+ * so they can never disagree about what counts as a match. */
+function orderConditions(filters?: any) {
   const conditions = [] as any[]
   if (filters?.status) conditions.push(eq(orders.status, filters.status))
   if (filters?.orderType) conditions.push(eq(orders.orderType, filters.orderType))
@@ -144,12 +146,24 @@ export function listOrders(filters?: any) {
   }
   if (filters?.from) conditions.push(gte(orders.createdAt, filters.from))
   if (filters?.to) conditions.push(lte(orders.createdAt, filters.to + '￿'))
+  // The board's driver tab. 'NONE' is the "no driver assigned yet" sentinel it
+  // already uses, and it has to be a server filter now that the list pages —
+  // narrowing one page of results is not the same as filtering the orders.
+  if (filters?.deliveryProfileId) {
+    conditions.push(
+      filters.deliveryProfileId === 'NONE'
+        ? isNull(orders.deliveryProfileId)
+        : eq(orders.deliveryProfileId, filters.deliveryProfileId)
+    )
+  }
+  return conditions
+}
 
-  const rows = (conditions.length > 0
-    ? db.select().from(orders).where(and(...conditions))
-    : db.select().from(orders)
-  ).orderBy(desc(orders.createdAt)).all() as any[]
-
+/** Attaches each order's items, and the product/addon names those items need.
+ * Only the rows handed in are hydrated — which is what makes paging worth
+ * anything. */
+function hydrateOrders(rows: any[]) {
+  const db = getDb()
   const ids = rows.map(r => r.id)
   const itemRows = ids.length
     ? db.select().from(orderItems).where(inArray(orderItems.orderId, ids)).all() as any[]
@@ -182,6 +196,60 @@ export function listOrders(filters?: any) {
     })
     return { ...o, items }
   })
+}
+
+export function listOrders(filters?: any) {
+  const db = getDb()
+  const conditions = orderConditions(filters)
+  const rows = (conditions.length > 0
+    ? db.select().from(orders).where(and(...conditions))
+    : db.select().from(orders)
+  ).orderBy(desc(orders.createdAt)).all() as any[]
+
+  return hydrateOrders(rows)
+}
+
+/** Sortable order fields. The client sends one of these names and the route
+ * maps it to a column, so a client-supplied string never reaches SQL. */
+export const ORDER_SORTS = {
+  createdAt: orders.createdAt,
+  total: orders.total,
+  id: orders.id,
+} as const
+
+export type OrderSortKey = keyof typeof ORDER_SORTS
+
+/**
+ * A page of orders. The count and the ordering both happen in SQL *before* the
+ * limit, so `total` is the size of the whole match and the sort is over every
+ * matching row rather than only the ones that happened to land on this page.
+ */
+export function listOrdersPaged(options: {
+  filters?: any
+  limit: number
+  offset: number
+  sort?: OrderSortKey
+  dir?: 'asc' | 'desc'
+}) {
+  const db = getDb()
+  const conditions = orderConditions(options.filters)
+  const where = conditions.length > 0 ? and(...conditions) : undefined
+
+  const countQuery = db.select({ count: sql<number>`COUNT(*)` }).from(orders)
+  const total = Number((where ? countQuery.where(where) : countQuery).get()?.count ?? 0)
+
+  const column = ORDER_SORTS[options.sort ?? 'createdAt']
+  const listQuery = db.select().from(orders)
+  const rows = (where ? listQuery.where(where) : listQuery)
+    // The id is a tiebreaker, not decoration: two orders created in the same
+    // millisecond would otherwise order arbitrarily between queries, and page 2
+    // could repeat a row from page 1.
+    .orderBy(options.dir === 'asc' ? asc(column) : desc(column), desc(orders.id))
+    .limit(options.limit)
+    .offset(options.offset)
+    .all() as any[]
+
+  return { items: hydrateOrders(rows), total }
 }
 
 export function getOrderById(id: string) {

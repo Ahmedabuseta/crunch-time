@@ -3,6 +3,7 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify'
 import type { Backend } from '../backend'
 import { mutate } from './route-helpers'
+import { readListQuery, pageMeta, filter } from './list-query'
 
 const hardOpt = (req: FastifyRequest) => {
   const q = (req.query || {}) as any
@@ -11,7 +12,26 @@ const hardOpt = (req: FastifyRequest) => {
 
 export function registerCatalogRoutes(app: FastifyInstance, backend: Backend) {
   // ─── Categories ─────────────────────────────────────────────
-  app.get('/categories', async () => ({ categories: await backend.catalog.listCategories() }))
+  app.get('/categories', async (req) => {
+    const query = readListQuery(req, {
+      sortable: ['sortOrder', 'name'],
+      defaultSort: 'sortOrder',
+      defaultDir: 'asc',
+    })
+    const { items, total } = await backend.catalog.listCategoriesPaged({
+      search: query.search || undefined,
+      limit: query.pageSize,
+      offset: query.offset,
+      sort: query.sort as any,
+      dir: query.dir,
+    })
+    return { categories: items, ...pageMeta(query, total) }
+  })
+  app.get('/categories/:id', async (req, reply) => {
+    const category = await backend.catalog.getCategoryById((req.params as any).id)
+    if (!category) return reply.code(404).send({ ok: false, error: 'القسم غير موجود' })
+    return { category }
+  })
   app.post('/categories', async (req) =>
     mutate(req, { action: 'category.create', entity: 'category' }, () => backend.catalog.createCategory(req.body)))
   app.put('/categories/:id', async (req) =>
@@ -25,9 +45,22 @@ export function registerCatalogRoutes(app: FastifyInstance, backend: Backend) {
       backend.catalog.reorderCategories((req.body as any)?.ids || [])))
 
   // ─── Products ───────────────────────────────────────────────
-  app.get('/products', async (req) => ({
-    products: await backend.catalog.listProducts((req.query as any)?.categoryId),
-  }))
+  app.get('/products', async (req) => {
+    const query = readListQuery(req, {
+      sortable: ['name', 'price', 'cost'],
+      defaultSort: 'name',
+      defaultDir: 'asc',
+    })
+    const { items, total } = await backend.catalog.listProductsPaged({
+      categoryId: filter(query, 'categoryId'),
+      search: query.search || undefined,
+      limit: query.pageSize,
+      offset: query.offset,
+      sort: query.sort as any,
+      dir: query.dir,
+    })
+    return { products: items, ...pageMeta(query, total) }
+  })
   app.get('/products/:id', async (req, reply) => {
     const product = await backend.catalog.getProductById((req.params as any).id)
     if (!product) return reply.code(404).send({ ok: false, error: 'المنتج غير موجود' })

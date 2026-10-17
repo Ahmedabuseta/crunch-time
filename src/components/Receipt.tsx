@@ -23,6 +23,8 @@ interface ReceiptProps {
   orderNote?: string
   total: number
   orderType: string
+  /** Dine-in only: printed under the order type. */
+  tableNumber?: string
   customerName?: string
   customerPhone?: string
   customerAddress?: string
@@ -51,7 +53,7 @@ const Row = ({ label, value, bold, color }: { label: string; value?: string | nu
 
 export function Receipt({
   orderId, items, subtotal, tax, taxRate = 0.14, deliveryFee, deliveryZoneName, deliveryNote, deliveryProfileName,
-  discountAmount = 0, discountCode, orderNote, total, orderType, customerName, customerPhone, customerAddress,
+  discountAmount = 0, discountCode, orderNote, total, orderType, tableNumber, customerName, customerPhone, customerAddress,
   paymentType, cashierName, createdAt, info,
 }: ReceiptProps) {
   const brand = info ?? RECEIPT_INFO_DEFAULTS
@@ -96,6 +98,7 @@ export function Receipt({
         <Row label="التاريخ" value={dateStr} />
         <Row label="الوقت" value={timeStr} />
         <Row label="نوع الطلب" value={orderTypeLabels[orderType] || orderType} bold />
+        {orderType === 'dine-in' && tableNumber && <Row label="الترابيزة" value={tableNumber} bold />}
         <Row label="طريقة الدفع" value={paymentLabels[paymentType] || paymentType} bold />
         {brand.showCashier && <Row label="الكاشير" value={cashierName || '—'} bold />}
       </div>

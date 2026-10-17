@@ -145,6 +145,7 @@ export function OrderHistory() {
 
   const toPrintOrder = (o: any) => ({
     id: o.id, orderType: o.orderType,
+    tableNumber: o.tableNumber,
     customerName: o.customerName,
     customerPhone: o.customerPhone, customerAddress: o.customerAddress,
     deliveryZoneName: o.deliveryZoneName, deliveryNote: o.deliveryNote,

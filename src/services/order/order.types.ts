@@ -51,6 +51,8 @@ export interface OrderWithItems extends Order {
 
 export interface CreateOrderInput {
   orderType: string
+  /** Dine-in only: the table the order is served at. */
+  tableNumber?: string
   customerName?: string
   customerPhone?: string
   customerAddress?: string
