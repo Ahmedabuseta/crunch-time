@@ -9,7 +9,6 @@
 // EXPORT_MENU=1 is set, so CI never writes files.
 import { describe, it, vi } from 'vitest'
 import { writeFileSync } from 'fs'
-import { eq } from 'drizzle-orm'
 
 // client.ts asks Electron for the userData path. Point it at the
 // real dev folder so we read the live database.
@@ -31,16 +30,13 @@ describe('export menu.json', () => {
     }
     const db = getDb()
 
-    // Identical to the 'category:list' handler.
+    // Every row plus its `active` flag — the web menu decides what to show
+    // from the flag rather than from price or a hardcoded list.
     const deps = db.select().from(categories)
-      .where(eq(categories.active, true))
       .orderBy(categories.sortOrder, categories.name)
       .all()
 
-    // Identical to the 'product:list' handler (no categoryId filter).
-    const allProducts = db.select().from(products)
-      .where(eq(products.active, true))
-      .all()
+    const allProducts = db.select().from(products).all()
 
     const menu = deps.map(dep => ({
       id: dep.id,
@@ -48,6 +44,7 @@ describe('export menu.json', () => {
       emoji: dep.emoji,
       color: dep.color,
       sortOrder: dep.sortOrder,
+      active: dep.active,
       products: allProducts
         .filter(p => p.categoryId === dep.id)
         .map(p => ({
@@ -57,6 +54,7 @@ describe('export menu.json', () => {
           price: p.price,
           costPrice: p.costPrice,
           emoji: p.emoji,
+          active: p.active,
         })),
     }))
 

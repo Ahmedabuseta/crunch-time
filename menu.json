@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-06T13:19:26.916Z",
+  "generatedAt": "2026-10-23T15:17:45.409Z",
   "restaurant": "Crunch Time",
   "currency": "EGP",
   "menu": [
@@ -9,86 +9,142 @@
       "emoji": "🍗",
       "color": "var(--cat-chicken)",
       "sortOrder": 1,
+      "active": true,
       "products": [
         {
           "id": "c1",
-          "name": "كرانش حار",
-          "description": "كرسبي -موتزاريلا -رومي -زيتون -كاتشب -مايونيز -خس -فلفل ",
-          "price": 80,
-          "costPrice": 0,
-          "emoji": "🌶️"
+          "name": "كرسبي",
+          "description": "كرسبي -موتزاريلا -فلفل -كاتشب -مايونيز -زيتون -خس",
+          "price": 85,
+          "costPrice": 29.150398000000003,
+          "emoji": "🌶️",
+          "active": true
         },
         {
           "id": "c2",
-          "name": "كرانش بارد",
-          "description": "كرسبي-موتزاريلا -رومي -زيتون -كاتشب -مايونيز -خس -فلفل ",
+          "name": "بانيه",
+          "description": "بانيه-موتزاريلا  -زيتون -كاتشب -مايونيز -خس -فلفل ",
           "price": 80,
-          "costPrice": 0,
-          "emoji": "🍗"
+          "costPrice": 27.510398000000002,
+          "emoji": "🍗",
+          "active": true
         },
         {
           "id": "c3",
           "name": "زنجر حار",
           "description": "استربس -موتزاريلا -رومي -زيتون -كاتشب -شيدر -خس -فلفل ",
           "price": 100,
-          "costPrice": 0,
-          "emoji": "🌶️"
+          "costPrice": 55.826398000000005,
+          "emoji": "🌶️",
+          "active": false
         },
         {
           "id": "c4",
           "name": "زنجر بارد",
           "description": "استربس -موتزاريلا -رومي -زيتون -كاتشب -شيدر -خس -فلفل ",
           "price": 100,
-          "costPrice": 0,
-          "emoji": "🍗"
+          "costPrice": 65.765398,
+          "emoji": "🍗",
+          "active": false
         },
         {
           "id": "c5",
           "name": "كوردون بلو",
           "description": "كوردون بلو  -موتزاريلا -رومي -زيتون -كاتشب -شيدر -خس -فلفل ",
-          "price": 0,
-          "costPrice": 0,
-          "emoji": "🍗"
+          "price": 100,
+          "costPrice": 40.260398,
+          "emoji": "🍗",
+          "active": true
         },
         {
           "id": "c6",
           "name": "مشوي صدور",
           "description": " صدور مشويه -موتزاريلا -رومي -زيتون -كاتشب -شيدر -خس -فلفل",
-          "price": 105,
-          "costPrice": 0,
-          "emoji": "🍗"
+          "price": 140,
+          "costPrice": 49.110398,
+          "emoji": "🍗",
+          "active": true
         },
         {
           "id": "c7",
           "name": "شيش",
           "description": "شيش -موتزاريلا -رومي -زيتون -كاتشب -مايونيز -بصل -فلفل ",
-          "price": 105,
-          "costPrice": 0,
-          "emoji": "🍢"
+          "price": 100,
+          "costPrice": 41.375398,
+          "emoji": "🍢",
+          "active": true
         },
         {
           "id": "c8",
           "name": "شاورما",
           "description": "شاورما -موتزاريلا -رومي -زيتون -كاتشب -مايونيز -بصل -فلفل ",
-          "price": 100,
-          "costPrice": 0,
-          "emoji": "🌯"
+          "price": 95,
+          "costPrice": 34.052398,
+          "emoji": "🌯",
+          "active": true
         },
         {
           "id": "c9",
           "name": "فاهيتا",
-          "description": "فاهيتا -صوص فاهيتا -موتزاريلا -رومي -زيتون -كاتشب -مايونيز -مشروم -فلفل -بصل  ",
-          "price": 105,
-          "costPrice": 0,
-          "emoji": "🌯"
+          "description": "فاهيتا  -موتزاريلا  -زيتون -كاتشب -مايونيز  -فلفل",
+          "price": 100,
+          "costPrice": 34.325398,
+          "emoji": "🌯",
+          "active": true
         },
         {
           "id": "c10",
           "name": "ناشفل حار",
           "description": "استربس حار - توابل ناشفل حاره - خيار مخلل -موتزاريلا -صوص رانش -صوص بافلو -خس",
           "price": 125,
-          "costPrice": 0,
-          "emoji": "🌶️"
+          "costPrice": 62.260398,
+          "emoji": "🌶️",
+          "active": false
+        },
+        {
+          "id": "c11",
+          "name": "سوبر كرنشي",
+          "description": "استربس -موتزاريلا -فلفل -كاتشب -مايونيز -زيتون -خس",
+          "price": 120,
+          "costPrice": 40.760398,
+          "emoji": "🍗",
+          "active": true
+        },
+        {
+          "id": "c12",
+          "name": "زنجر",
+          "description": "استربس -تركي مدخن -صوص شيدر -موتزاريلا -فلفل -كاتشب -مايونيز -زيتون -خس",
+          "price": 135,
+          "costPrice": 46.580398,
+          "emoji": "🌶️",
+          "active": true
+        },
+        {
+          "id": "c13",
+          "name": "كونو",
+          "description": "استربس -صوص شيدر -موتزاريلا -فلفل -كاتشب -مايونيز -زيتون -خس",
+          "price": 109,
+          "costPrice": 42.830398,
+          "emoji": "🌯",
+          "active": true
+        },
+        {
+          "id": "c14",
+          "name": "كونو بيتزا",
+          "description": "استربس -صوص شيدر -موتزاريلا مزدوجة -فلفل -كاتشب -مايونيز -زيتون -خس",
+          "price": 140,
+          "costPrice": 48.830398,
+          "emoji": "🍕",
+          "active": true
+        },
+        {
+          "id": "e894b79d-0f2e-4b5f-a897-e9d4fb9e83d7",
+          "name": "بانيه بطاطس",
+          "description": "",
+          "price": 70,
+          "costPrice": 23.225398,
+          "emoji": "",
+          "active": true
         }
       ]
     },
@@ -98,62 +154,106 @@
       "emoji": "🍽️",
       "color": "var(--cat-meals)",
       "sortOrder": 2,
+      "active": true,
       "products": [
         {
-          "id": "mx1",
-          "name": "طوكيو",
-          "description": "برجر - ستربس- صدور مشويه  - موتزاريلا-رومي-زيتون-كاتشب-شيدر- فلفل-بصل",
-          "price": 145,
-          "costPrice": 0,
-          "emoji": "🍱"
+          "id": "mx8",
+          "name": "كرانش تايم",
+          "description": "كوردون بلو -اصابع موزاريلا -بسطرمة -استربس -شاورما",
+          "price": 155,
+          "costPrice": 57.565,
+          "emoji": "🍱",
+          "active": true
         },
         {
-          "id": "mx2",
-          "name": "برين",
-          "description": "هوت دوج - استربس- شيش- موتزاريلا-رومي-زيتون-كاتشب-مايونيز-شيدر- رانش-فلفل",
-          "price": 145,
-          "costPrice": 0,
-          "emoji": "🍱"
+          "id": "mx9",
+          "name": "ميكس فراخ",
+          "description": "استربس -شاورما -بانيه",
+          "price": 124,
+          "costPrice": 60.565,
+          "emoji": "🍱",
+          "active": true
         },
         {
-          "id": "mx3",
-          "name": "نيروبي",
-          "description": "شيش - ستربس- موتزاريلا-رومي-زيتون-رانش-هالبينو",
-          "price": 135,
-          "costPrice": 0,
-          "emoji": "🍱"
+          "id": "mx10",
+          "name": "اسبشيال تايم",
+          "description": "استربس -مشوي صدور -تركي مدخن -صوص شيدر",
+          "price": 119,
+          "costPrice": 58.125,
+          "emoji": "🍱",
+          "active": true
         },
         {
-          "id": "mx4",
-          "name": "ريو",
-          "description": "كوردن بلو - هوت دوج -استربس-شيش -  موتزاريلا-رومي-زيتون-تكساس-شيدر",
-          "price": 150,
-          "costPrice": 0,
-          "emoji": "🍱"
+          "id": "mx11",
+          "name": "Yummy",
+          "description": "بانيه -سوسيس -شاورما",
+          "price": 108,
+          "costPrice": 40.665,
+          "emoji": "🍱",
+          "active": true
         },
         {
-          "id": "mx5",
-          "name": "استوكهولم",
-          "description": "كوردن بلو -صدور مشويه- استربس-  موتزاريلا-رومي-زيتون-كاتشب-رانش-شيدر",
-          "price": 150,
-          "costPrice": 0,
-          "emoji": "🍱"
+          "id": "mx12",
+          "name": "العالمي",
+          "description": "استربس -بسطرمة -شاورما -صوص شيدر",
+          "price": 134,
+          "costPrice": 50.695,
+          "emoji": "🍱",
+          "active": true
         },
         {
-          "id": "mx6",
-          "name": "ميت لافرز",
-          "description": "برجر - هوت دوج -سجق -موتزاريلا -رومي-زيتون -رانش -تكساس",
-          "price": 120,
-          "costPrice": 0,
-          "emoji": "🥩"
+          "id": "mx13",
+          "name": "بيبروني تشكن",
+          "description": "استربس -ببروني",
+          "price": 95,
+          "costPrice": 34.875,
+          "emoji": "🍱",
+          "active": true
         },
         {
-          "id": "mx7",
-          "name": "تشيكن لافرز",
-          "description": "ستربس -شيش - صدور -موتزاريلا -رومي -زيتون -كاتشب -تكساس -شيدر ",
-          "price": 120,
-          "costPrice": 0,
-          "emoji": "🍗"
+          "id": "mx14",
+          "name": "VIP",
+          "description": "استربس -مشوي صدور -سوسيس -صوص شيدر",
+          "price": 119,
+          "costPrice": 39.445,
+          "emoji": "🍱",
+          "active": true
+        },
+        {
+          "id": "mx15",
+          "name": "الجحيم",
+          "description": "بانيه -شاورما -صوص حار -صوص هالبينو",
+          "price": 98,
+          "costPrice": 36.815,
+          "emoji": "🍱",
+          "active": true
+        },
+        {
+          "id": "mx16",
+          "name": "فرايداي",
+          "description": "شاورما -مشروم",
+          "price": 80,
+          "costPrice": 26.6275,
+          "emoji": "🍱",
+          "active": true
+        },
+        {
+          "id": "mx17",
+          "name": "جمبري بانيه",
+          "description": "جمبري بانيه -صوص ألف جزيرة",
+          "price": 235,
+          "costPrice": 81.645,
+          "emoji": "🍤",
+          "active": true
+        },
+        {
+          "id": "mx18",
+          "name": "Bigboom",
+          "description": "كوردون بلو -استربس -شاورما -بطاطس -صوص تكساس",
+          "price": 105,
+          "costPrice": 37.349000000000004,
+          "emoji": "🍱",
+          "active": true
         }
       ]
     },
@@ -163,38 +263,52 @@
       "emoji": "🌯",
       "color": "var(--cat-burgers)",
       "sortOrder": 3,
+      "active": true,
       "products": [
         {
-          "id": "m1",
-          "name": "برجر",
-          "description": "برجر -موتزاريلا -رومي -زيتون -بيبروني -تكساس -خيار مخلل -شيدر -خس ",
-          "price": 115,
-          "costPrice": 0,
-          "emoji": "🍔"
+          "id": "m5",
+          "name": "كفته مشوي",
+          "description": "كفتة -صوص تكساس -موتزاريلا -فلفل -كاتشب -مايونيز -زيتون -خس",
+          "price": 95,
+          "costPrice": 32.350398,
+          "emoji": "🍢",
+          "active": true
         },
         {
-          "id": "m2",
-          "name": "هوت دوج",
-          "description": "هوت دوج -موتزاريلا -رومي -زيتون -فلفل -بصل -مايونيز -باربكيو ",
-          "price": 100,
-          "costPrice": 0,
-          "emoji": "🌭"
-        },
-        {
-          "id": "m3",
+          "id": "m6",
           "name": "سجق",
-          "description": "سجق -موتزاريلا -رومي -زيتون -فلفل -مايونيز -دبس رمان -طماطم",
-          "price": 105,
-          "costPrice": 0,
-          "emoji": "🌭"
+          "description": "سجق -موتزاريلا -فلفل -كاتشب -مايونيز -زيتون -خس",
+          "price": 95,
+          "costPrice": 38.600398,
+          "emoji": "🌭",
+          "active": true
         },
         {
-          "id": "m4",
-          "name": "كفتة",
-          "description": "كفته -موتزاريلا -فلفل -زيتون -بصل -ترياكي -مايونيز ",
+          "id": "m7",
+          "name": "برجر",
+          "description": "برجر -موتزاريلا -فلفل -كاتشب -مايونيز -زيتون -خس",
+          "price": 100,
+          "costPrice": 37.900398,
+          "emoji": "🍔",
+          "active": true
+        },
+        {
+          "id": "m8",
+          "name": "مشكل لحوم",
+          "description": "سوسيس -برجر -كفتة -بسطرمة -صوص تكساس -موتزاريلا -فلفل -كاتشب -مايونيز -زيتون -خس",
           "price": 110,
-          "costPrice": 0,
-          "emoji": "🍢"
+          "costPrice": 53.54484244444445,
+          "emoji": "🥩",
+          "active": true
+        },
+        {
+          "id": "m9",
+          "name": "سوسيس",
+          "description": "سوسيس -موتزاريلا -فلفل -كاتشب -مايونيز -زيتون -خس",
+          "price": 90,
+          "costPrice": 38.600398,
+          "emoji": "🌭",
+          "active": true
         }
       ]
     },
@@ -204,135 +318,134 @@
       "emoji": "🥤",
       "color": "var(--cat-drinks)",
       "sortOrder": 4,
+      "active": true,
       "products": [
         {
           "id": "d1",
           "name": "ليمون نعناع",
           "description": "ليمون نعناع",
           "price": 0,
-          "costPrice": 0,
-          "emoji": "🍋"
+          "costPrice": 0.595,
+          "emoji": "🍋",
+          "active": false
         },
         {
           "id": "d2",
           "name": "مانجا",
           "description": "مانجا",
           "price": 0,
-          "costPrice": 0,
-          "emoji": "🥭"
+          "costPrice": 1.245,
+          "emoji": "🥭",
+          "active": false
         },
         {
           "id": "d3",
           "name": "برتقان",
           "description": "برتقان",
           "price": 0,
-          "costPrice": 0,
-          "emoji": "🍊"
+          "costPrice": 0.7276,
+          "emoji": "🍊",
+          "active": false
         },
         {
           "id": "d4",
           "name": "في كولا",
           "description": "في كولا",
           "price": 0,
-          "costPrice": 0,
-          "emoji": "🥤"
+          "costPrice": 0.595,
+          "emoji": "🥤",
+          "active": false
         },
         {
           "id": "d5",
           "name": "في كولا دايت",
           "description": "في كولا دايت",
           "price": 0,
-          "costPrice": 0,
-          "emoji": "🥤"
+          "costPrice": 0.595,
+          "emoji": "🥤",
+          "active": false
         },
         {
           "id": "d6",
           "name": "في كولا فراولة",
           "description": "في كولا فراولة",
           "price": 0,
-          "costPrice": 0,
-          "emoji": "🍓"
+          "costPrice": 0.6834,
+          "emoji": "🍓",
+          "active": false
         },
         {
           "id": "d7",
           "name": "مياه صغيرة",
           "description": "مياه صغيرة",
           "price": 0,
-          "costPrice": 0,
-          "emoji": "💧"
+          "costPrice": 0.595,
+          "emoji": "💧",
+          "active": false
         }
       ]
     },
     {
       "id": "buckets",
-      "name": "الباكت",
+      "name": "بطاطس باكت",
       "emoji": "🍟",
       "color": "var(--cat-sides)",
       "sortOrder": 5,
+      "active": true,
       "products": [
         {
-          "id": "bk1",
-          "name": "باكت بطاطس فرنس",
-          "description": "باكت بطاطس فرنس",
-          "price": 40,
-          "costPrice": 0,
-          "emoji": "🍟"
+          "id": "bk9",
+          "name": "بوم فريت",
+          "description": "بطاطس",
+          "price": 25,
+          "costPrice": 10.685,
+          "emoji": "🍟",
+          "active": true
         },
         {
-          "id": "bk2",
-          "name": "باكت بطاطس عادي",
-          "description": "باكت بطاطس عادي",
+          "id": "bk10",
+          "name": "تشكن طاطس",
+          "description": "بطاطس -استربس -صوص شيدر",
+          "price": 65,
+          "costPrice": 22.777,
+          "emoji": "🍗",
+          "active": true
+        },
+        {
+          "id": "bk11",
+          "name": "تشكن كب",
+          "description": "بطاطس -استربس -صوص شيدر -هالبينو",
+          "price": 60,
+          "costPrice": 22.3322,
+          "emoji": "🌶️",
+          "active": true
+        },
+        {
+          "id": "bk12",
+          "name": "بطاطس موتزريلا",
+          "description": "بطاطس -موتزاريلا -صوص شيدر",
+          "price": 39,
+          "costPrice": 17.475,
+          "emoji": "🧀",
+          "active": true
+        },
+        {
+          "id": "bk13",
+          "name": "بطاطس فرسكس",
+          "description": "بطاطس",
           "price": 30,
-          "costPrice": 0,
-          "emoji": "🍟"
+          "costPrice": 10.685,
+          "emoji": "🍟",
+          "active": true
         },
         {
-          "id": "bk3",
-          "name": "باكت بطاطس شيدر",
-          "description": "باكت بطاطس شيدر",
-          "price": 60,
-          "costPrice": 0,
-          "emoji": "🧀"
-        },
-        {
-          "id": "bk4",
-          "name": "باكت بطاطس شيدر هالبينو",
-          "description": "باكت بطاطس شيدر هالبينو",
-          "price": 70,
-          "costPrice": 0,
-          "emoji": "🌶️"
-        },
-        {
-          "id": "bk5",
-          "name": "بوب كرانش",
-          "description": "بوب كرانش",
-          "price": 80,
-          "costPrice": 0,
-          "emoji": "🍗"
-        },
-        {
-          "id": "bk6",
-          "name": "بوب تايم",
-          "description": "بوب تايم",
-          "price": 80,
-          "costPrice": 0,
-          "emoji": "🍗"
-        },
-        {
-          "id": "bk7",
-          "name": "موتزريلا ستيكس",
-          "description": "موتزريلا ستيكس",
-          "price": 60,
-          "costPrice": 0,
-          "emoji": "🧀"
-        },
-        {
-          "id": "bk8",
-          "name": "حلقات بصل",
-          "description": "حلقات بصل",
-          "price": 60,
-          "costPrice": 0,
-          "emoji": "🧅"
+          "id": "bk14",
+          "name": "بطاطس سوسيس",
+          "description": "بطاطس -سوسيس -باربكيو",
+          "price": 50,
+          "costPrice": 18.727,
+          "emoji": "🌭",
+          "active": true
         }
       ]
     },
@@ -342,94 +455,98 @@
       "emoji": "🥙",
       "color": "var(--cat-pizza)",
       "sortOrder": 6,
+      "active": true,
       "products": [
         {
-          "id": "s1",
+          "id": "sy1",
           "name": "بطاطس سوري",
-          "description": "بطاطس سوري",
+          "description": "بطاطس -كاتشب -توميه",
           "price": 30,
-          "costPrice": 0,
-          "emoji": "🥔"
+          "costPrice": 13.3786,
+          "emoji": "🥔",
+          "active": true
         },
         {
-          "id": "s2",
-          "name": "بطاطس موتزريلا",
-          "description": "بطاطس موتزريلا",
-          "price": 40,
-          "costPrice": 0,
-          "emoji": "🧀"
-        },
-        {
-          "id": "s3",
-          "name": "زنجر سوري",
-          "description": "زنجر سوري",
-          "price": 80,
-          "costPrice": 0,
-          "emoji": "🌶️"
-        },
-        {
-          "id": "s4",
-          "name": "بانيه سوري",
-          "description": "بانيه سوري",
-          "price": 60,
-          "costPrice": 0,
-          "emoji": "🍗"
-        },
-        {
-          "id": "s5",
-          "name": "كفتة سوري",
-          "description": "كفتة سوري",
-          "price": 75,
-          "costPrice": 0,
-          "emoji": "🍢"
-        },
-        {
-          "id": "s6",
-          "name": "فاهيتا سوري",
-          "description": "فاهيتا سوري",
-          "price": 75,
-          "costPrice": 0,
-          "emoji": "🌯"
-        },
-        {
-          "id": "s7",
-          "name": "شاورما سوري",
-          "description": "شاورما سوري",
-          "price": 70,
-          "costPrice": 0,
-          "emoji": "🌯"
-        },
-        {
-          "id": "s8",
-          "name": "شيش سوري",
-          "description": "شيش سوري",
-          "price": 80,
-          "costPrice": 0,
-          "emoji": "🍢"
-        },
-        {
-          "id": "s9",
-          "name": "بانيه بطاطس",
-          "description": "بانيه بطاطس",
-          "price": 50,
-          "costPrice": 0,
-          "emoji": "🍗"
-        },
-        {
-          "id": "s10",
-          "name": "زنجر بطاطس",
-          "description": "زنجر بطاطس",
-          "price": 70,
-          "costPrice": 0,
-          "emoji": "🌶️"
-        },
-        {
-          "id": "s11",
+          "id": "sy2",
           "name": "شاورما بطاطس",
-          "description": "شاورما بطاطس",
-          "price": 60,
-          "costPrice": 0,
-          "emoji": "🌯"
+          "description": "بطاطس -شاورما -توميه -كاتشب",
+          "price": 50,
+          "costPrice": 20.4486,
+          "emoji": "🌯",
+          "active": true
+        },
+        {
+          "id": "sy3",
+          "name": "بطاطس جبن",
+          "description": "بطاطس -رومي -توميه -كاتشب",
+          "price": 40,
+          "costPrice": 18.8526,
+          "emoji": "🧀",
+          "active": true
+        },
+        {
+          "id": "sy4",
+          "name": "بطاطس هالبينو",
+          "description": "بطاطس -توميه -كاتشب -هالبينو -استربس",
+          "price": 55,
+          "costPrice": 21.699,
+          "emoji": "🌶️",
+          "active": true
+        },
+        {
+          "id": "sy5",
+          "name": "سوري بانيه",
+          "description": "بانيه -بطاطس -توميه -كاتشب",
+          "price": 45,
+          "costPrice": 17.0706,
+          "emoji": "🍗",
+          "active": true
+        }
+      ]
+    },
+    {
+      "id": "potato_crepe",
+      "name": "كريب بطاطس",
+      "emoji": "🥔",
+      "color": "var(--cat-sides)",
+      "sortOrder": 7,
+      "active": true,
+      "products": [
+        {
+          "id": "pc1",
+          "name": "بطاطس",
+          "description": "بطاطس -موتزاريلا -فلفل -كاتشب -مايونيز -زيتون -خس",
+          "price": 45,
+          "costPrice": 23.312398,
+          "emoji": "🍟",
+          "active": true
+        },
+        {
+          "id": "pc2",
+          "name": "بطاطس ولغه",
+          "description": "استربس -بطاطس -موتزاريلا -فلفل -كاتشب -مايونيز -زيتون -خس",
+          "price": 70,
+          "costPrice": 32.310398,
+          "emoji": "🍟",
+          "active": true
+        },
+        {
+          "id": "pc3",
+          "name": "بطاطس سوسيس",
+          "description": "بطاطس -سوسيس -موتزاريلا -فلفل -كاتشب -مايونيز -زيتون -خس",
+          "price": 58,
+          "costPrice": 31.410398,
+          "emoji": "🌭",
+          "active": true
+        },
+        {
+          "id": "pc4",
+          "name": "بطاطس شيدر",
+          "description": "بطاطس -صوص شيدر -موتزاريلا -فلفل -كاتشب -مايونيز -زيتون -خس",
+          "price": 54,
+          "costPrice": 26.762398,
+          "emoji": "🧀",
+          "active": true
         }
       ]
     },
@@ -438,47 +555,53 @@
       "name": "Sweets",
       "emoji": "🍰",
       "color": "var(--cat-crepe-sweet)",
-      "sortOrder": 7,
+      "sortOrder": 8,
+      "active": true,
       "products": [
         {
           "id": "sw1",
           "name": "Waffle Strawberry",
           "description": "وافل فراولة",
           "price": 55,
-          "costPrice": 0,
-          "emoji": "🍓"
+          "costPrice": 6.0200000000000005,
+          "emoji": "🍓",
+          "active": false
         },
         {
           "id": "sw2",
           "name": "Nutella Waffle",
           "description": "وافل نوتيلا",
           "price": 65,
-          "costPrice": 0,
-          "emoji": "🍫"
+          "costPrice": 6.0200000000000005,
+          "emoji": "🍫",
+          "active": false
         },
         {
           "id": "sw3",
           "name": "Pistachio Waffle",
           "description": "وافل فستق",
           "price": 70,
-          "costPrice": 0,
-          "emoji": "🥜"
+          "costPrice": 6.0200000000000005,
+          "emoji": "🥜",
+          "active": false
         },
         {
           "id": "sw4",
           "name": "Lotus Waffle",
           "description": "وافل لوتس",
           "price": 70,
-          "costPrice": 0,
-          "emoji": "🍪"
+          "costPrice": 6.0200000000000005,
+          "emoji": "🍪",
+          "active": false
         },
         {
           "id": "sw5",
           "name": "Kinder Waffle",
           "description": "وافل كندر",
           "price": 70,
-          "costPrice": 0,
-          "emoji": "🎨"
+          "costPrice": 6.0200000000000005,
+          "emoji": "🎨",
+          "active": false
         }
       ]
     },
@@ -487,47 +610,53 @@
       "name": "Treat",
       "emoji": "🍫",
       "color": "var(--cat-desserts)",
-      "sortOrder": 8,
+      "sortOrder": 9,
+      "active": true,
       "products": [
         {
           "id": "tr1",
           "name": "Strawberry",
           "description": "تريت فراولة",
           "price": 95,
-          "costPrice": 0,
-          "emoji": "🍓"
+          "costPrice": 1.52,
+          "emoji": "🍓",
+          "active": false
         },
         {
           "id": "tr2",
           "name": "Nutella",
           "description": "تريت نوتيلا",
           "price": 105,
-          "costPrice": 0,
-          "emoji": "🍫"
+          "costPrice": 3.92,
+          "emoji": "🍫",
+          "active": false
         },
         {
           "id": "tr3",
           "name": "Pistachio",
           "description": "تريت فستق",
           "price": 130,
-          "costPrice": 0,
-          "emoji": "🥜"
+          "costPrice": 3.92,
+          "emoji": "🥜",
+          "active": false
         },
         {
           "id": "tr4",
           "name": "Lotus",
           "description": "تريت لوتس",
           "price": 120,
-          "costPrice": 0,
-          "emoji": "🍪"
+          "costPrice": 3.92,
+          "emoji": "🍪",
+          "active": false
         },
         {
           "id": "tr5",
           "name": "Kinder",
           "description": "تريت كندر",
           "price": 120,
-          "costPrice": 0,
-          "emoji": "🎨"
+          "costPrice": 3.92,
+          "emoji": "🎨",
+          "active": false
         }
       ]
     },
@@ -536,23 +665,35 @@
       "name": "فطار",
       "emoji": "🍳",
       "color": "var(--cat-chicken)",
-      "sortOrder": 9,
+      "sortOrder": 10,
+      "active": true,
       "products": [
         {
           "id": "b1",
           "name": "كريب بطاطس",
           "description": "بطاطس - موتزاريلا-رومي-زيتون-كاتشب-مايونيز- صوص الكوكتيل المميز-شيدر- فلفل",
           "price": 65,
-          "costPrice": 0,
-          "emoji": "🥔"
+          "costPrice": 17.990398,
+          "emoji": "🥔",
+          "active": false
         },
         {
           "id": "b2",
           "name": "ميكس تشيز",
           "description": "موتزاريلا-رومي-كيري - زيتون-كاتشب-مايونيز- شيدر- فلفل- خس",
           "price": 75,
-          "costPrice": 0,
-          "emoji": "🧀"
+          "costPrice": 9.705,
+          "emoji": "🧀",
+          "active": true
+        },
+        {
+          "id": "31bbe116-8996-461d-abd0-129652c8e6e5",
+          "name": "مكس جبن",
+          "description": "",
+          "price": 45,
+          "costPrice": 14.270398,
+          "emoji": "",
+          "active": true
         }
       ]
     }
