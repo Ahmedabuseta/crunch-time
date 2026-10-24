@@ -3,7 +3,7 @@ import { useOrderStore } from '@/services/order/order.store'
 import { useUserStore } from '@/services/user/user.store'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { Search, Truck, UtensilsCrossed, ChevronDown, X, Printer, ChefHat, RefreshCw, SlidersHorizontal, Trash2 } from 'lucide-react'
+import { Search, Truck, UtensilsCrossed, ChevronDown, X, Printer, ChefHat, RefreshCw, SlidersHorizontal, Trash2, BadgePercent, ReceiptText, Banknote, XCircle } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { fmtMoney } from '@/lib/format'
 import { printOrderPack, buildKitchenTicketHtml, contentWidth, markKitchenTicketItems } from '@/lib/print'
@@ -52,6 +52,33 @@ const orderTypeLabels: Record<string, string> = {
 
 type SortMode = 'latest' | 'oldest' | 'highest' | 'lowest'
 
+/** Order-level discount; falls back to line discounts for orders saved without one. */
+function orderDiscount(order: any): number {
+  const orderLevel = Number(order?.discountAmount) || 0
+  if (orderLevel > 0) return orderLevel
+  const items = Array.isArray(order?.items) ? order.items : []
+  return items.reduce((sum: number, item: any) => sum + (Number(item?.itemDiscount) || 0), 0)
+}
+
+function StatCard({ icon: Icon, label, value, tone }: {
+  icon: typeof ReceiptText
+  label: string
+  value: string
+  tone: string
+}) {
+  return (
+    <div className="flex flex-1 items-center gap-2.5 min-w-0 rounded-xl bg-secondary/50 px-3 py-2">
+      <div className={cn('flex h-7 w-7 shrink-0 items-center justify-center rounded-lg', tone)}>
+        <Icon className="h-3.5 w-3.5" />
+      </div>
+      <div className="min-w-0">
+        <p className="text-[10px] font-bold text-muted-foreground leading-none mb-1 truncate">{label}</p>
+        <p className="text-sm font-black leading-none truncate">{value}</p>
+      </div>
+    </div>
+  )
+}
+
 const VOID_REASONS = [
   'العميل طلب الإلغاء',
   'خطأ في إدخال الطلب',
@@ -82,6 +109,8 @@ export function OrderHistory() {
   const [statusFilter, setStatusFilter] = useState<string | null>(null)
   const [orderTypeFilter, setOrderTypeFilter] = useState<string | null>(null)
   const [paymentFilter, setPaymentFilter] = useState<string | null>(null)
+  const [cashierFilter, setCashierFilter] = useState<string | null>(null)
+  const [discountFilter, setDiscountFilter] = useState<'all' | 'with' | 'without'>('all')
   const [sortMode, setSortMode] = useState<SortMode>('latest')
   const [reasonMap, setReasonMap] = useState<Record<string, string>>({})
   const [reasonError, setReasonError] = useState<string | null>(null)
@@ -94,6 +123,24 @@ export function OrderHistory() {
   const [filtersOpen, setFiltersOpen] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<any | null>(null)
   const [deleting, setDeleting] = useState(false)
+
+  // Cashiers only ever see their own orders; admins see every order on the floor.
+  const visibleOrders = useMemo(() => {
+    if (isAdmin || !currentUser) return orders
+    return orders.filter((o) => {
+      const order = o as any
+      return order.userId === currentUser.id || (!order.userId && order.cashierName === currentUser.name)
+    })
+  }, [orders, isAdmin, currentUser])
+
+  const cashierOptions = useMemo(() => {
+    const names = new Set<string>()
+    for (const order of orders) {
+      const name = (order as any).cashierName
+      if (name) names.add(name)
+    }
+    return [...names].sort((a, b) => a.localeCompare(b, 'ar'))
+  }, [orders])
 
   useEffect(() => {
     let mounted = true
@@ -279,7 +326,7 @@ export function OrderHistory() {
   }
 
   const sortedOrders = useMemo(() => {
-    const cloned = [...orders]
+    const cloned = [...visibleOrders]
     if (sortMode === 'highest') return cloned.sort((a, b) => (b.total || 0) - (a.total || 0))
     if (sortMode === 'lowest') return cloned.sort((a, b) => (a.total || 0) - (b.total || 0))
     if (sortMode === 'oldest') {
@@ -294,23 +341,43 @@ export function OrderHistory() {
       if (delta !== 0) return delta
       return String(b.id).localeCompare(String(a.id))
     })
-  }, [orders, sortMode])
+  }, [visibleOrders, sortMode])
+
+  const filteredOrders = useMemo(() => sortedOrders.filter((o) => {
+    const order = o as any
+    if (statusFilter && o.status !== statusFilter) return false
+    if (orderTypeFilter && o.orderType !== orderTypeFilter) return false
+    if (paymentFilter && (order.paymentType || 'cash') !== paymentFilter) return false
+    if (cashierFilter && order.cashierName !== cashierFilter) return false
+    const discount = orderDiscount(order)
+    if (discountFilter === 'with' && discount <= 0) return false
+    if (discountFilter === 'without' && discount > 0) return false
+    return true
+  }), [sortedOrders, statusFilter, orderTypeFilter, paymentFilter, cashierFilter, discountFilter])
 
   const list = useListControls({
-    items: sortedOrders,
+    items: filteredOrders,
     searchText: (o) => {
       const order = o as any
       const itemNames = Array.isArray(order.items) ? order.items.map((i: any) => `${i.productName || ''} ${i.note || ''}`).join(' ') : ''
       return `${o.id} ${order.customerName || ''} ${order.customerPhone || ''} ${order.note || ''} ${order.deliveryZoneName || ''} ${order.deliveryNote || ''} ${order.cashierName || ''} ${itemNames}`
     },
-    filter: (o) => {
-      const order = o as any
-      if (statusFilter && o.status !== statusFilter) return false
-      if (orderTypeFilter && o.orderType !== orderTypeFilter) return false
-      if (paymentFilter && (order.paymentType || 'cash') !== paymentFilter) return false
-      return true
-    },
   })
+
+  const stats = useMemo(() => {
+    const completed = filteredOrders.filter((o) => o.status === 'COMPLETED')
+    return {
+      count: filteredOrders.length,
+      sales: completed.reduce((sum, o) => sum + (o.total || 0), 0),
+      discounts: completed.reduce((sum, o) => sum + orderDiscount(o), 0),
+      discounted: completed.filter((o) => orderDiscount(o) > 0).length,
+      cancelled: filteredOrders.filter((o) => o.status !== 'COMPLETED').length,
+    }
+  }, [filteredOrders])
+
+  const activeFilterCount =
+    [statusFilter, orderTypeFilter, paymentFilter, cashierFilter].filter(Boolean).length +
+    (discountFilter !== 'all' ? 1 : 0)
 
   const columns: DataColumn<any>[] = [
     {
@@ -331,7 +398,22 @@ export function OrderHistory() {
       ),
     },
     { key: 'payment', label: 'الدفع', sortValue: (o: any) => o.paymentType || 'cash', render: (o) => <span className="text-xs font-bold">{paymentLabels[o.paymentType] || o.paymentType || 'كاش'}</span> },
-    { key: 'cashier', label: 'الكاشير', sortValue: (o: any) => o.cashierName || '', render: (o) => <span className="text-xs text-muted-foreground">{o.cashierName || '—'}</span> },
+    { key: 'cashier', label: 'الكاشير', hide: !isAdmin, sortValue: (o: any) => o.cashierName || '', render: (o) => <span className="text-xs text-muted-foreground">{o.cashierName || '—'}</span> },
+    {
+      key: 'discount', label: 'الخصم', sortValue: (o: any) => orderDiscount(o), render: (o) => {
+        const discount = orderDiscount(o)
+        if (discount <= 0) return <span className="text-[11px] text-muted-foreground">—</span>
+        return (
+          <div className="flex flex-col items-start gap-0.5">
+            <span className="flex items-center gap-1 text-xs font-black text-green-400">
+              <BadgePercent className="h-3 w-3" />
+              -{fmtMoney(discount)} ج.م
+            </span>
+            {o.discountCode && <span className="text-[9px] font-bold text-muted-foreground">{o.discountCode}</span>}
+          </div>
+        )
+      },
+    },
     { key: 'total', label: 'الإجمالي', className: 'text-left', render: (o) => <span className="font-black text-primary">{o.total.toFixed(0)} ج.م</span> },
     { key: 'time', label: 'الوقت', sortValue: (o: any) => o.createdAt, render: (o) => <span className="text-[11px] text-muted-foreground">{toEgyptianTime(o.createdAt)}</span> },
     {
@@ -603,13 +685,13 @@ export function OrderHistory() {
     )
   }
 
-  if (orders.length === 0) {
+  if (visibleOrders.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center h-full text-muted-foreground gap-3">
         <div className="w-16 h-16 rounded-3xl bg-secondary/60 flex items-center justify-center"><span className="text-2xl opacity-40">📋</span></div>
         <div className="text-center">
-          <p className="text-sm font-bold">لا توجد طلبات بعد</p>
-          <p className="text-[11px] text-muted-foreground mt-0.5">أكمل طلب لرؤية الطلبات هنا</p>
+          <p className="text-sm font-bold">{isAdmin ? 'لا توجد طلبات بعد' : 'لا توجد طلبات باسمك بعد'}</p>
+          <p className="text-[11px] text-muted-foreground mt-0.5">{isAdmin ? 'أكمل طلب لرؤية الطلبات هنا' : 'الطلبات التي تنشئها من الكاشير ستظهر هنا'}</p>
         </div>
       </div>
     )
@@ -617,6 +699,15 @@ export function OrderHistory() {
 
   return (
     <div className="flex flex-col h-full">
+      {isAdmin && (
+        <div className="flex shrink-0 items-stretch gap-2 overflow-x-auto px-5 py-3 border-b">
+          <StatCard icon={ReceiptText} label="الطلبات" value={String(stats.count)} tone="bg-primary/10 text-primary" />
+          <StatCard icon={Banknote} label="المبيعات" value={`${fmtMoney(stats.sales)} ج.م`} tone="bg-green-500/10 text-green-400" />
+          <StatCard icon={BadgePercent} label={`الخصومات · ${stats.discounted}`} value={`-${fmtMoney(stats.discounts)} ج.م`} tone="bg-amber-500/10 text-amber-400" />
+          <StatCard icon={XCircle} label="ملغية / مستردة" value={String(stats.cancelled)} tone="bg-red-500/10 text-red-400" />
+        </div>
+      )}
+
       {/* Search + Filter */}
       <div className="px-5 pt-4 pb-3 space-y-3 border-b">
         <div className="flex items-center gap-2 flex-wrap">
@@ -639,18 +730,18 @@ export function OrderHistory() {
         </div>
 
         <div className="flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
-          <span>النتائج: <span className="font-bold text-foreground">{list.total}</span></span>
+          <span>النتائج: <span className="font-bold text-foreground">{list.total}</span>{!isAdmin && ' · طلباتك فقط'}</span>
           <span>{lastSyncAt ? `آخر تحديث ${lastSyncAt.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })}` : '—'}</span>
         </div>
 
         <button onClick={() => setFiltersOpen(value => !value)}
           className="flex items-center justify-between w-full rounded-xl bg-secondary/60 px-3 py-2 text-xs font-bold text-muted-foreground hover:text-foreground transition-colors cursor-pointer">
-          <span className="flex items-center gap-2"><SlidersHorizontal className="h-3.5 w-3.5" /> الفلاتر والترتيب {([statusFilter, orderTypeFilter, paymentFilter].filter(Boolean).length > 0) && <span className="rounded-full bg-primary px-1.5 py-0.5 text-[9px] text-primary-foreground">مفعلة</span>}</span>
+          <span className="flex items-center gap-2"><SlidersHorizontal className="h-3.5 w-3.5" /> الفلاتر والترتيب {activeFilterCount > 0 && <span className="rounded-full bg-primary px-1.5 py-0.5 text-[9px] text-primary-foreground">{activeFilterCount}</span>}</span>
           <ChevronDown className={cn("h-4 w-4 transition-transform", filtersOpen && "rotate-180")} />
         </button>
 
         {filtersOpen && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 animate-slide-up">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 animate-slide-up">
             <Select value={sortMode} onValueChange={(value) => { setSortMode(value as SortMode); list.setPage(1) }}>
               <SelectTrigger className="h-9 rounded-lg bg-secondary text-xs font-bold"><SelectValue placeholder="الترتيب" /></SelectTrigger>
               <SelectContent>
@@ -681,6 +772,25 @@ export function OrderHistory() {
                 {Object.entries(paymentLabels).map(([key, label]) => <SelectItem key={key} value={key}>{label}</SelectItem>)}
               </SelectContent>
             </Select>
+            {isAdmin && (
+              <>
+                <Select value={cashierFilter || 'all'} onValueChange={(value) => { setCashierFilter(value === 'all' ? null : value); list.setPage(1) }}>
+                  <SelectTrigger className="h-9 rounded-lg bg-secondary text-xs font-bold"><SelectValue placeholder="الكاشير" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">كل الكاشيرية</SelectItem>
+                    {cashierOptions.map((name) => <SelectItem key={name} value={name}>{name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+                <Select value={discountFilter} onValueChange={(value) => { setDiscountFilter(value as 'all' | 'with' | 'without'); list.setPage(1) }}>
+                  <SelectTrigger className="h-9 rounded-lg bg-secondary text-xs font-bold"><SelectValue placeholder="الخصم" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">الكل (خصم وبدونه)</SelectItem>
+                    <SelectItem value="with">مع خصم</SelectItem>
+                    <SelectItem value="without">بدون خصم</SelectItem>
+                  </SelectContent>
+                </Select>
+              </>
+            )}
           </div>
         )}
       </div>
@@ -710,6 +820,14 @@ export function OrderHistory() {
                     <span className="text-xs font-mono font-black bg-secondary rounded-lg px-2.5 py-1">{order.id}</span>
                     <span className={cn("text-[10px] font-bold rounded-full px-2.5 py-0.5", statusConfig[order.status]?.bg, statusConfig[order.status]?.color)}>{statusConfig[order.status]?.label || order.status}</span>
                     <DriverChip order={order} />
+                    {orderDiscount(order) > 0 && (
+                      <span className="text-[10px] font-bold rounded-full px-2 py-0.5 bg-green-500/10 text-green-400" title="قيمة الخصم">
+                        خصم -{fmtMoney(orderDiscount(order))} ج.م
+                      </span>
+                    )}
+                    {isAdmin && (order as any).cashierName && (
+                      <span className="text-[10px] text-muted-foreground bg-secondary/60 rounded-full px-2 py-0.5">{(order as any).cashierName}</span>
+                    )}
                     {((order as any).note || ((order as any).items || []).some((i: any) => i.note)) && (
                       <span className="text-[10px] font-bold rounded-full px-2 py-0.5 bg-amber-500/10 text-amber-400" title="يوجد ملاحظات">ملاحظة</span>
                     )}

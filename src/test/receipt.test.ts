@@ -275,12 +275,22 @@ describe('buildCustomerReceiptHtml', () => {
     expect(hidden).toContain('419.7')
   })
 
-  it('keeps totals consistent with the order and shows the discount code', () => {
+  it('keeps totals consistent and shows the discount amount without the code', () => {
     const html = buildCustomerReceiptHtml(sampleOrder(), '72mm', info)
-    expect(html).toContain('SAVE10')
+    expect(html).not.toContain('SAVE10')
+    expect(html).toContain('الخصم')
     expect(html).toContain('-20')
     expect(html).toContain('الإجمالي المستحق')
     expect(html).toContain('رسوم التوصيل (فيصل)')
+    expect(html).not.toContain('#16a34a')
+  })
+
+  it('shows the discount for a fully discounted order when the payload omits it', () => {
+    const html = buildCustomerReceiptHtml(sampleOrder({
+      subtotal: 80, tax: 0, deliveryFee: 0, discountAmount: 0, discountCode: undefined, total: 0,
+    }), '72mm', info)
+    expect(html).toContain('<span>الخصم</span><span>-80 ج.م</span>')
+    expect(html).toContain('الإجمالي المستحق')
   })
 
   it('escapes user-controlled text so the ticket cannot be broken', () => {

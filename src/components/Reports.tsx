@@ -701,7 +701,18 @@ export function Reports() {
         {tab === 'profit' && (
           <>
             {profitSummary ? (
-              <Section icon={<Wallet className="h-4 w-4 text-primary" />} title="تحليل الأرباح">
+              <Section
+                icon={<Wallet className="h-4 w-4 text-primary" />}
+                title="تحليل الأرباح"
+                action={
+                  <span className="text-[10px] font-bold text-muted-foreground flex items-center gap-1">
+                    <CalendarDays className="h-3 w-3" />
+                    {profitSummary.from
+                      ? `من بداية الشهر · ${profitSummary.from} ← ${profitSummary.to}`
+                      : 'من بداية الشهر'}
+                  </span>
+                }
+              >
                 {profitData.length > 0 && (
                   <div className="h-48 mb-4">
                     <ChartContainer className="h-full">
@@ -746,7 +757,7 @@ export function Reports() {
                   </div>
                   <div className="grid grid-cols-4 gap-2">
                     <div className="bg-secondary/60 rounded-xl p-2.5 text-center">
-                      <p className="text-[10px] text-muted-foreground mb-0.5">رسوم توصيل</p>
+                      <p className="text-[10px] text-muted-foreground mb-0.5">رسوم توصيل (للشركة)</p>
                       <p className="text-xs font-bold text-primary">{profitSummary.deliveryFees.toFixed(0)} ج.م</p>
                     </div>
                     <div className="bg-secondary/60 rounded-xl p-2.5 text-center">
@@ -1157,10 +1168,14 @@ export function Reports() {
                 {/* Labor */}
                 {laborSummary && laborSummary.staff.length > 0 && (
                   <Section icon={<Users className="h-4 w-4 text-primary" />} title="أداء الموظفين">
-                    <div className="grid grid-cols-3 gap-3">
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                       <div className="bg-secondary/60 rounded-xl p-3 text-center">
-                        <p className="text-[10px] text-muted-foreground mb-0.5">إجمالي المبيعات</p>
+                        <p className="text-[10px] text-muted-foreground mb-0.5">مبيعات الموظفين</p>
                         <p className="text-xl font-black text-green-400">{laborSummary.staff.reduce((s: number, u: any) => s + u.sales, 0).toFixed(0)} <span className="text-xs">ج.م</span></p>
+                      </div>
+                      <div className="bg-secondary/60 rounded-xl p-3 text-center">
+                        <p className="text-[10px] text-muted-foreground mb-0.5">رسوم توصيل (للشركة)</p>
+                        <p className="text-xl font-black text-primary">{(laborSummary.totalDeliveryFees ?? 0).toFixed(0)} <span className="text-xs">ج.م</span></p>
                       </div>
                       <div className="bg-secondary/60 rounded-xl p-3 text-center">
                         <p className="text-[10px] text-muted-foreground mb-0.5">إجمالي الطلبات</p>
@@ -1171,6 +1186,7 @@ export function Reports() {
                         <p className="text-xl font-black text-blue-400">{laborSummary.staff.length}</p>
                       </div>
                     </div>
+                    <p className="text-[10px] text-muted-foreground font-medium mt-2">مبيعات الموظفين لا تتضمن رسوم التوصيل — رسوم التوصيل تخص الشركة.</p>
                     {staffSalesData.length > 1 && (
                       <div className="h-44 mt-3">
                         <ChartContainer className="h-full">
@@ -1193,10 +1209,12 @@ export function Reports() {
                             <span className="text-[11px] font-bold">{s.name}</span>
                             <span className="text-[11px] font-black text-green-400">{s.sales.toFixed(0)} ج.م</span>
                           </div>
-                          <div className="flex items-center gap-3 text-[10px] text-muted-foreground mt-1">
+                          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-muted-foreground mt-1">
                             <span>{s.orderCount} طلب</span>
                             <span>{formatDuration(s.hoursWorked)}</span>
                             <span>{s.shiftCount} وردية</span>
+                            {s.deliveryFees > 0 && <span className="text-primary font-bold">توصيل للشركة: {s.deliveryFees.toFixed(0)}</span>}
+                            {s.commissionRate > 0 && <span>عمولة: {s.commission.toFixed(0)}</span>}
                           </div>
                         </div>
                       ))}

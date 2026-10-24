@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 import { useCategoryStore } from '@/services/category/category.store'
 import { cn } from '@/lib/utils'
+import { categoryBg } from '@/lib/category-bg'
 import { Emoji } from '@/components/Emoji'
 
 interface CategorySidebarProps {
@@ -24,30 +25,60 @@ export function CategorySidebar({ selected, onSelect }: CategorySidebarProps) {
         <button
           onClick={() => onSelect(null)}
           className={cn(
-            "flex items-center gap-1.5 px-3 sm:px-4 py-2 sm:py-2.5 min-h-[44px] rounded-2xl text-xs transition-all cursor-pointer shrink-0 md:w-full md:flex-col md:py-4",
+            "relative overflow-hidden flex items-center gap-1.5 px-3 sm:px-4 py-2 sm:py-2.5 min-h-[48px] transition-all cursor-pointer shrink-0 md:w-full md:flex-col md:py-4 animate-scale-in",
             selected === null
-              ? "bg-primary text-primary-foreground font-bold shadow-lg shadow-primary/25"
-              : "bg-secondary/60 text-foreground hover:bg-secondary font-medium"
+              ? "font-black shadow-lg shadow-primary/25 ring-2 ring-primary"
+              : "font-bold ring-1 ring-transparent hover:ring-border hover:scale-[1.02]"
           )}
         >
-          <span className="text-lg sm:text-xl md:text-2xl">📋</span>
-          <span className="max-[420px]:hidden">الكل</span>
-        </button>
-        {sortedCategories.map((cat) => (
-          <button
-            key={cat.id}
-            onClick={() => onSelect(cat.id)}
+          <img
+            src={categoryBg('all')}
+            alt=""
+            aria-hidden
             className={cn(
-              "flex items-center gap-1.5 px-3 sm:px-4 py-2 sm:py-2.5 min-h-[44px] rounded-2xl text-xs transition-all cursor-pointer shrink-0 md:w-full md:flex-col md:py-4",
-              selected === cat.id
-                ? "bg-primary text-primary-foreground font-bold shadow-lg shadow-primary/25"
-                : "bg-secondary/60 text-foreground hover:bg-secondary font-medium"
+              "absolute inset-0 h-full w-full object-cover scale-110 blur-[3px] transition-all duration-300",
+              selected === null ? "brightness-90 saturate-100" : "brightness-[0.65] saturate-[0.85]"
             )}
-          >
-            <Emoji className="text-lg sm:text-xl md:text-2xl">{cat.emoji}</Emoji>
-            <span className="whitespace-nowrap max-[420px]:hidden">{cat.name}</span>
-          </button>
-        ))}
+          />
+          <span className="absolute inset-0 bg-black/35" />
+          <span className="relative flex items-center gap-1.5">
+            <Emoji className="text-xl sm:text-2xl md:text-3xl">📋</Emoji>
+            <span className="whitespace-nowrap text-sm md:text-base text-white max-[420px]:hidden">الكل</span>
+          </span>
+        </button>
+        {sortedCategories.map((cat, idx) => {
+          const bg = categoryBg(cat.id)
+          return (
+            <button
+              key={cat.id}
+              onClick={() => onSelect(cat.id)}
+              style={{ animationDelay: `${idx * 0.03}s` }}
+              className={cn(
+                "relative overflow-hidden flex items-center gap-1.5 px-3 sm:px-4 py-2 sm:py-2.5 min-h-[48px] transition-all cursor-pointer shrink-0 md:w-full md:flex-col md:py-4 animate-scale-in",
+                selected === cat.id
+                  ? "font-black shadow-lg shadow-primary/25 ring-2 ring-primary"
+                  : "font-bold ring-1 ring-transparent hover:ring-border hover:scale-[1.02]"
+              )}
+            >
+              {bg && (
+                <>
+                  <img
+                    src={bg}
+                    alt=""
+                    aria-hidden
+                    loading={idx > 4 ? 'lazy' : undefined}
+                    className="absolute inset-0 h-full w-full object-cover scale-110 blur-[3px] brightness-[0.65] saturate-[0.85] transition-all duration-300"
+                  />
+                  <span className="absolute inset-0 bg-black/35" />
+                </>
+              )}
+              <span className="relative flex items-center gap-1.5">
+                <Emoji className="text-xl sm:text-2xl md:text-3xl">{cat.emoji}</Emoji>
+                <span className={cn("whitespace-nowrap text-sm md:text-base max-[420px]:hidden", bg ? "text-white" : "text-foreground")}>{cat.name}</span>
+              </span>
+            </button>
+          )
+        })}
       </div>
       <div className="p-3 max-md:hidden">
         <div className="rounded-xl bg-secondary/40 p-2.5 text-center">

@@ -17,6 +17,21 @@ function resolveDeliveryZone(zoneId?: string | null, zoneName?: string | null) {
   return { deliveryZoneId: zoneId, deliveryZoneName: (zoneName || '').trim() || row?.name || null }
 }
 
+/** Highest sequence already used for a shift's `N-###` order ids. Read by id
+ * prefix rather than by shift_id: a row count drops when an order is deleted,
+ * which hands the next sale an id that is already taken. */
+function maxOrderSequence(shiftNumber: number) {
+  const prefix = `${shiftNumber}-`
+  const rows = getSqlite().prepare('SELECT id FROM orders WHERE id LIKE ?').all(`${prefix}%`) as { id: string }[]
+  let max = 0
+  for (const { id } of rows) {
+    if (!id.startsWith(prefix)) continue
+    const seq = Number(id.slice(prefix.length))
+    if (Number.isInteger(seq) && seq > max) max = seq
+  }
+  return max
+}
+
 export function createOrder(data: any) {
   const db = getDb()
   const shiftId = getOpenShiftId(data.shiftId) || data.shiftId || null
@@ -25,14 +40,13 @@ export function createOrder(data: any) {
   }
   const shift = db.select({ number: shifts.number }).from(shifts).where(eq(shifts.id, shiftId)).get()
   const shiftNumber = Number(shift?.number) || 0
-  const { c } = getSqlite().prepare('SELECT COUNT(*) AS c FROM orders WHERE shift_id = ?').get(shiftId) as { c: number }
-  const id = shiftNumber > 0
-    ? `${shiftNumber}-${String((c || 0) + 1).padStart(3, '0')}`
-    : `#${Date.now().toString().slice(-6)}${Math.floor(Math.random() * 90 + 10)}`
   const ts = now()
+  const nextOrderId = () => shiftNumber > 0
+    ? `${shiftNumber}-${String(maxOrderSequence(shiftNumber) + 1).padStart(3, '0')}`
+    : `#${Date.now().toString().slice(-6)}${Math.floor(Math.random() * 90 + 10)}`
+  let id = nextOrderId()
 
-  db.insert(orders).values({
-    id,
+  const orderRow = {
     status: 'COMPLETED',
     orderType: data.orderType,
     tableNumber: data.orderType === 'dine-in' ? (String(data.tableNumber || '').trim() || null) : null,
@@ -67,7 +81,21 @@ export function createOrder(data: any) {
     shiftId,
     createdAt: ts,
     updatedAt: ts,
-  }).run()
+  }
+
+  // Another till (or the phone) can claim the same id between the read above
+  // and the insert. Recompute from the table and retry rather than losing the
+  // sale to a UNIQUE constraint.
+  for (let attempt = 0; ; attempt++) {
+    try {
+      db.insert(orders).values({ id, ...orderRow }).run()
+      break
+    } catch (err) {
+      const duplicateId = err instanceof Error && /UNIQUE constraint failed: orders\.id/.test(err.message)
+      if (!duplicateId || attempt >= 5) throw err
+      id = nextOrderId()
+    }
+  }
 
   for (const item of data.items) {
     db.insert(orderItems).values({

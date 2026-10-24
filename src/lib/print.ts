@@ -49,6 +49,27 @@ export interface PrintOrder {
   paymentType?: string
 }
 
+export interface ShiftPrintReport {
+  shiftId: string
+  shiftNumber?: number
+  userName?: string
+  startedAt: string | Date
+  endedAt?: string | Date | null
+  orderCount: number
+  totalRevenue: number
+  discountTotal?: number
+  openingCash: number
+  closingCash?: number | null
+  expectedCash: number
+  cashDifference?: number | null
+  payments: { method: string; count: number; total: number }[]
+  orderTypes: { type: string; count: number; revenue: number }[]
+  deliveryCash: number
+  deliveryCashOrders?: number
+  deliveryFees?: number
+  movements?: { type: string; amount: number }[]
+}
+
 const esc = (s: any) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 
 // ─── Receipt labels ───────────────────────────────────────────
@@ -68,6 +89,17 @@ function paymentLabel(paymentType?: string | null): string {
 /** `1234.50 ج.م` — the currency label is admin-configurable. */
 function money(amount: number | null | undefined, info: ReceiptInfo): string {
   return `${fmtMoney(Number(amount) || 0)} ${info.currencyLabel}`
+}
+
+/** The amount taken off the order. Older print payloads can omit
+ * discountAmount, so fall back to the totals rather than losing the line. */
+function effectiveDiscount(o: PrintOrder): number {
+  const explicit = Number(o.discountAmount) || 0
+  if (explicit > 0) return explicit
+  if (o.total == null) return 0
+  return Math.max(0, Math.round(
+    (Number(o.subtotal) || 0) + (Number(o.tax) || 0) + (Number(o.deliveryFee) || 0) - (Number(o.total) || 0),
+  ))
 }
 
 interface PrintModifier { modifierName?: string; name?: string; priceAdjustment?: number }
@@ -337,6 +369,7 @@ export function buildCustomerReceiptHtml(o: PrintOrder, width = '72mm', info: Re
   const totalQty = o.items.reduce((s, i) => s + (i.quantity || 0), 0)
 
   const itemsHtml = itemsTableHtml(o.items)
+  const discount = effectiveDiscount(o)
 
   const legal = receiptLegalLine(info)
   return `<!DOCTYPE html>
@@ -375,7 +408,7 @@ ${fontLink}
   <div class="dashed"></div>
   <div class="row"><span>عدد الأصناف</span><span>${totalQty}</span></div>
   ${(o.subtotal ?? 0) > 0 ? `<div class="row"><span>المبلغ الفرعي</span><span>${esc(money(o.subtotal, info))}</span></div>` : ''}
-  ${(o.discountAmount || 0) > 0 ? `<div class="row" style="color:#16a34a"><span>الخصم${o.discountCode ? ` (${esc(o.discountCode)})` : ''}</span><span>-${esc(money(o.discountAmount, info))}</span></div>` : ''}
+  ${discount > 0 ? `<div class="row" style="color:#000;font-weight:900"><span>الخصم</span><span>-${esc(money(discount, info))}</span></div>` : ''}
   ${info.showTax && (o.tax ?? 0) > 0 ? `<div class="row"><span>ضريبة القيمة المضافة (${taxPercent}%)</span><span>${esc(money(o.tax, info))}</span></div>` : ''}
   ${(o.deliveryFee || 0) > 0 ? `<div class="row"><span>رسوم التوصيل${o.deliveryZoneName ? ` (${esc(o.deliveryZoneName)})` : ''}</span><span>${esc(money(o.deliveryFee, info))}</span></div>` : ''}
   <div class="double"></div>
@@ -385,6 +418,69 @@ ${fontLink}
 </div></body></html>`
 }
 
+
+// ─── Shift close summary (Z report) ────────────────────────────
+const SHIFT_ORDER_TYPE_LABELS: Record<string, string> = { delivery: 'دليفري', 'dine-in': 'صالة', takeaway: 'تيك أوي' }
+const SHIFT_MOVEMENT_LABELS: Record<string, string> = { SALE: 'مبيعات', REFUND: 'مرتجعات', CASH_IN: 'إيداع', CASH_OUT: 'سحب' }
+
+export function buildShiftReportHtml(r: ShiftPrintReport, width = '72mm', info: ReceiptInfo = RECEIPT_INFO_DEFAULTS): string {
+  const start = new Date(r.startedAt)
+  const end = r.endedAt ? new Date(r.endedAt) : null
+  const dateStr = start.toLocaleDateString('ar-EG', { year: 'numeric', month: 'long', day: 'numeric' })
+  const endDateStr = end ? end.toLocaleDateString('ar-EG', { year: 'numeric', month: 'long', day: 'numeric' }) : ''
+  const timeStr = (d: Date) => d.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })
+  const diff = r.cashDifference
+  const diffText = diff == null ? '—' : `${diff > 0 ? '+' : ''}${money(diff, info)}`
+  const section = (title: string) => `<p style="font-size:10px;font-weight:900;margin:4px 0 1px">${esc(title)}</p>`
+  const paymentRows = r.payments.length > 0
+    ? r.payments.map((p) => `<div class="row"><span>${esc(paymentLabel(p.method))} (${p.count})</span><span>${esc(money(p.total, info))}</span></div>`).join('')
+    : '<div class="row"><span>لا توجد مبيعات</span><span>—</span></div>'
+  const typeRows = r.orderTypes.map((t) =>
+    `<div class="row"><span>${esc(SHIFT_ORDER_TYPE_LABELS[t.type] || t.type)} (${t.count})</span><span>${esc(money(t.revenue, info))}</span></div>`,
+  ).join('')
+  const movementRows = (r.movements || []).map((m) => {
+    const signed = `${m.amount > 0 ? '+' : ''}${money(m.amount, info)}`
+    return `<div class="row"><span>${esc(SHIFT_MOVEMENT_LABELS[m.type] || m.type)}</span><span>${esc(signed)}</span></div>`
+  }).join('')
+  const discount = Number(r.discountTotal) || 0
+
+  return `<!DOCTYPE html>
+<html lang="ar" dir="rtl"><head><meta charset="UTF-8"><title>Shift ${esc(r.shiftNumber ?? r.shiftId)}</title>
+${fontLink}
+<style>${pageCss(width)}</style></head>
+<body><div class="ticket">
+  ${letterheadHtml(info)}
+  <div class="solid"></div>
+  <p class="center doc-title">تقرير إغلاق الوردية</p>
+  <p class="center" style="font-size:11px;font-weight:900;margin:1px 0 2px">${r.shiftNumber ? `وردية #${esc(r.shiftNumber)}` : 'وردية'}</p>
+  <div class="dashed"></div>
+  <div class="row"><span>الكاشير</span><span>${esc(r.userName || '—')}</span></div>
+  <div class="row"><span>البداية</span><span>${esc(dateStr)} · ${esc(timeStr(start))}</span></div>
+  <div class="row"><span>النهاية</span><span>${end ? `${esc(endDateStr)} · ${esc(timeStr(end))}` : '—'}</span></div>
+  <div class="dashed"></div>
+  ${section('المبيعات')}
+  <div class="row"><span>عدد الطلبات</span><span>${r.orderCount}</span></div>
+  <div class="row"><span>إجمالي المبيعات</span><span>${esc(money(r.totalRevenue, info))}</span></div>
+  ${Number(r.deliveryFees) > 0 ? `<div class="row"><span>منها رسوم توصيل (للشركة)</span><span>${esc(money(Number(r.deliveryFees), info))}</span></div>` : ''}
+  ${discount > 0 ? `<div class="row"><span>الخصومات</span><span>-${esc(money(discount, info))}</span></div>` : ''}
+  ${section('أنواع الطلبات')}
+  ${typeRows}
+  <div class="dashed"></div>
+  ${section('المدفوعات')}
+  ${paymentRows}
+  <div class="dashed"></div>
+  ${section('الدرج')}
+  <div class="row"><span>رصيد الافتتاح</span><span>${esc(money(r.openingCash, info))}</span></div>
+  <div class="row"><span>المتوقع في الدرج</span><span>${esc(money(r.expectedCash, info))}</span></div>
+  <div class="row"><span>الكاش المعدود</span><span>${r.closingCash == null ? '—' : esc(money(r.closingCash, info))}</span></div>
+  ${movementRows ? `<div class="dashed"></div>${section('حركة الدرج')}${movementRows}` : ''}
+  ${r.deliveryCash > 0 ? `<div class="row" style="font-weight:900"><span>كاش دليفري${r.deliveryCashOrders ? ` (${r.deliveryCashOrders})` : ''}</span><span>${esc(money(r.deliveryCash, info))}</span></div>` : ''}
+  <div class="double"></div>
+  <div class="row grand"><span>الفرق</span><span>${esc(diffText)}</span></div>
+  <div class="double"></div>
+  <p class="center" style="font-size:10px;font-weight:900;margin-top:3px">تم إغلاق الوردية</p>
+</div></body></html>`
+}
 
 // Paper width → printable content width (hardware margins ~4mm each side)
 export function contentWidth(paper: string): string {

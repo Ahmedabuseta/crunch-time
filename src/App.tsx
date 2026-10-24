@@ -23,6 +23,7 @@ import { UsersPage } from '@/components/pages/UsersPage'
 import { ShiftsPage } from '@/components/pages/ShiftsPage'
 import { ShiftReportPage } from '@/components/pages/ShiftReportPage'
 import { MyShiftPage } from '@/components/pages/MyShiftPage'
+import { ShiftLogoutDialog } from '@/components/ShiftLogoutDialog'
 import { CashDrawerPage } from '@/components/pages/CashDrawerPage'
 import { SettingsPage } from '@/components/pages/SettingsPage'
 import { Sun, Moon } from 'lucide-react'
@@ -31,7 +32,7 @@ import { Logo } from '@/components/Logo'
 import { ShiftStatusChip } from '@/components/ShiftStatusChip'
 import { UpdateBanner } from '@/components/UpdateBanner'
 import { Toaster, toast } from '@/components/ui/toast'
-import { LayoutGrid, Clock, Calendar, LogOut, ShoppingCart, X, Truck, RefreshCw } from 'lucide-react'
+import { LayoutGrid, Clock, Calendar, LogOut, ShoppingCart, X, Truck, RefreshCw, Wallet } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 function App() {
@@ -44,6 +45,7 @@ function App() {
   const cartCount = useCartStore((s) => s.itemCount)()
   // Shift whose report is open on the shift-report detail page.
   const [shiftReportId, setShiftReportId] = useState<string | null>(null)
+  const [logoutGuard, setLogoutGuard] = useState<{ number?: number } | null>(null)
 
   const fetchCategories = useCategoryStore((s) => s.fetch)
   const fetchProducts = useProductStore((s) => s.fetch)
@@ -80,6 +82,20 @@ function App() {
     || updateLive === 'checking'
     || updateLive === 'downloading'
     || updateLive === 'available'
+
+  const handleLogout = async () => {
+    try {
+      const shift = await window.api.shift.getCurrent() as { number?: number } | null
+      if (shift) {
+        setLogoutGuard({ number: shift.number })
+        return
+      }
+    } catch {
+      toast({ title: 'تعذر التحقق من الوردية', description: 'حاول تسجيل الخروج تاني', variant: 'error' })
+      return
+    }
+    logout()
+  }
 
   const handleUpdateCheck = async () => {
     if (updateBusy) return
@@ -137,7 +153,7 @@ function App() {
   }
   const isAdmin = currentUser.role === 'admin'
 
-  const adminPages: Page[] = ['reports', 'products', 'categories', 'addons', 'modifiers', 'inventory', 'users', 'shifts', 'cash-drawer', 'settings', 'shift-report']
+  const adminPages: Page[] = ['reports', 'products', 'categories', 'addons', 'modifiers', 'inventory', 'users', 'shifts', 'settings', 'shift-report']
   if (!isAdmin && adminPages.includes(page)) {
     setPage('menu')
   }
@@ -146,6 +162,7 @@ function App() {
     { id: 'menu', label: 'القائمة', icon: LayoutGrid },
     { id: 'orders', label: 'الطلبات', icon: Clock },
     { id: 'delivery', label: 'الديلفري', icon: Truck },
+    { id: 'cash-drawer', label: 'درج الكاش', icon: Wallet },
     { id: 'my-shift', label: 'ورديتي', icon: Calendar },
   ]
 
@@ -252,7 +269,7 @@ function App() {
           >
             {themeMode === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
           </button>
-          <button onClick={logout} className="text-muted-foreground hover:text-destructive transition-colors cursor-pointer p-1">
+          <button onClick={handleLogout} title="تسجيل الخروج" className="text-muted-foreground hover:text-destructive transition-colors cursor-pointer p-1">
             <LogOut className="h-4 w-4" />
           </button>
         </div>
@@ -324,6 +341,13 @@ function App() {
           عرض السلة · {cartCount}
         </button>
       )}
+
+      <ShiftLogoutDialog
+        open={!!logoutGuard}
+        shiftNumber={logoutGuard?.number}
+        onGoToShift={() => { setPage('my-shift'); setLogoutGuard(null) }}
+        onClose={() => setLogoutGuard(null)}
+      />
     </div>
   )
 }

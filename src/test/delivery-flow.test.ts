@@ -234,3 +234,86 @@ describe('report:driverSummary (end-of-day settlement)', () => {
     await expect(call('report:driverSummary')).rejects.toThrow('admin')
   })
 })
+
+describe('shift report — order types and delivery cash', () => {
+  it('includes takeaway, dine-in and delivery, and counts COD in the drawer', async () => {
+    await call('session:setUser', { id: adminId, role: 'admin' })
+    const shiftId = (getSqlite().prepare("SELECT id FROM shifts WHERE status = 'open'").get() as any).id
+    const before = await call('report:shiftReport', shiftId)
+    const beforeExpected = await call('cashDrawer:expectedCash', shiftId)
+
+    await createOrder({ orderType: 'takeaway', subtotal: 10, total: 10, paymentType: 'cash' })
+    await createOrder({ orderType: 'dine-in', subtotal: 20, total: 20, paymentType: 'cash', tableNumber: '7' })
+    await createOrder({
+      orderType: 'delivery', subtotal: 30, total: 30, paymentType: 'cash',
+      deliveryProfileId: 'drv-a', deliveryProfileName: 'سامي',
+    })
+    await createOrder({
+      orderType: 'delivery', subtotal: 40, total: 40, paymentType: 'visa',
+      deliveryProfileId: 'drv-a', deliveryProfileName: 'سامي',
+    })
+
+    const after = await call('report:shiftReport', shiftId)
+    const afterExpected = await call('cashDrawer:expectedCash', shiftId)
+    const typeOf = (report: any, type: string) =>
+      report.orderTypes.find((row: any) => row.type === type)
+
+    expect(typeOf(after, 'takeaway').count).toBe(typeOf(before, 'takeaway').count + 1)
+    expect(typeOf(after, 'dine-in').count).toBe(typeOf(before, 'dine-in').count + 1)
+    expect(typeOf(after, 'delivery').count).toBe(typeOf(before, 'delivery').count + 2)
+    expect(typeOf(after, 'delivery').revenue).toBe(typeOf(before, 'delivery').revenue + 70)
+    expect(after.deliveryCash).toBe(before.deliveryCash + 30)
+    expect(after.expectedCash).toBe(before.expectedCash + 60)
+    expect(afterExpected.deliveryCash).toBe(beforeExpected.deliveryCash + 30)
+    expect(afterExpected.deliveryCashOrders).toBe(beforeExpected.deliveryCashOrders + 1)
+    expect(afterExpected.expected).toBe(beforeExpected.expected + 60)
+  })
+})
+
+describe('delivery fees — company revenue', () => {
+  it('reports delivery fees separately on the shift report', async () => {
+    await call('session:setUser', { id: adminId, role: 'admin' })
+    const shiftId = (getSqlite().prepare("SELECT id FROM shifts WHERE status = 'open'").get() as any).id
+    const before = await call('report:shiftReport', shiftId)
+
+    await createOrder({
+      orderType: 'delivery', subtotal: 100, tax: 0, deliveryFee: 25, total: 125,
+      paymentType: 'cash', deliveryProfileId: 'drv-a', deliveryProfileName: 'سامي',
+    })
+
+    const after = await call('report:shiftReport', shiftId)
+    expect(after.deliveryFees - before.deliveryFees).toBe(25)
+    expect(after.deliveryCash - before.deliveryCash).toBe(125)
+  })
+
+  it('excludes delivery fees from employee sales and commission', async () => {
+    await call('session:setUser', { id: adminId, role: 'admin' })
+    const before = await call('report:laborSummary')
+    const beforeCashier = before.staff.find((s: any) => s.id === cashierId)
+
+    await createOrder({
+      userId: cashierId, orderType: 'delivery', subtotal: 100, tax: 0,
+      deliveryFee: 25, total: 125, paymentType: 'cash',
+    })
+
+    const after = await call('report:laborSummary')
+    const afterCashier = after.staff.find((s: any) => s.id === cashierId)
+    expect(afterCashier.sales - beforeCashier.sales).toBe(100)
+    expect(afterCashier.deliveryFees - beforeCashier.deliveryFees).toBe(25)
+    expect(after.totalDeliveryFees - before.totalDeliveryFees).toBe(25)
+  })
+})
+
+describe('cash drawer — cashier access', () => {
+  it('lets a cashier list shifts and view drawer movements', async () => {
+    await call('session:setUser', { id: cashierId, role: 'cashier' })
+    const current = await call('shift:getCurrent')
+    expect(current?.id).toBeTruthy()
+
+    const shifts = await call('shift:list')
+    expect(shifts.some((s: any) => s.id === current.id)).toBe(true)
+
+    const movements = await call('cashDrawer:listByShift', current.id)
+    expect(Array.isArray(movements)).toBe(true)
+  })
+})

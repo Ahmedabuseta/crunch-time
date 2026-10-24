@@ -15,7 +15,7 @@ export function MyShiftPage() {
   const expectedCash = useCashDrawerStore((s) => s.expectedCash)
   const [openingCash, setOpeningCash] = useState('')
   const [closingCash, setClosingCash] = useState('')
-  const [currentExpected, setCurrentExpected] = useState<{ expected: number; breakdown: Record<string, number> } | null>(null)
+  const [currentExpected, setCurrentExpected] = useState<{ expected: number; breakdown: Record<string, number>; deliveryCash: number; deliveryCashOrders: number } | null>(null)
   const [openError, setOpenError] = useState('')
   const [closeWarning, setCloseWarning] = useState<{ type: 'short' | 'over'; amount: number } | null>(null)
 
@@ -111,6 +111,11 @@ export function MyShiftPage() {
                         </span>
                       </div>
                     ))}
+                  </div>
+                )}
+                {currentExpected.deliveryCash > 0 && (
+                  <div className="rounded-lg border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-[10px] font-bold text-amber-500 leading-relaxed">
+                    منها كاش دليفري ({currentExpected.deliveryCashOrders} طلب): {currentExpected.deliveryCash.toFixed(0)} ج.م — لازم يتحصّل من السائق ويوضع في الدرج قبل الإغلاق.
                   </div>
                 )}
               </div>

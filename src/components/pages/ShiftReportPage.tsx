@@ -6,13 +6,14 @@ import { useShiftStore } from '@/services/shift/shift.store'
 import type { ShiftReport } from '@/services/shift/shift.types'
 import { Emoji } from '@/components/Emoji'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { ChevronRight, Clock, User, Wallet, Receipt, CreditCard, AlertTriangle } from 'lucide-react'
+import { ChevronRight, Clock, User, Wallet, Receipt, CreditCard, AlertTriangle, Bike, ShoppingBag, Utensils } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { fmtMoney } from '@/lib/format'
 
 const PAY_LABELS: Record<string, string> = { cash: 'نقدي', card: 'بطاقة', visa: 'فيزا', 'digital-wallet': 'محفظة إلكترونية', other: 'أخرى' }
 const MOV_LABELS: Record<string, string> = { SALE: 'مبيعات', REFUND: 'مرتجعات', CASH_IN: 'إيداع', CASH_OUT: 'سحب' }
 const PIE_COLORS = ['#3b82f6', '#22c55e', '#eab308', '#a855f7', '#ef4444', '#38bdf8']
+const TYPE_LABELS: Record<string, string> = { delivery: 'دليفري', 'dine-in': 'صالة', takeaway: 'تيك أواي' }
 const hourLabel = (h: number) => (h === 0 ? '12ص' : h < 12 ? `${h}ص` : h === 12 ? '12م' : `${h - 12}م`)
 
 function StatCard({ label, value, tone }: { label: string; value: string; tone?: 'green' | 'blue' | 'red' }) {
@@ -148,6 +149,46 @@ export function ShiftReportPage({ shiftId, onBack }: { shiftId: string | null; o
                   tone={report.cashDifference == null ? undefined : report.cashDifference === 0 ? 'green' : report.cashDifference > 0 ? 'blue' : 'red'}
                 />
               </div>
+
+              {/* Order types */}
+              <div className="space-y-2">
+                <p className="text-xs font-black">أنواع الطلبات</p>
+                <div className="grid grid-cols-3 gap-3">
+                  {(report.orderTypes || []).map(t => {
+                    const Icon = t.type === 'delivery' ? Bike : t.type === 'dine-in' ? Utensils : ShoppingBag
+                    return (
+                      <div key={t.type} className="rounded-2xl border bg-card p-4">
+                        <div className="flex items-center gap-1.5 text-[10px] font-bold text-muted-foreground">
+                          <Icon className="h-3.5 w-3.5" />
+                          {TYPE_LABELS[t.type] || t.type}
+                        </div>
+                        <p className="text-lg font-black mt-1">{t.count} طلب</p>
+                        <p className="text-[11px] text-muted-foreground">{fmtMoney(t.revenue)} ج.م</p>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+
+              {report.deliveryCash > 0 && (
+                <div className="rounded-2xl border-2 border-amber-500/30 bg-amber-500/5 p-4 flex items-start gap-3">
+                  <Bike className="h-5 w-5 text-amber-500 shrink-0 mt-0.5" />
+                  <div className="space-y-0.5">
+                    <p className="text-xs font-black text-amber-500">كاش الديليفري (COD): {fmtMoney(report.deliveryCash)} ج.م</p>
+                    <p className="text-[11px] text-muted-foreground">المبلغ ده داخل المتوقع في الدرج — لازم يتحصّل من السائق ويوضع في الدرج قبل إغلاق الوردية.</p>
+                  </div>
+                </div>
+              )}
+
+              {report.deliveryFees > 0 && (
+                <div className="rounded-2xl border-2 border-primary/30 bg-primary/5 p-4 flex items-start gap-3">
+                  <Bike className="h-5 w-5 text-primary shrink-0 mt-0.5" />
+                  <div className="space-y-0.5">
+                    <p className="text-xs font-black text-primary">رسوم التوصيل (للشركة): {fmtMoney(report.deliveryFees)} ج.م</p>
+                    <p className="text-[11px] text-muted-foreground">رسوم التوصيل جزء من إيراد الشركة — لازم تتحصّل من السائق وتتسلّم لصاحب المطعم.</p>
+                  </div>
+                </div>
+              )}
 
               {/* Charts */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

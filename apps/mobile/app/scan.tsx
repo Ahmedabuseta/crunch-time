@@ -1,23 +1,22 @@
-import { ApiError } from '@/api/client';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Text } from '@/components/ui/text';
 import { View } from '@/components/ui/view';
 import { useColor } from '@/hooks/useColor';
+import { usePairing } from '@/hooks/usePairing';
 import { parsePairPayload } from '@/lib/pairPayload';
 import { useSession } from '@/lib/session';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { Redirect, useRouter } from 'expo-router';
 import { QrCode, X } from 'lucide-react-native';
-import React, { useRef, useState } from 'react';
+import React, { useRef } from 'react';
 import { StyleSheet } from 'react-native';
 
 export default function ScanScreen() {
   const router = useRouter();
-  const { signedIn, pair, connect } = useSession();
+  const { signedIn } = useSession();
   const [permission, requestPermission] = useCameraPermissions();
-  const [error, setError] = useState('');
-  const [busy, setBusy] = useState(false);
+  const { busy, error, reportError, run } = usePairing();
   const handled = useRef(false);
 
   const primary = useColor('primary');
@@ -30,27 +29,12 @@ export default function ScanScreen() {
     if (handled.current || busy) return;
     const payload = parsePairPayload(data);
     if (!payload) {
-      setError('الكود ده مش كود ربط كرنش تايم');
+      reportError('الكود ده مش كود ربط كرنش تايم');
       return;
     }
     handled.current = true;
-    setBusy(true);
-    setError('');
-    try {
-      if (payload.code) {
-        await pair(payload.url, payload.code);
-        router.replace('/board');
-      } else {
-        // A bare address — remember it and ask for the PIN.
-        await connect(payload.url);
-        router.replace('/setup');
-      }
-    } catch (err) {
-      handled.current = false;
-      setError(err instanceof ApiError ? err.message : 'تعذّر الربط — جرّب كود جديد من الكمبيوتر');
-    } finally {
-      setBusy(false);
-    }
+    // A failure frees the camera again, so the next code can be scanned.
+    if (!(await run(payload))) handled.current = false;
   };
 
   if (!permission) {

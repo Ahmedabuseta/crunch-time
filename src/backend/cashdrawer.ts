@@ -1,12 +1,12 @@
 // Cash drawer movements + reconciliation.
-import { eq } from 'drizzle-orm'
+import { and, eq, sql } from 'drizzle-orm'
 import { getDb } from '../db/client'
 import * as schema from '../db/schema'
 import { now, uuid } from './shared'
 import { requireAdmin } from './session'
 import { writeAudit } from './audit'
 
-const { cashMovements, shifts } = schema
+const { cashMovements, shifts, orders } = schema
 
 export function addMovement(data: any) {
   // Cashiers can add movements (no requireAdmin)
@@ -25,7 +25,7 @@ export function addMovement(data: any) {
 }
 
 export function listMovementsByShift(shiftId: string) {
-  requireAdmin()
+  // Cashiers need the drawer view (no requireAdmin)
   const db = getDb()
   return db.select().from(cashMovements).where(eq(cashMovements.shiftId, shiftId)).orderBy(cashMovements.createdAt).all()
 }
@@ -94,5 +94,17 @@ export function expectedCash(shiftId: string) {
     expected += m.amount * sign
     breakdown[m.type] = (breakdown[m.type] || 0) + m.amount * sign
   }
-  return { expected, breakdown }
+  // Delivery COD is posted as a SALE when the order is created; surface it
+  // separately so the cashier knows how much of the drawer must come back
+  // from the drivers before closing.
+  const deliveryRows = db.select({ total: orders.total }).from(orders).where(and(
+    eq(orders.shiftId, shiftId),
+    eq(orders.orderType, 'delivery'),
+    eq(orders.paymentType, 'cash'),
+    sql`${orders.status} NOT IN ('CANCELLED', 'REFUNDED')`,
+  )).all()
+  const deliveryCash = Math.round(
+    deliveryRows.reduce((sum, o) => sum + (Number(o.total) || 0), 0),
+  )
+  return { expected, breakdown, deliveryCash, deliveryCashOrders: deliveryRows.length }
 }

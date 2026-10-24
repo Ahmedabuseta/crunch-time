@@ -53,7 +53,7 @@ const Row = ({ label, value, bold, color }: { label: string; value?: string | nu
 
 export function Receipt({
   orderId, items, subtotal, tax, taxRate = 0.14, deliveryFee, deliveryZoneName, deliveryNote, deliveryProfileName,
-  discountAmount = 0, discountCode, orderNote, total, orderType, tableNumber, customerName, customerPhone, customerAddress,
+  discountAmount = 0, orderNote, total, orderType, tableNumber, customerName, customerPhone, customerAddress,
   paymentType, cashierName, createdAt, info,
 }: ReceiptProps) {
   const brand = info ?? RECEIPT_INFO_DEFAULTS
@@ -66,6 +66,9 @@ export function Receipt({
   const contactLines = receiptContactLines(brand)
   const termLines = receiptLines(brand.terms)
   const totalQty = items.reduce((s, i) => s + (i.quantity || 0), 0)
+  const discount = discountAmount > 0
+    ? discountAmount
+    : Math.max(0, Math.round(subtotal + tax + deliveryFee - total))
 
   return (
     <div id="receipt" className="bg-white text-black mx-auto font-mono" dir="rtl" style={{ fontFamily: 'Tajawal, monospace', width: '300px', maxWidth: '100%', fontSize: '11px', padding: '10px 12px', lineHeight: '1.35', minHeight: '5cm' }}>
@@ -222,7 +225,7 @@ export function Receipt({
       <div className="border-t border-dashed border-gray-300 my-1.5" style={{ fontSize: '10px' }}>
         <Row label="عدد الأصناف" value={totalQty} />
         {subtotal > 0 && <Row label="المبلغ الفرعي" value={money(subtotal)} />}
-        {discountAmount > 0 && <Row label={`الخصم${discountCode ? ` (${discountCode})` : ''}`} value={`-${money(discountAmount)}`} color="#16a34a" />}
+        {discount > 0 && <Row label="الخصم" value={`-${money(discount)}`} color="#16a34a" />}
         {brand.showTax && tax > 0 && <Row label={`ضريبة القيمة المضافة (${taxPercent}%)`} value={money(tax)} />}
         {deliveryFee > 0 && <Row label={`رسوم التوصيل${deliveryZoneName ? ` (${deliveryZoneName})` : ''}`} value={money(deliveryFee)} />}
       </div>

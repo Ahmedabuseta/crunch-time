@@ -9,7 +9,7 @@ interface CashDrawerStore {
   addMovement: (data: CreateCashMovementInput) => Promise<string>
   reconcile: (shiftId: string) => Promise<void>
   reconcileBatch: (shiftIds: string[]) => Promise<Record<string, CashReconciliation>>
-  expectedCash: (shiftId: string) => Promise<{ expected: number; breakdown: Record<string, number> } | null>
+  expectedCash: (shiftId: string) => Promise<{ expected: number; breakdown: Record<string, number>; deliveryCash: number; deliveryCashOrders: number } | null>
 }
 
 export const useCashDrawerStore = create<CashDrawerStore>((set) => ({

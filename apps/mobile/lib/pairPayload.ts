@@ -27,6 +27,24 @@ export function buildPairPayload(url: string, code: string): string {
   return `crunchtime://pair?u=${encodeURIComponent(url)}&c=${encodeURIComponent(code)}`
 }
 
+/** One value out of route params, where a repeated key arrives as an array. */
+function param(value: unknown): string {
+  const raw = Array.isArray(value) ? value[0] : value
+  return String(raw ?? '').trim()
+}
+
+/**
+ * The other side of the same payload: when the QR is scanned by the phone's own
+ * camera app the URL lands on the `pair` route, and the router hands the query
+ * over as params rather than as the `crunchtime://` string. Same key aliases.
+ */
+export function pairPayloadFromParams(params: Record<string, unknown>): PairPayload | null {
+  const url = param(params.u ?? params.url)
+  if (!url) return null
+  const code = param(params.c ?? params.code)
+  return { url, code: code || null }
+}
+
 export function parsePairPayload(raw: unknown): PairPayload | null {
   const text = String(raw ?? '').trim()
   if (!text) return null

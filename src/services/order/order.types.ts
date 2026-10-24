@@ -39,6 +39,7 @@ export interface OrderItem {
   productId: string
   quantity: number
   unitPrice: number
+  itemDiscount: number
   note: string | null
   selectedModifiersJson: string | null
   selectedAddonsJson: string | null

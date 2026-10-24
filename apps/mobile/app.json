@@ -38,6 +38,7 @@
       "expo-web-browser",
       "expo-secure-store",
       "expo-font",
+      "./plugins/withCleartextTraffic",
       [
         "expo-camera",
         {

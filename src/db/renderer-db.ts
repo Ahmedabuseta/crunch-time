@@ -1,3 +1,5 @@
+import { allocateNetRevenue } from '../lib/net-revenue'
+
 type Row = Record<string, any>
 
 class Table {
@@ -48,6 +50,22 @@ function hardDelete(
 
 // ─── Helpers ────────────────────────────────────────────────
 function getSettings() { return T.settings.get(r => r.id === 'settings') || { deliveryFee: 25, taxRate: 0.14 } }
+
+// Product/add-on revenue per line with the order's discount taken out, so
+// item-level reports match the order totals they sit next to.
+function itemNetRevenues(order: Row, items: Row[]) {
+  const addonPrices = new Map<string, number>(T.addons.select().map((a: Row) => [a.id, a.price] as [string, number]))
+  const addonIds = items.map((i: Row) => {
+    if (!i.selectedAddonsJson) return [] as string[]
+    try { return JSON.parse(i.selectedAddonsJson) as string[] } catch { return [] as string[] }
+  })
+  const nets = allocateNetRevenue(items.map((i: Row, idx: number) => ({
+    productGross: Number(i.unitPrice || 0) * Number(i.quantity || 0),
+    addonGross: addonIds[idx].reduce((s: number, id: string) => s + (addonPrices.get(id) || 0) * Number(i.quantity || 0), 0),
+    itemDiscount: Number(i.itemDiscount || 0),
+  })), Number(order.discountAmount || 0))
+  return items.map((item: Row, idx: number) => ({ item, addonIds: addonIds[idx], ...nets[idx] }))
+}
 
 // Full rollback — CANCELLED: return ALL ingredients (products + addons)
 function rollbackInventory(orderId: string) {
@@ -163,6 +181,7 @@ function seed() {
 
   // Discount codes
   T.discountCodes.insert({ id: 'disc-10', code: 'WELCOME10', type: 'percentage', value: 10, active: true, maxUses: 100, usedCount: 0 })
+  T.discountCodes.insert({ id: 'disc-welcome-20', code: 'WELCOME20', type: 'percentage', value: 20, active: true, maxUses: 100, usedCount: 0 })
   T.discountCodes.insert({ id: 'disc-20', code: 'SAVE20', type: 'fixed', value: 20, active: true, maxUses: 50, usedCount: 0 })
   T.discountCodes.insert({ id: 'disc-5', code: 'FIVE', type: 'fixed', value: 5, active: true, maxUses: 0, usedCount: 0 })
   // Employee daily code — the rotation rides on the row
@@ -571,7 +590,10 @@ export const rendererApi = {
     reorder: (ids: string[]) => { ids.forEach((id, i) => T.categories.update(r => r.id === id, { sortOrder: i + 1 })); return { ok: true } },
   },
   product: {
-    list: (categoryId?: string) => categoryId ? T.products.select(r => r.active && r.categoryId === categoryId) : T.products.select(r => r.active),
+    list: (categoryId?: string, includeInactive?: boolean) => {
+      const rows = includeInactive ? T.products.select() : T.products.select(r => r.active)
+      return categoryId ? rows.filter(r => r.categoryId === categoryId) : rows
+    },
     getById: (id: string) => T.products.get(r => r.id === id) || null,
     create: (data: any) => { const id = uuid(); T.products.insert({ id, ...data, active: true }); return { id } },
     update: (id: string, data: any) => { T.products.update(r => r.id === id, data); return { ok: true } },
@@ -680,9 +702,15 @@ export const rendererApi = {
       const currentShift = T.shifts.get(r => r.status === 'open')
       const shiftId = currentShift?.id || data.shiftId || null
       const shiftNumber = Number(currentShift?.number) || 0
-      const seq = T.orders.select(r => r.shiftId === shiftId).length
+      // Continue from the highest sequence already used, not the row count —
+      // a deleted order would otherwise make the next id repeat an existing one.
+      const prefix = `${shiftNumber}-`
+      const seq = shiftNumber > 0
+        ? T.orders.select(r => r.id.startsWith(prefix))
+          .reduce((max, r) => Math.max(max, Number(r.id.slice(prefix.length)) || 0), 0)
+        : 0
       const id = shiftNumber > 0
-        ? `${shiftNumber}-${String(seq + 1).padStart(3, '0')}`
+        ? `${prefix}${String(seq + 1).padStart(3, '0')}`
         : `#${Date.now().toString().slice(-6)}${Math.floor(Math.random() * 90 + 10)}`
 
       T.orders.insert({
@@ -955,6 +983,21 @@ export const rendererApi = {
       const actual = shift.closingCash ?? 0
       return { openingCash: shift.openingCash, breakdown, expected, actual, difference: actual - expected }
     },
+    expectedCash: (shiftId: string) => {
+      const shift = T.shifts.get(r => r.id === shiftId)
+      if (!shift) return null
+      const movs = T.cashMovements.select(r => r.shiftId === shiftId)
+      let expected = shift.openingCash
+      const breakdown: Record<string, number> = {}
+      for (const m of movs) {
+        if (m.type === 'OPENING' || m.type === 'CLOSING') continue
+        const sign = ['SALE', 'CASH_IN'].includes(m.type) ? 1 : -1
+        expected += m.amount * sign
+        breakdown[m.type] = (breakdown[m.type] || 0) + m.amount * sign
+      }
+      const delivery = T.orders.select(o => o.shiftId === shiftId && o.orderType === 'delivery' && o.paymentType === 'cash' && o.status !== 'REFUNDED')
+      return { expected, breakdown, deliveryCash: delivery.reduce((s, o) => s + o.total, 0), deliveryCashOrders: delivery.length }
+    },
   },
   inventory: {
     listIngredients: () => T.ingredients.select(r => r.active),
@@ -1135,8 +1178,10 @@ if (to && o.createdAt > to + '\uffff') return false
         costOfGoods, grossProfit: totalRevenue - costOfGoods,
       }
     },
-    profitSummary: (from?: string, to?: string) => {
-      const all = T.orders.select().filter(o => { if (o.status === 'CANCELLED') return false; if (from && o.createdAt < from) return false; if (to && o.createdAt > to) return false; return true })
+    profitSummary: (_from?: string, to?: string) => {
+      const toDate = (to || new Date().toISOString().slice(0, 10)).slice(0, 10)
+      const fromDate = `${toDate.slice(0, 7)}-01`
+      const all = T.orders.select().filter(o => { if (o.status === 'CANCELLED') return false; if (o.createdAt < fromDate) return false; if (o.createdAt > toDate + '￿') return false; return true })
       const refunded = all.filter(o => o.status === 'REFUNDED')
       const totalRefunded = refunded.reduce((s, o) => s + (o.refundedAmount || 0), 0)
       const revenue = all.reduce((s, o) => s + o.total, 0) - totalRefunded
@@ -1145,19 +1190,35 @@ if (to && o.createdAt > to + '\uffff') return false
       const deliveryFees = all.filter(o => o.orderType === 'delivery').reduce((s, o) => s + (o.deliveryFee || 0), 0)
       const discounts = all.reduce((s, o) => s + (o.discountAmount || 0), 0)
       const taxCollected = all.reduce((s, o) => s + o.tax, 0)
-      return { revenue, costOfGoods, grossProfit: revenue - costOfGoods, totalExpenses, deliveryFees, discounts, taxCollected, totalRefunded, netProfit: revenue - costOfGoods - totalExpenses }
+      return { from: fromDate, to: toDate, revenue, costOfGoods, grossProfit: revenue - costOfGoods, totalExpenses, deliveryFees, discounts, taxCollected, totalRefunded, netProfit: revenue - costOfGoods - totalExpenses }
     },
     hourlyBreakdown: () => [],
     topItems: (limit = 10) => {
-      const items = T.orderItems.select(); const pMap = new Map(T.products.select().map(p => [p.id, p]))
+      const orderMap = new Map(T.orders.select(o => o.status !== 'CANCELLED').map(o => [o.id, o]))
+      const pMap = new Map(T.products.select().map(p => [p.id, p]))
       const counts: Record<string, any> = {}
-      for (const item of items) { const p = pMap.get(item.productId); if (!p) continue; if (!counts[p.id]) counts[p.id] = { name: p.name, emoji: p.emoji, totalQuantity: 0, totalRevenue: 0 }; counts[p.id].totalQuantity += item.quantity; counts[p.id].totalRevenue += item.unitPrice * item.quantity }
+      for (const order of orderMap.values()) {
+        for (const { item, productNet } of itemNetRevenues(order, T.orderItems.select(r => r.orderId === order.id))) {
+          const p = pMap.get(item.productId); if (!p) continue
+          if (!counts[p.id]) counts[p.id] = { name: p.name, emoji: p.emoji, totalQuantity: 0, totalRevenue: 0 }
+          counts[p.id].totalQuantity += item.quantity
+          counts[p.id].totalRevenue += productNet
+        }
+      }
       return Object.values(counts).sort((a: any, b: any) => b.totalQuantity - a.totalQuantity).slice(0, limit)
     },
     categoryRevenue: () => {
-      const items = T.orderItems.select(); const pMap = new Map(T.products.select().map(p => [p.id, p])); const cMap = new Map(T.categories.select().map(c => [c.id, c]))
+      const orderMap = new Map(T.orders.select(o => o.status !== 'CANCELLED').map(o => [o.id, o]))
+      const pMap = new Map(T.products.select().map(p => [p.id, p])); const cMap = new Map(T.categories.select().map(c => [c.id, c]))
       const catRev: Record<string, any> = {}
-      for (const item of items) { const p = pMap.get(item.productId); if (!p) continue; const c = cMap.get(p.categoryId); if (!c) continue; if (!catRev[c.id]) catRev[c.id] = { categoryId: c.id, name: c.name, totalRevenue: 0 }; catRev[c.id].totalRevenue += item.unitPrice * item.quantity }
+      for (const order of orderMap.values()) {
+        for (const { item, productNet } of itemNetRevenues(order, T.orderItems.select(r => r.orderId === order.id))) {
+          const p = pMap.get(item.productId); if (!p) continue
+          const c = cMap.get(p.categoryId); if (!c) continue
+          if (!catRev[c.id]) catRev[c.id] = { categoryId: c.id, name: c.name, totalRevenue: 0 }
+          catRev[c.id].totalRevenue += productNet
+        }
+      }
       return Object.values(catRev).sort((a: any, b: any) => b.totalRevenue - a.totalRevenue)
     },
     addonStats: () => [], ticketDistribution: () => [],
@@ -1187,10 +1248,10 @@ if (to && o.createdAt > to + '\uffff') return false
       const productMap = new Map(T.products.select().map((p: any) => [p.id, p]))
       const itemAgg: Record<string, any> = {}
       for (const o of shiftOrders) {
-        for (const item of T.orderItems.select((i: any) => i.orderId === o.id)) {
+        for (const { item, productNet } of itemNetRevenues(o, T.orderItems.select((i: any) => i.orderId === o.id))) {
           if (!itemAgg[item.productId]) itemAgg[item.productId] = { productId: item.productId, qty: 0, revenue: 0 }
           itemAgg[item.productId].qty += item.quantity
-          itemAgg[item.productId].revenue += item.unitPrice * item.quantity
+          itemAgg[item.productId].revenue += productNet
         }
       }
       const topItems = Object.values(itemAgg).sort((a: any, b: any) => b.qty - a.qty).slice(0, 5).map((t: any) => {
@@ -1214,15 +1275,31 @@ if (to && o.createdAt > to + '\uffff') return false
         movAgg[m.type] = (movAgg[m.type] || 0) + m.amount * sign
       }
       const movements = Object.entries(movAgg).map(([type, amount]) => ({ type, amount: Math.round(amount * 100) / 100 }))
+      const deliveryCashRows = shiftOrders.filter(o => o.orderType === 'delivery' && o.paymentType === 'cash' && o.status !== 'REFUNDED')
       return {
-        shiftId, userName: user?.name || 'غير معروف',
+        shiftId, shiftNumber: shift.number, userName: user?.name || 'غير معروف',
         startedAt: shift.startedAt, endedAt: shift.endedAt,
         orderCount: shiftOrders.length,
         totalRevenue: shiftOrders.reduce((s: number, o: any) => s + o.total, 0),
+        discountTotal: shiftOrders.reduce((s: number, o: any) => s + (o.discountAmount || 0), 0),
         openingCash: shift.openingCash, closingCash: shift.closingCash,
         expectedCash: expected,
         cashDifference: shift.closingCash != null ? shift.closingCash - expected : null,
         payments: Object.values(payAgg),
+        orderTypes: ['delivery', 'dine-in', 'takeaway'].map(type => {
+          const list = shiftOrders.filter(o => o.orderType === type)
+          return {
+            type,
+            count: list.length,
+            revenue: Math.round(list.reduce((s, o) => s + o.total, 0) * 100) / 100,
+            percentage: shiftOrders.length ? (list.length / shiftOrders.length) * 100 : 0,
+          }
+        }),
+        deliveryCash: deliveryCashRows.reduce((s, o) => s + o.total, 0),
+        deliveryCashOrders: deliveryCashRows.length,
+        deliveryFees: shiftOrders
+          .filter(o => o.orderType === 'delivery')
+          .reduce((s, o) => s + (Number(o.deliveryFee) || 0), 0),
         topItems,
         hourly,
         movements,
@@ -1239,19 +1316,25 @@ if (to && o.createdAt > to + '\uffff') return false
       const allShifts = T.shifts.select().filter(x => inRange(x.startedAt))
       const allOrders = T.orders.select().filter(o => o.status !== 'CANCELLED' && inRange(o.createdAt))
       const totalRevenue = allOrders.reduce((s, o) => s + o.total, 0)
+      const totalDeliveryFees = allOrders.reduce((s, o) =>
+        s + (o.orderType === 'delivery' ? Number(o.deliveryFee) || 0 : 0), 0)
       let totalLaborCost = 0
       const staff = allUsers.map(u => {
         const uShifts = allShifts.filter(x => x.userId === u.id)
         const hoursWorked = uShifts.reduce((s, x) => x.endedAt ? s + (new Date(x.endedAt).getTime() - new Date(x.startedAt).getTime()) / 3600000 : s, 0)
         const uOrders = allOrders.filter(o => o.userId === u.id)
-        const sales = uOrders.reduce((s, o) => s + o.total, 0)
+        const deliveryFees = uOrders.reduce((s, o) =>
+          s + (o.orderType === 'delivery' ? Number(o.deliveryFee) || 0 : 0), 0)
+        const sales = uOrders.reduce((s, o) =>
+          s + o.total - (o.orderType === 'delivery' ? Number(o.deliveryFee) || 0 : 0), 0)
         const wage = hoursWorked * (u.hourlyRate || 0)
         const commission = sales * ((u.commissionRate || 0) / 100)
         const laborCost = wage + commission
         totalLaborCost += laborCost
-        return { id: u.id, name: u.name, role: u.role, hourlyRate: u.hourlyRate || 0, commissionRate: u.commissionRate || 0, shiftCount: uShifts.length, hoursWorked: Math.round(hoursWorked * 10) / 10, orderCount: uOrders.length, sales, wage: Math.round(wage), commission: Math.round(commission), laborCost: Math.round(laborCost) }
+        return { id: u.id, name: u.name, role: u.role, hourlyRate: u.hourlyRate || 0, commissionRate: u.commissionRate || 0, shiftCount: uShifts.length, hoursWorked: Math.round(hoursWorked * 10) / 10, orderCount: uOrders.length, sales, deliveryFees, wage: Math.round(wage), commission: Math.round(commission), laborCost: Math.round(laborCost) }
       }).sort((a: any, b: any) => b.sales - a.sales)
-      return { totalRevenue, totalLaborCost: Math.round(totalLaborCost), laborCostPct: totalRevenue > 0 ? (totalLaborCost / totalRevenue) * 100 : 0, staff }
+      const totalSales = staff.reduce((s: number, u: any) => s + u.sales, 0)
+      return { totalRevenue, totalSales, totalDeliveryFees, totalLaborCost: Math.round(totalLaborCost), laborCostPct: totalSales > 0 ? (totalLaborCost / totalSales) * 100 : 0, staff }
     },
     voidSummary: (from?: string, to?: string) => {
       const inRange = (ts: string) => { if (from && ts < from) return false; if (to && ts > to + '\uffff') return false; return true }

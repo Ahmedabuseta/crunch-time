@@ -3,22 +3,24 @@ import type { Product, CreateProductInput, UpdateProductInput } from './product.
 
 interface ProductStore {
   products: Product[]
+  includeInactive: boolean
   loading: boolean
-  fetch: (categoryId?: string) => Promise<void>
+  fetch: (categoryId?: string, includeInactive?: boolean) => Promise<void>
   getById: (id: string) => Promise<Product | null>
   create: (data: CreateProductInput) => Promise<string>
   update: (id: string, data: UpdateProductInput) => Promise<void>
   remove: (id: string, opts?: { hard?: boolean }) => Promise<void>
 }
 
-export const useProductStore = create<ProductStore>((set) => ({
+export const useProductStore = create<ProductStore>((set, get) => ({
   products: [],
+  includeInactive: false,
   loading: false,
 
-  fetch: async (categoryId?) => {
+  fetch: async (categoryId?, includeInactive = false) => {
     set({ loading: true })
-    const data = await window.api.product.list(categoryId)
-    set({ products: data as Product[], loading: false })
+    const data = await window.api.product.list(categoryId, includeInactive)
+    set({ products: data as Product[], includeInactive, loading: false })
   },
 
   getById: async (id) => {
@@ -27,18 +29,18 @@ export const useProductStore = create<ProductStore>((set) => ({
 
   create: async (data) => {
     const result = await window.api.product.create(data) as { id: string }
-    await useProductStore.getState().fetch()
+    await get().fetch(undefined, get().includeInactive)
     return result.id
   },
 
   update: async (id, data) => {
     await window.api.product.update(id, data)
-    await useProductStore.getState().fetch()
+    await get().fetch(undefined, get().includeInactive)
   },
 
   remove: async (id, opts) => {
     const result = await window.api.product.delete(id, opts) as { ok: boolean; error?: string }
     if (!result.ok) throw new Error(result.error || 'فشل حذف المنتج')
-    await useProductStore.getState().fetch()
+    await get().fetch(undefined, get().includeInactive)
   },
 }))

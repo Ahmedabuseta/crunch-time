@@ -21,6 +21,8 @@ import { Emoji } from '@/components/Emoji'
 
 const unitLabel: Record<string, string> = { g: 'جرام', kg: 'كيلو', ml: 'مليلتر', l: 'لتر', pcs: 'قطعة' }
 
+const fmtQty = (n: number) => Number(n || 0).toLocaleString('en-US', { maximumFractionDigits: 2 })
+
 const typeMeta: Record<string, { label: string; cls: string }> = {
   PURCHASE: { label: 'شراء', cls: 'bg-green-500/10 text-green-600' },
   CONSUMPTION: { label: 'بيع', cls: 'bg-red-500/10 text-red-600' },
@@ -64,6 +66,11 @@ export function InventoryPage() {
   useEffect(() => { fetchIngredients(); fetchAlerts() }, [])
 
   const alertIds = new Set(alerts.map(a => a.id))
+  const highStockIds = new Set(
+    ingredients
+      .filter((ing) => Number(ing.minStock) > 0 && Number(ing.stockQuantity) > Number(ing.minStock) * 5)
+      .map((ing) => ing.id),
+  )
 
   const list = useListControls({
     items: ingredients,
@@ -71,7 +78,8 @@ export function InventoryPage() {
     filter: (ing) => {
       if (!stockFilter) return true
       if (stockFilter === 'low') return alertIds.has(ing.id)
-      if (stockFilter === 'ok') return !alertIds.has(ing.id)
+      if (stockFilter === 'high') return highStockIds.has(ing.id)
+      if (stockFilter === 'ok') return !alertIds.has(ing.id) && !highStockIds.has(ing.id)
       return true
     },
     pageSize: 12,
@@ -156,7 +164,22 @@ export function InventoryPage() {
         </div>
       ),
     },
-    { key: 'stock', label: 'المخزون', sortValue: (ing: any) => ing.stockQuantity, render: (ing) => <span className="font-bold">{ing.stockQuantity} / {ing.minStock * 5} {unitLabel[ing.unit] || ing.unit}</span> },
+    {
+      key: 'stock', label: 'المخزون', sortValue: (ing: any) => ing.stockQuantity, render: (ing) => {
+        const pack = Number(ing.purchaseQty) || 1
+        const packs = pack > 1 ? Number(ing.stockQuantity) / pack : null
+        const high = highStockIds.has(ing.id)
+        return (
+          <div className="flex flex-col gap-0.5">
+            <span className="font-bold flex items-center gap-1.5">
+              {fmtQty(ing.stockQuantity)} {unitLabel[ing.unit] || ing.unit}
+              {high && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-orange-500/10 text-orange-500">مرتفع</span>}
+            </span>
+            {packs != null && <span className="text-[10px] text-muted-foreground">≈ {fmtQty(packs)} عبوة</span>}
+          </div>
+        )
+      },
+    },
     { key: 'min', label: 'الحد الأدنى', sortValue: (ing: any) => ing.minStock, render: (ing) => <span>{ing.minStock} {unitLabel[ing.unit] || ing.unit}</span> },
     {
       key: 'cost', label: 'التكلفة', sortValue: (ing: any) => ing.costPerUnit, render: (ing) => {
@@ -300,7 +323,8 @@ export function InventoryPage() {
         filters={[
           { value: null, label: 'الكل', count: ingredients.length },
           { value: 'low', label: 'تحت الحد', count: alerts.length },
-          { value: 'ok', label: 'بالمخزون', count: ingredients.length - alerts.length },
+          { value: 'ok', label: 'طبيعي', count: ingredients.length - alerts.length - highStockIds.size },
+          { value: 'high', label: 'مخزون مرتفع', count: highStockIds.size },
         ]}
         filterValue={stockFilter}
         onFilterChange={(v) => { setStockFilter(v); list.setPage(1) }}
@@ -312,7 +336,7 @@ export function InventoryPage() {
             columns={columns}
             data={list.items}
             keyExtractor={(ing) => ing.id}
-            rowClassName={(ing) => alertIds.has(ing.id) ? "bg-yellow-500/5" : ""}
+            rowClassName={(ing) => alertIds.has(ing.id) ? "bg-yellow-500/5" : highStockIds.has(ing.id) ? "bg-orange-500/5" : ""}
             sort={list.sort}
             onSortChange={list.setSort}
           />
@@ -322,23 +346,28 @@ export function InventoryPage() {
           <div className="space-y-2">
             {list.items.map(ing => {
               const isLow = alertIds.has(ing.id)
+              const isHigh = highStockIds.has(ing.id)
+              const pack = Number(ing.purchaseQty) || 1
+              const packs = pack > 1 ? Number(ing.stockQuantity) / pack : null
               const percentage = ing.minStock > 0 ? (ing.stockQuantity / (ing.minStock * 5)) * 100 : 100
               return (
-                <div key={ing.id} className={cn("border-2 rounded-xl bg-card p-4 flex items-center gap-4", isLow && "border-yellow-500/30")}>
-                  <div className={cn("w-10 h-10 rounded-xl flex items-center justify-center", isLow ? "bg-yellow-500/10" : "bg-secondary")}>
-                    <Package className={cn("h-5 w-5", isLow ? "text-yellow-500" : "text-muted-foreground")} />
+                <div key={ing.id} className={cn("border-2 rounded-xl bg-card p-4 flex items-center gap-4", isLow && "border-yellow-500/30", isHigh && "border-orange-500/30")}>
+                  <div className={cn("w-10 h-10 rounded-xl flex items-center justify-center", isHigh ? "bg-orange-500/10" : isLow ? "bg-yellow-500/10" : "bg-secondary")}>
+                    <Package className={cn("h-5 w-5", isHigh ? "text-orange-500" : isLow ? "text-yellow-500" : "text-muted-foreground")} />
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-bold">{ing.name}</p>
                     <div className="flex items-center gap-2 mt-1">
                       <div className="flex-1 h-2 rounded-full bg-secondary overflow-hidden">
-                        <div className={cn("h-full rounded-full transition-all", isLow ? "bg-yellow-500" : "bg-primary")} style={{ width: `${Math.min(percentage, 100)}%` }} />
+                        <div className={cn("h-full rounded-full transition-all", isHigh ? "bg-orange-500" : isLow ? "bg-yellow-500" : "bg-primary")} style={{ width: `${Math.min(percentage, 100)}%` }} />
                       </div>
-                      <span className="text-xs font-bold text-muted-foreground w-20 text-left">{ing.stockQuantity} / {ing.minStock * 5} {ing.unit}</span>
+                      <span className="text-xs font-bold text-muted-foreground w-24 text-left">{fmtQty(ing.stockQuantity)} {ing.unit}</span>
                     </div>
+                    {packs != null && <p className="text-[10px] text-muted-foreground mt-0.5">≈ {fmtQty(packs)} عبوة</p>}
                   </div>
                   <div className="text-right">
                     <p className="text-xs text-muted-foreground">الحد الأدنى: {ing.minStock} {ing.unit}</p>
+                    {isHigh && <p className="text-[10px] text-orange-500 font-bold mt-0.5">مخزون مرتفع</p>}
                     {(() => {
                       const pack = Number(ing.purchaseQty) || 1
                       const packPrice = (Number(ing.costPerUnit) || 0) * pack

@@ -27,6 +27,7 @@ let token = ''
 let shiftId = ''
 let productId = ''
 let productPrice = 0
+let lastPrint = ''
 
 const base = `http://127.0.0.1:${PORT}`
 
@@ -64,7 +65,7 @@ beforeAll(async () => {
   await seedDatabase()
 
   backend = createBackend({
-    print: async () => ({ ok: true }),
+    print: async (html) => { lastPrint = html; return { ok: true } },
     listPrinters: async () => [{ name: 'Test Printer' }],
     dialogs: {
       showSaveDialog: async () => ({ canceled: true }),
@@ -181,6 +182,9 @@ describe('Z report + shift close', () => {
     expect(row.entity_id).toBe(shiftId)
     const shift = getSqlite().prepare('SELECT status, closing_cash FROM shifts WHERE id = ?').get(shiftId) as any
     expect(shift.status).toBe('closed')
+    expect(lastPrint).toContain('تقرير إغلاق الوردية')
+    expect(lastPrint).toContain('الكاش المعدود')
+    expect(lastPrint).toContain('الفرق')
   })
 
   it('still returns the Z report when addressed by shift id after close', async () => {

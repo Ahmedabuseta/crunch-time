@@ -70,10 +70,11 @@ export function registerMoneyRoutes(app: FastifyInstance, backend: Backend) {
     const body = (req.body || {}) as any
     const id = String(body.id || body.shiftId || '')
     if (!id) return reply.code(400).send({ ok: false, error: 'معرّف الوردية مطلوب' })
-    withDeviceLabel(deviceLabel(req.headers, body), () =>
-      backend.shifts.closeShift(id, num(body.closingCash)))
+    const res = withDeviceLabel(deviceLabel(req.headers, body), () =>
+      backend.shifts.closeShift(id, num(body.closingCash))) as any
+    if (!res?.ok) return reply.code(400).send(res)
     emitEvent('shift:updated', { id })
-    return { ok: true }
+    return { ok: true, print: await backend.printing.printShiftSummary(id) }
   })
 
   app.get('/shifts/current', async () => ({ shift: await backend.shifts.getCurrentShift() }))

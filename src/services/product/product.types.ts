@@ -25,4 +25,5 @@ export interface UpdateProductInput {
   categoryId?: string
   emoji?: string
   description?: string
+  active?: boolean
 }

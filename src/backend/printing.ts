@@ -8,10 +8,12 @@
 import { getElectron } from './electron'
 import * as orders from './orders'
 import * as stations from './stations'
+import * as reports from './reports'
 import { getSettings } from './settings'
 import {
   buildCustomerReceiptHtml,
   buildKitchenTicketHtml,
+  buildShiftReportHtml,
   collectKitchenItems,
   contentWidth,
   markKitchenTicketItems,
@@ -142,4 +144,22 @@ export async function printReceiptOnly(orderId: string): Promise<{ ok: boolean; 
 /** Re-print just the kitchen tickets for an order. */
 export async function printKitchenOnly(orderId: string): Promise<PrintOutcome> {
   return printOrderById(orderId, { autoReceipt: false, autoKitchen: true })
+}
+
+/** Prints the closing summary to the cashier's receipt printer. */
+export async function printShiftSummary(shiftId: string): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const report = reports.shiftReportForPrint(shiftId)
+    if (!report) return { ok: false, error: 'الوردية غير موجودة' }
+    const settings: any = getSettings()
+    const paperWidth = settings.receiptWidth || '80mm'
+    return await getElectron().print(
+      buildShiftReportHtml(report, contentWidth(paperWidth), normalizeReceiptInfo(settings)),
+      settings.receiptPrinter || null,
+      1,
+      paperWidth,
+    )
+  } catch (err: any) {
+    return { ok: false, error: err?.message || 'فشلت طباعة تقرير الوردية' }
+  }
 }

@@ -237,8 +237,8 @@ export function registerIpcHandlers() {
   // ═══════════════════════════════════════════════════════════
   // PRODUCTS
   // ═══════════════════════════════════════════════════════════
-  ipcMain.handle('product:list', (_e, categoryId?: string) =>
-    b.catalog.listProducts(categoryId)
+  ipcMain.handle('product:list', (_e, categoryId?: string, includeInactive?: boolean) =>
+    b.catalog.listProducts(categoryId, includeInactive)
   )
 
   ipcMain.handle('product:getById', (_e, id: string) =>
@@ -453,9 +453,12 @@ export function registerIpcHandlers() {
     b.shifts.openShift(data)
   )
 
-  ipcMain.handle('shift:close', (_e, id: string, closingCash: number) =>
-    b.shifts.closeShift(id, closingCash)
-  )
+  ipcMain.handle('shift:close', async (_e, id: string, closingCash: number) => {
+    const result = b.shifts.closeShift(id, closingCash)
+    if (!result?.ok) return result
+    const print = await b.printing.printShiftSummary(id)
+    return { ...result, print }
+  })
 
   ipcMain.handle('shift:getCurrent', () =>
     b.shifts.getCurrentShift()

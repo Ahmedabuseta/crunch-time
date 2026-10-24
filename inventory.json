@@ -70,12 +70,12 @@
     "unit": "قطعة",
     "stockQuantity": 100,
     "minStock": 20,
-    "costPerUnit": 0,
+    "costPerUnit": 19,
     "purchaseQty": 1,
     "active": 1,
-    "supplier": null,
+    "supplier": "متعدد",
     "secondarySupplier": null,
-    "packagePrice": 0
+    "packagePrice": 19
   },
   {
     "id": "ing-pepperoni",
@@ -109,12 +109,12 @@
     "unit": "g",
     "stockQuantity": 1000,
     "minStock": 200,
-    "costPerUnit": 0,
+    "costPerUnit": 1.1,
     "purchaseQty": 1000,
     "active": 1,
-    "supplier": null,
+    "supplier": "حلواني",
     "secondarySupplier": null,
-    "packagePrice": 0
+    "packagePrice": 1100
   },
   {
     "id": "ing-onion",
@@ -313,7 +313,7 @@
   },
   {
     "id": "ing-lettuce",
-    "name": "خس",
+    "name": "كابوتشي",
     "unit": "g",
     "stockQuantity": 2000,
     "minStock": 400,
@@ -466,6 +466,19 @@
     "supplier": "ميتلاند",
     "secondarySupplier": null,
     "packagePrice": 1850
+  },
+  {
+    "id": "ing-sosis",
+    "name": "سوسيس",
+    "unit": "g",
+    "stockQuantity": 10000,
+    "minStock": 2000,
+    "costPerUnit": 0.3,
+    "purchaseQty": 1000,
+    "active": 1,
+    "supplier": "حلواني",
+    "secondarySupplier": null,
+    "packagePrice": 300
   },
   {
     "id": "ing-powdered-sugar",
@@ -622,6 +635,19 @@
     "supplier": null,
     "secondarySupplier": null,
     "packagePrice": 0.06
+  },
+  {
+    "id": "ing-sauce-jalapeno",
+    "name": "صوص هالبينو",
+    "unit": "g",
+    "stockQuantity": 2000,
+    "minStock": 400,
+    "costPerUnit": 0.3,
+    "purchaseQty": 200,
+    "active": 1,
+    "supplier": "ميلكانا",
+    "secondarySupplier": null,
+    "packagePrice": 60
   },
   {
     "id": "ing-fajita-sauce",
@@ -889,12 +915,12 @@
     "unit": "g",
     "stockQuantity": 72000,
     "minStock": 1800,
-    "costPerUnit": 0.01944,
-    "purchaseQty": 7200,
+    "costPerUnit": 0.1556,
+    "purchaseQty": 900,
     "active": 1,
     "supplier": "دايم",
     "secondarySupplier": null,
-    "packagePrice": 139.97
+    "packagePrice": 140
   },
   {
     "id": "ing-cordon-blue",
@@ -1077,5 +1103,18 @@
     "supplier": null,
     "secondarySupplier": null,
     "packagePrice": 3700
+  },
+  {
+    "id": "ing-shrimp",
+    "name": "جمبري بانيه",
+    "unit": "قطعة",
+    "stockQuantity": 40,
+    "minStock": 8,
+    "costPerUnit": 13,
+    "purchaseQty": 40,
+    "active": 1,
+    "supplier": null,
+    "secondarySupplier": null,
+    "packagePrice": 520
   }
 ]

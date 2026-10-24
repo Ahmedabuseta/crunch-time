@@ -39,6 +39,7 @@ export async function seedDatabase() {
   // ─── Discount codes ──────────────────────────────────────────
   const insertDisc = db.prepare('INSERT OR IGNORE INTO discount_codes (id, code, type, value, active, max_uses, used_count) VALUES (?, ?, ?, ?, 1, ?, 0)')
   insertDisc.run('disc-10', 'WELCOME10', 'percentage', 10, 100)
+  insertDisc.run('disc-welcome-20', 'WELCOME20', 'percentage', 20, 100)
   insertDisc.run('disc-20', 'SAVE20', 'fixed', 20, 50)
   insertDisc.run('disc-5', 'FIVE', 'fixed', 5, 0)
   // Employee daily code: discounts only the product-of-the-day
@@ -92,10 +93,11 @@ export async function seedDatabase() {
     {
       id: 'meat_crepe', name: 'كريب لحوم', emoji: '🌯', color: 'var(--cat-burgers)',
       items: [
-        { id: 'm1', name: 'برجر', price: 0, emoji: '🍔' },
-        { id: 'm2', name: 'هوت دوج', price: 0, emoji: '🌭' },
-        { id: 'm3', name: 'سجق', price: 0, emoji: '🌭' },
-        { id: 'm4', name: 'كفتة', price: 0, emoji: '🍢' },
+        { id: 'm5', name: 'كفته', price: 95, emoji: '🍢', desc: 'كفتة -صوص تكساس -موتزاريلا -فلفل -كاتشب -مايونيز -زيتون -كابوتشي' },
+        { id: 'm6', name: 'سجق', price: 115, emoji: '🌭', desc: 'سجق -موتزاريلا -فلفل -كاتشب -مايونيز -زيتون -كابوتشي' },
+        { id: 'm7', name: 'برجر', price: 170, emoji: '🍔', desc: 'برجر -موتزاريلا -فلفل -كاتشب -مايونيز -زيتون -كابوتشي' },
+        { id: 'm8', name: 'مشكل لحوم', price: 180, emoji: '🥩', desc: 'سوسيس -برجر -كفتة -بسطرمة -صوص تكساس -موتزاريلا -فلفل -كاتشب -مايونيز -زيتون -كابوتشي' },
+        { id: 'm9', name: 'سوسيس', price: 150, emoji: '🌭', desc: 'سوسيس -موتزاريلا -فلفل -كاتشب -مايونيز -زيتون -كابوتشي' },
       ],
     },
     {
@@ -106,22 +108,20 @@ export async function seedDatabase() {
       ],
     },
     {
-      id: 'buckets', name: 'الباكت', emoji: '🍟', color: 'var(--cat-sides)',
+      id: 'buckets', name: 'بطاطس باكت', emoji: '🍟', color: 'var(--cat-sides)',
       items: [
-        { id: 'bk1', name: 'باكت بطاطس فرنس', price: 0, emoji: '🍟' },
-        { id: 'bk2', name: 'باكت بطاطس عادي', price: 0, emoji: '🍟' },
-        { id: 'bk3', name: 'باكت بطاطس شيدر', price: 0, emoji: '🧀' },
-        { id: 'bk4', name: 'باكت بطاطس شيدر هالبينو', price: 0, emoji: '🌶️' },
-        { id: 'bk5', name: 'بوب كرانش', price: 0, emoji: '🍗' },
-        { id: 'bk6', name: 'بوب تايم', price: 0, emoji: '🍗' },
-        { id: 'bk7', name: 'موتزريلا ستيكس', price: 0, emoji: '🧀' },
-        { id: 'bk8', name: 'حلقات بصل', price: 0, emoji: '🧅' },
+        { id: 'bk9', name: 'بوم فريت', price: 30, emoji: '🍟', desc: 'بطاطس' },
+        { id: 'bk10', name: 'تشكن طاطس', price: 65, emoji: '🍗', desc: 'بطاطس -استربس -صوص شيدر' },
+        { id: 'bk11', name: 'تشكن كاب', price: 65, emoji: '🌶️', desc: 'بطاطس -استربس -صوص شيدر -هالبينو' },
+        { id: 'bk12', name: 'بطاطس موتزريلا', price: 50, emoji: '🧀', desc: 'بطاطس -موتزاريلا -صوص شيدر' },
+        { id: 'bk13', name: 'بطاطس فرسكس', price: 30, emoji: '🍟', desc: 'بطاطس' },
+        { id: 'bk14', name: 'بطاطس سوسيس', price: 70, emoji: '🌭', desc: 'بطاطس -سوسيس -باربكيو' },
       ],
     },
     {
       id: 'chicken_crepe', name: 'كريب فراخ', emoji: '🍗', color: 'var(--cat-chicken)',
       items: [
-        { id: 'c1', name: 'كرانش حار', price: 0, emoji: '🌶️' },
+        { id: 'c1', name: 'كرسبي', price: 85, emoji: '🌶️', desc: 'كرسبي -موتزاريلا -فلفل -كاتشب -مايونيز -زيتون -كابوتشي' },
         { id: 'c2', name: 'كرانش بارد', price: 0, emoji: '🍗' },
         { id: 'c3', name: 'زنجر حار', price: 0, emoji: '🌶️' },
         { id: 'c4', name: 'زنجر بارد', price: 0, emoji: '🍗' },
@@ -131,34 +131,46 @@ export async function seedDatabase() {
         { id: 'c8', name: 'شاورما', price: 0, emoji: '🌯' },
         { id: 'c9', name: 'فاهيتا', price: 0, emoji: '🌯' },
         { id: 'c10', name: 'ناشفل حار', price: 0, emoji: '🌶️' },
+        { id: 'c11', name: 'سوبر كرنشي', price: 120, emoji: '🍗', desc: 'استربس -موتزاريلا -فلفل -كاتشب -مايونيز -زيتون -كابوتشي' },
+        { id: 'c12', name: 'زنجر', price: 135, emoji: '🌶️', desc: 'استربس -تركي مدخن -صوص شيدر -موتزاريلا -فلفل -كاتشب -مايونيز -زيتون -كابوتشي' },
+        { id: 'c13', name: 'كونو', price: 125, emoji: '🌯', desc: 'استربس -صوص شيدر -موتزاريلا -فلفل -كاتشب -مايونيز -زيتون -كابوتشي' },
+        { id: 'c14', name: 'كونو بيتزا', price: 140, emoji: '🍕', desc: 'استربس -صوص شيدر -موتزاريلا مزدوجة -فلفل -كاتشب -مايونيز -زيتون -كابوتشي' },
+      ],
+    },
+    {
+      id: 'potato_crepe', name: 'كريب بطاطس', emoji: '🥔', color: 'var(--cat-sides)',
+      items: [
+        { id: 'pc1', name: 'بطاطس', price: 70, emoji: '🍟', desc: 'بطاطس -موتزاريلا -فلفل -كاتشب -مايونيز -زيتون -كابوتشي' },
+        { id: 'pc2', name: 'بطاطس ولعه', price: 95, emoji: '🍟', desc: 'استربس -بطاطس -موتزاريلا -فلفل -كاتشب -مايونيز -زيتون -كابوتشي' },
+        { id: 'pc3', name: 'بطاطس سوسيس', price: 110, emoji: '🌭', desc: 'بطاطس -سوسيس -موتزاريلا -فلفل -كاتشب -مايونيز -زيتون -كابوتشي' },
+        { id: 'pc4', name: 'بطاطس شيدر', price: 80, emoji: '🧀', desc: 'بطاطس -صوص شيدر -موتزاريلا -فلفل -كاتشب -مايونيز -زيتون -كابوتشي' },
       ],
     },
     {
       id: 'syrian', name: 'السوري', emoji: '🥙', color: 'var(--cat-pizza)',
       items: [
-        { id: 's1', name: 'بطاطس سوري', price: 0, emoji: '🥔' },
-        { id: 's2', name: 'بطاطس موتزريلا', price: 0, emoji: '🧀' },
-        { id: 's3', name: 'زنجر سوري', price: 0, emoji: '🌶️' },
-        { id: 's4', name: 'بانيه سوري', price: 0, emoji: '🍗' },
-        { id: 's5', name: 'كفتة سوري', price: 0, emoji: '🍢' },
-        { id: 's6', name: 'فاهيتا سوري', price: 0, emoji: '🌯' },
-        { id: 's7', name: 'شاورما سوري', price: 0, emoji: '🌯' },
-        { id: 's8', name: 'شيش سوري', price: 0, emoji: '🍢' },
-        { id: 's9', name: 'بانيه بطاطس', price: 0, emoji: '🍗' },
-        { id: 's10', name: 'زنجر بطاطس', price: 0, emoji: '🌶️' },
-        { id: 's11', name: 'شاورما بطاطس', price: 0, emoji: '🌯' },
+        { id: 'sy1', name: 'بطاطس سوري', price: 30, emoji: '🥔', desc: 'بطاطس -كاتشب -توميه' },
+        { id: 'sy2', name: 'شاورما بطاطس', price: 50, emoji: '🌯', desc: 'بطاطس -شاورما -توميه -كاتشب' },
+        { id: 'sy3', name: 'بطاطس جبن', price: 45, emoji: '🧀', desc: 'بطاطس -رومي -توميه -كاتشب' },
+        { id: 'sy4', name: 'بطاطس هالبينو', price: 55, emoji: '🌶️', desc: 'بطاطس -توميه -كاتشب -هالبينو -استربس' },
+        { id: 'sy5', name: 'سوري بانيه', price: 70, emoji: '🍗', desc: 'بانيه -بطاطس -توميه -كاتشب' },
       ],
     },
     {
       id: 'mixes', name: 'الميكسات', emoji: '🍽️', color: 'var(--cat-meals)',
       items: [
-        { id: 'mx1', name: 'طوكيو', price: 0, emoji: '🍱' },
-        { id: 'mx2', name: 'برين', price: 0, emoji: '🍱' },
-        { id: 'mx3', name: 'نيروبي', price: 0, emoji: '🍱' },
-        { id: 'mx4', name: 'ريو', price: 0, emoji: '🍱' },
-        { id: 'mx5', name: 'استوكهولم', price: 0, emoji: '🍱' },
-        { id: 'mx6', name: 'ميت لافرز', price: 0, emoji: '🥩' },
-        { id: 'mx7', name: 'ميت تشيكن', price: 0, emoji: '🍗' },
+        { id: 'mx8', name: 'كرانش تايم', price: 165, emoji: '🍱', desc: 'كوردون بلو -اصابع موزاريلا -بسطرمة -استربس -شاورما' },
+        { id: 'mx9', name: 'ميكس فراخ', price: 175, emoji: '🍱', desc: 'استربس -شاورما -بانيه' },
+        { id: 'mx10', name: 'اسبشيال تايم', price: 165, emoji: '🍱', desc: 'استربس -مشوي صدور -تركي مدخن -صوص شيدر' },
+        { id: 'mx11', name: 'Yummy', price: 135, emoji: '🍱', desc: 'بانيه -سوسيس -شاورما' },
+        { id: 'mx12', name: 'العالمي', price: 145, emoji: '🍱', desc: 'استربس -بسطرمة -شاورما -صوص شيدر' },
+        { id: 'mx13', name: 'بيبروني تشكن', price: 100, emoji: '🍱', desc: 'استربس -ببروني' },
+        { id: 'mx14', name: 'VIP', price: 125, emoji: '🍱', desc: 'استربس -مشوي صدور -سوسيس -صوص شيدر' },
+        { id: 'mx15', name: 'الجحيم', price: 105, emoji: '🍱', desc: 'بانيه -شاورما -صوص حار -صوص هالبينو' },
+        { id: 'mx16', name: 'فرايداي', price: 75, emoji: '🍱', desc: 'شاورما -مشروم' },
+        { id: 'mx17', name: 'جمبري بانيه', price: 235, emoji: '🍤', desc: 'جمبري بانيه -صوص ألف جزيرة' },
+        { id: 'mx18', name: 'Bigboom', price: 105, emoji: '🍱', desc: 'كوردون بلو -استربس -شاورما -بطاطس -صوص تكساس' },
+        { id: 'mx19', name: 'بانيه بطاطس', price: 60, emoji: '🍗', desc: 'بانيه بطاطس - موتزريلا - فلفل - كاتشب - مايونيز - زيتون - كابوتشي' },
       ],
     },
     {
@@ -203,12 +215,12 @@ export async function seedDatabase() {
   // 0 = Sunday … 6 = Saturday; weekend is crepe.
   const insertDay = db.prepare('INSERT OR IGNORE INTO discount_day_products (id, discount_code_id, day_of_week, product_id) VALUES (?, ?, ?, ?)')
   const staffRotation: [number, string][] = [
-    [0, 'm1'],   // الأحد — برجر
+    [0, 'm7'],   // الأحد — برجر
     [1, 'c3'],   // الاثنين — زنجر حار
-    [2, 's1'],   // الثلاثاء — بطاطس سوري
-    [3, 'mx1'],  // الأربعاء — طوكيو
+    [2, 'pc1'],  // الثلاثاء — بطاطس
+    [3, 'mx8'],  // الأربعاء — كرانش تايم
     [4, 'b1'],   // الخميس — كريب بطاطس
-    [5, 'c1'],   // الجمعة — كرانش حار
+    [5, 'c1'],   // الجمعة — كرسبي
     [6, 'c2'],   // السبت — كرانش بارد
   ]
   for (const [day, productId] of staffRotation) {
@@ -221,13 +233,14 @@ export async function seedDatabase() {
   const breakfastIds = idsOf('breakfast')
   const bucketIds = idsOf('buckets')
   const chickenIds = idsOf('chicken_crepe')
+  const potatoIds = idsOf('potato_crepe')
   const syrianIds = idsOf('syrian')
   const mixIds = idsOf('mixes')
   const sweetsIds = idsOf('sweets')
   const treatIds = idsOf('treat')
 
   // Crepe-style items get a dough base + filling; drinks are single ingredients.
-  const crepeIds = [...meatIds, ...breakfastIds, ...chickenIds, ...syrianIds, ...mixIds]
+  const crepeIds = [...meatIds, ...breakfastIds, ...chickenIds, ...potatoIds, ...syrianIds, ...mixIds]
 
   // ─── Addons ─────────────────────────────────────────────────
   // The real topping/side list from the add-ons screen, completed with every
@@ -307,6 +320,7 @@ export async function seedDatabase() {
     { id: 'ing-ranch', name: 'رانش', unit: 'g', stock: 50 * 1000, min: 1000, cost: 0.092, pack: 5000, sup: 'اليو' },
     { id: 'ing-rome-cheese', name: 'رومي مبشور', unit: 'g', stock: 10 * 1000, min: 400, cost: 0.125, pack: 1000, sup: 'ريفال' },
     { id: 'ing-sausage', name: 'سجق', unit: 'g', stock: 100 * 1000, min: 2000, cost: 0.185, pack: 10000, sup: 'ميتلاند' },
+    { id: 'ing-sosis', name: 'سوسيس', unit: 'g', stock: 10 * 1000, min: 2000, cost: 0.30, pack: 1000, sup: 'حلواني' },
     { id: 'ing-mint-syrup', name: 'سيرم نعناع', unit: 'لتر', stock: 1, min: 0, cost: 0 },
     { id: 'ing-cheddar', name: 'شيدر (صوص)', unit: 'g', stock: 50 * 1000, min: 2000, cost: 0.138, pack: 5000, sup: 'اليو' },
     { id: 'ing-shish', name: 'شيش', unit: 'g', stock: 108 * 1000, min: 4800, cost: 0.2, pack: 10800, sup: 'متعدد' },
@@ -318,7 +332,7 @@ export async function seedDatabase() {
     { id: 'ing-cancheese', name: 'كاتشب جركن', unit: 'g', stock: 100 * 1000, min: 2000, cost: 0.04, pack: 10000, sup: 'اليو' },
     { id: 'ing-crunchy-cold', name: 'كرنشي بارد', unit: 'g', stock: 100 * 1000, min: 2000, cost: 0.085, pack: 10000, sup: 'شاهيتا' },
     { id: 'ing-crunchy-hot', name: 'كرنشي حار', unit: 'g', stock: 100 * 1000, min: 4000, cost: 0.085, pack: 10000, sup: 'شاهيتا' },
-    { id: 'ing-kofta', name: 'كفتة', unit: 'g', stock: 72 * 1000, min: 1800, cost: 0.01944, pack: 7200, sup: 'دايم' },
+    { id: 'ing-kofta', name: 'كفتة', unit: 'g', stock: 72 * 1000, min: 1800, cost: 0.1556, pack: 900, sup: 'دايم' },
     { id: 'ing-cordon-blue', name: 'كوردن بلو', unit: 'g', stock: 120 * 1000, min: 4800, cost: 0.17, pack: 12000, sup: 'سمارت' },
     { id: 'ing-mayo', name: 'مايونيز', unit: 'g', stock: 100 * 1000, min: 2000, cost: 0.065, pack: 10000, sup: 'اليو' },
     { id: 'ing-mayo-classic', name: 'مايونيز كلاسيك', unit: 'g', stock: 120 * 1000, min: 2400, cost: 0.03225, pack: 12000, sup: 'هاينز' },
@@ -329,9 +343,12 @@ export async function seedDatabase() {
     { id: 'ing-pistachio-sauce', name: 'صوص فستق', unit: 'g', stock: 1 * 1000, min: 200, cost: 0 },
     { id: 'ing-lotus-sauce', name: 'صوص لوتس', unit: 'g', stock: 1 * 1000, min: 200, cost: 0 },
     { id: 'ing-kinder-sauce', name: 'صوص كندر', unit: 'g', stock: 1 * 1000, min: 200, cost: 0 },
+    { id: 'ing-sauce-spicy', name: 'صوص حار', unit: 'ml', stock: 5000, min: 500, cost: 0.06, pack: 1 },
+    { id: 'ing-sauce-garlic', name: 'صوص ثوم', unit: 'ml', stock: 5000, min: 500, cost: 0.05, pack: 1 },
+    { id: 'ing-sauce-jalapeno', name: 'صوص هالبينو', unit: 'g', stock: 2 * 1000, min: 400, cost: 0.30, pack: 200, sup: 'ميلكانا' },
     // ── الوصفات الجديدة: خضار طازج + صوصات + بروتين ──
     { id: 'ing-olives', name: 'زيتون', unit: 'g', stock: 2 * 1000, min: 400, cost: 0.096, pack: 1000 },
-    { id: 'ing-lettuce', name: 'خس', unit: 'g', stock: 2 * 1000, min: 400, cost: 0 },
+    { id: 'ing-lettuce', name: 'كابوتشي', unit: 'g', stock: 2 * 1000, min: 400, cost: 0 },
     { id: 'ing-pepper', name: 'فلفل', unit: 'g', stock: 2 * 1000, min: 400, cost: 0 },
     { id: 'ing-pepper-mix', name: 'فلفل الوان', unit: 'g', stock: 2 * 1000, min: 400, cost: 0 },
     { id: 'ing-onion', name: 'بصل', unit: 'g', stock: 2 * 1000, min: 400, cost: 0 },
@@ -341,13 +358,14 @@ export async function seedDatabase() {
     { id: 'ing-breast-marinated', name: 'صدور متبلة', unit: 'g', stock: 5 * 1000, min: 1000, cost: 0 },
     { id: 'ing-pepperoni', name: 'ببروني', unit: 'g', stock: 2 * 1000, min: 400, cost: 0.825, pack: 200 },
     { id: 'ing-zinger', name: 'زنجر', unit: 'g', stock: 5 * 1000, min: 1000, cost: 0 },
-    { id: 'ing-baniye', name: 'بانيه', unit: 'قطعة', stock: 100, min: 20, cost: 0 },
+    { id: 'ing-baniye', name: 'بانيه', unit: 'قطعة', stock: 100, min: 20, cost: 19, sup: 'متعدد' },
+    { id: 'ing-shrimp', name: 'جمبري بانيه', unit: 'قطعة', stock: 40, min: 8, cost: 13, pack: 40 },
     { id: 'ing-fajita', name: 'فاهيتا', unit: 'g', stock: 3 * 1000, min: 600, cost: 0 },
     { id: 'ing-fajita-sauce', name: 'صوص فاهيتا', unit: 'g', stock: 2 * 1000, min: 400, cost: 0 },
     { id: 'ing-teriyaki', name: 'ترياكي صوص', unit: 'g', stock: 2 * 1000, min: 400, cost: 0 },
     { id: 'ing-balsamic', name: 'صوص بلسمك', unit: 'g', stock: 2 * 1000, min: 400, cost: 0 },
     { id: 'ing-harissa', name: 'هريسه', unit: 'g', stock: 1 * 1000, min: 200, cost: 0 },
-    { id: 'ing-basturma', name: 'بسطرمة', unit: 'g', stock: 1 * 1000, min: 200, cost: 0 },
+    { id: 'ing-basturma', name: 'بسطرمة', unit: 'g', stock: 1 * 1000, min: 200, cost: 1.10, pack: 1000, sup: 'حلواني' },
     // ── ورقات ومستلزمات: بالقطعة ──
     // Food items draw down in recipes (crepe wrappers, waffles);
     // packaging/operational supplies stay inventory-only.
@@ -394,7 +412,7 @@ export async function seedDatabase() {
   //    3↔140ج ≈ 46.7ج، كرنشي 2.5↔120ج ⇒ 48ج); بانيه keeps its new قطعة unit.
   //  • spelling variants point at the stock row that actually exists:
   //    موتزريلا→موزاريلا، رومي→رومي مبشور، كاتشب 12ج→1 ظرف، بطاطس→بطاطس
-  //    كريسبي، شاورما→استربس بارد، ثاوثند ايلاند→ألف جزيرة، خص→خس، توابل
+  //    كريسبي، شاورما→استربس بارد، ثاوثند ايلاند→ألف جزيرة، خص→كابوتشي، توابل
   //    ناشفل→توابل. شاورما recipes use مايونيز كلاسيك (the store's convention).
   const recipesData: [string, string, string | null, number, string | null][] = []
   let recN = 1
@@ -403,33 +421,40 @@ export async function seedDatabase() {
   const addSub = (pid: string, subRecipeId: string, qty: number) => recipesData.push([`rec-${recN++}`, pid, null, qty, subRecipeId])
   const fill = (pid: string, rows: [string, number][]) => { for (const [iid, q] of rows) addRecipe(pid, iid, q) }
 
-  const CRISPY_SIDE = [['ing-crispy-potato', 150]] as [string, number][]
+  // الكريب القياسي: 50ج موتزاريلا + 15ج لكل من الفلفل والكاتشب
+  // والمايونيز والزيتون والكابوتشي + 2 كاتشب ظرف.
+  const crepeBase = (mozzarella: number): [string, number][] => [
+    ['ing-mozzarella', mozzarella],
+    ['ing-pepper', 15], ['ing-cancheese', 15], ['ing-mayo', 15],
+    ['ing-olives', 15], ['ing-lettuce', 15], ['ing-ketchup', 2],
+  ]
 
   // كريب لحوم
-  fill('m1', [['ing-burger', 120], ['ing-mozzarella', 50], ['ing-rome-cheese', 5], ['ing-pickles', 10], ['ing-pepperoni', 20], ['ing-texas', 20], ['ing-cheddar', 30], ['ing-lettuce', 20]])
-  fill('m2', [['ing-hotdog', 150], ['ing-mozzarella', 50], ['ing-rome-cheese', 5], ['ing-olives', 5], ['ing-pepper', 15], ['ing-onion', 15], ['ing-bbq', 12], ['ing-mayo', 12]])
-  fill('m3', [['ing-sausage', 150], ['ing-mozzarella', 50], ['ing-rome-cheese', 5], ['ing-olives', 5], ['ing-pepper-mix', 15], ['ing-onion', 15], ['ing-tomato', 15], ['ing-pomegranate', 20], ['ing-mayo', 12]])
-  fill('m4', [['ing-kofta', 120], ['ing-mozzarella', 50], ['ing-rome-cheese', 5], ['ing-olives', 5], ['ing-pepper', 10], ['ing-onion', 10], ['ing-teriyaki', 20], ['ing-mayo', 12]])
+  fill('m5', [...crepeBase(50), ['ing-kofta', 90], ['ing-texas', 15]])
+  fill('m6', [...crepeBase(50), ['ing-sausage', 120]])
+  fill('m7', [...crepeBase(50), ['ing-burger', 200]])
+  fill('m8', [...crepeBase(50), ['ing-sosis', 50], ['ing-burger', 50], ['ing-kofta', 50], ['ing-basturma', 10], ['ing-texas', 15]])
+  fill('m9', [...crepeBase(50), ['ing-sosis', 120]])
 
   // فطار
   fill('b1', [['ing-crispy-potato', 150], ['ing-cancheese', 25], ['ing-ketchup', 1]])
   fill('b2', [['ing-cancheese', 40], ['ing-mozzarella', 30], ['ing-cheddar', 20]])
 
-  // الباكت
-  fill('bk1', [...CRISPY_SIDE, ['ing-spices', 4]])
-  fill('bk2', [...CRISPY_SIDE, ['ing-spices', 6]])
-  fill('bk3', [...CRISPY_SIDE, ['ing-cheddar', 30]])
-  fill('bk4', [...CRISPY_SIDE, ['ing-cheddar', 30], ['ing-jalapeno', 10]])
-  fill('bk5', [['ing-chicken-cold', 130], ...CRISPY_SIDE, ['ing-cancheese', 15]])
-  fill('bk6', [['ing-tiger', 130], ...CRISPY_SIDE, ['ing-bbq', 20]])
-  fill('bk7', [['ing-mozz-stick', 90], ['ing-ketchup', 1]])
-  fill('bk8', [['ing-onion-rings', 110], ['ing-ketchup', 1]])
+  // بطاطس باكت
+  fill('bk9', [['ing-crispy-potato', 150]])
+  fill('bk10', [['ing-crispy-potato', 120], ['ing-shawarma-cold', 50], ['ing-cheddar', 25]])
+  fill('bk11', [['ing-crispy-potato', 110], ['ing-shawarma-cold', 50], ['ing-cheddar', 25], ['ing-jalapeno', 20]])
+  fill('bk12', [['ing-crispy-potato', 100], ['ing-mozzarella', 50], ['ing-cheddar', 25]])
+  fill('bk13', [['ing-crispy-potato', 150]])
+  fill('bk14', [['ing-crispy-potato', 120], ['ing-sosis', 50], ['ing-bbq', 15]])
 
   // كريب فراخ
-  // c1/c2 ← «كرنشي حار» (اختيار نوع اللحوم عبر الموديفاير؛ البارد نفس الوصفة
-  // بالكرنشي البارد). c3/c4 ← «زنجر حار أو بارد» + صلصة الـ preparation
+  // c1/c2 ← كرنشي (حار/بارد) مع اختيار نوع اللحوم عبر الموديفاير.
+  // c3/c4 ← «زنجر حار أو بارد» + صلصة الـ preparation
   // (حار→تايجر، بارد→كاتشب) والاستربس عبر موديفاير 200ج.
-  fill('c1', [['ing-crunchy-hot', 120], ['ing-mozzarella', 50], ['ing-rome-cheese', 5], ['ing-olives', 5], ['ing-pepper', 10], ['ing-lettuce', 20], ['ing-ketchup', 1], ['ing-mayo', 12]])
+  // c11–c14 ← التركيبة الجديدة: 50ج موتزاريلا + 15ج لكل من الفلفل والكاتشب
+  // والمايونيز والزيتون والكابوتشي + عجينة + 2 كاتشب ظرف + البروتين.
+  fill('c1', [...crepeBase(50), ['ing-crunchy-hot', 150]])
   fill('c2', [['ing-crunchy-cold', 120], ['ing-mozzarella', 50], ['ing-rome-cheese', 5], ['ing-olives', 5], ['ing-pepper', 10], ['ing-lettuce', 20], ['ing-ketchup', 1], ['ing-mayo', 12]])
   fill('c3', [['ing-turkey', 12], ['ing-beef', 12], ['ing-mozzarella', 50], ['ing-rome-cheese', 5], ['ing-olives', 5], ['ing-pepper', 10], ['ing-lettuce', 20], ['ing-texas', 12], ['ing-cheddar', 20], ['ing-tiger', 12]])
   fill('c4', [['ing-turkey', 12], ['ing-beef', 12], ['ing-mozzarella', 50], ['ing-rome-cheese', 5], ['ing-olives', 5], ['ing-pepper', 10], ['ing-lettuce', 20], ['ing-texas', 12], ['ing-cheddar', 20], ['ing-ketchup', 1]])
@@ -439,30 +464,37 @@ export async function seedDatabase() {
   fill('c8', [['ing-shawarma-cold', 170], ['ing-mozzarella', 50], ['ing-rome-cheese', 5], ['ing-olives', 5], ['ing-pepper', 10], ['ing-onion', 10], ['ing-mayo-classic', 12]])
   fill('c9', [['ing-chicken-breast', 180], ['ing-mushroom', 50], ['ing-fajita-sauce', 12], ['ing-mozzarella', 50], ['ing-rome-cheese', 5], ['ing-olives', 5], ['ing-mayo', 12]])
   fill('c10', [['ing-shawarma-hot', 220], ['ing-mozzarella', 50], ['ing-pickles', 10], ['ing-ranch', 20], ['ing-buffalo', 35], ['ing-lettuce', 20], ['ing-spices', 3]])
+  fill('c11', [...crepeBase(50), ['ing-shawarma-cold', 120]])
+  fill('c12', [...crepeBase(50), ['ing-shawarma-cold', 120], ['ing-turkey', 15], ['ing-cheddar', 15]])
+  fill('c13', [...crepeBase(50), ['ing-shawarma-cold', 120], ['ing-cheddar', 15]])
+  fill('c14', [...crepeBase(100), ['ing-shawarma-cold', 120], ['ing-cheddar', 15]])
 
-  // السوري — كل الأصناف الـ 11 من ملف الوصفات (سورى→سوري spelling)
-  fill('s1', [['ing-crispy-potato', 120], ['ing-ketchup', 1]])
-  fill('s2', [['ing-crispy-potato', 120], ['ing-mozzarella', 30], ['ing-ketchup', 1]])
-  fill('s3', [['ing-zinger', 120], ['ing-lettuce', 20], ['ing-ranch', 12]])
-  fill('s4', [['ing-baniye', 2], ['ing-lettuce', 20], ['ing-ketchup', 1]])
-  fill('s5', [['ing-kofta', 90], ['ing-mayo', 12], ['ing-tomato', 10]])
-  fill('s6', [['ing-fajita', 100], ['ing-pepper', 10], ['ing-mushroom', 20], ['ing-fajita-sauce', 12], ['ing-mayo', 12]])
-  fill('s7', [['ing-shawarma-cold', 100], ['ing-pepper', 10], ['ing-onion', 10], ['ing-mayo-classic', 12]])
-  fill('s8', [['ing-shish', 90], ['ing-tomato', 10], ['ing-onion', 10], ['ing-balsamic', 12]])
-  fill('s9', [['ing-baniye', 1.5], ['ing-crispy-potato', 80], ['ing-lettuce', 20], ['ing-ketchup', 1]])
-  fill('s10', [['ing-crispy-potato', 70], ['ing-zinger', 80], ['ing-lettuce', 20], ['ing-ranch', 12]])
-  fill('s11', [['ing-shawarma-cold', 80], ['ing-crispy-potato', 70], ['ing-onion', 10], ['ing-pepper', 10], ['ing-mayo-classic', 12]])
+  // كريب بطاطس
+  fill('pc1', [...crepeBase(50), ['ing-crispy-potato', 120]])
+  fill('pc2', [...crepeBase(50), ['ing-shawarma-cold', 50], ['ing-crispy-potato', 100]])
+  fill('pc3', [...crepeBase(50), ['ing-crispy-potato', 100], ['ing-sosis', 50]])
+  fill('pc4', [...crepeBase(50), ['ing-crispy-potato', 120], ['ing-cheddar', 25]])
 
-  // الميكسات — نوع اللحوم والاستربس اختيارات عبر الموديفايرز (شوف تحت).
-  // برلين←برين، ستوكهولم←استوكهولم. mx6/mx7 مش في ملف الوصفات — بيفضلوا
-  // بوصفاتهم القديمة.
-  fill('mx1', [['ing-burger', 100], ['ing-chicken-breast', 70], ['ing-mozzarella', 50], ['ing-rome-cheese', 5], ['ing-olives', 5], ['ing-onion', 10], ['ing-ketchup', 1], ['ing-mayo', 12], ['ing-cheddar', 30], ['ing-lettuce', 20]])
-  fill('mx2', [['ing-hotdog', 60], ['ing-shish', 70], ['ing-mozzarella', 50], ['ing-rome-cheese', 5], ['ing-olives', 5], ['ing-onion', 10], ['ing-pepper', 10], ['ing-ranch', 12], ['ing-cheddar', 30], ['ing-lettuce', 20]])
-  fill('mx3', [['ing-shish', 80], ['ing-mozzarella', 50], ['ing-rome-cheese', 5], ['ing-olives', 5], ['ing-ranch', 12], ['ing-harissa', 12]])
-  fill('mx4', [['ing-hotdog', 50], ['ing-cordon-blue', 46.7], ['ing-shish', 60], ['ing-mozzarella', 50], ['ing-rome-cheese', 5], ['ing-olives', 5], ['ing-texas', 12], ['ing-cheddar', 30], ['ing-lettuce', 20]])
-  fill('mx5', [['ing-cordon-blue', 70], ['ing-chicken-breast', 70], ['ing-mozzarella', 50], ['ing-rome-cheese', 5], ['ing-olives', 5], ['ing-chicken-cold', 12], ['ing-ranch', 12], ['ing-cheddar', 30]])
-  fill('mx6', [['ing-farm', 150], ...CRISPY_SIDE, ['ing-mushroom', 30], ['ing-cheddar', 20]])
-  fill('mx7', [['ing-tiger', 140], ...CRISPY_SIDE, ['ing-ranch', 15], ['ing-mayo', 15]])
+  // السوري
+  fill('sy1', [['ing-crispy-potato', 130], ['ing-cancheese', 20], ['ing-sauce-garlic', 15]])
+  fill('sy2', [['ing-crispy-potato', 80], ['ing-shawarma-cold', 50], ['ing-sauce-garlic', 15], ['ing-cancheese', 15]])
+  fill('sy3', [['ing-rome-cheese', 50], ['ing-sauce-garlic', 15], ['ing-cancheese', 15], ['ing-crispy-potato', 120]])
+  fill('sy4', [['ing-crispy-potato', 100], ['ing-sauce-garlic', 15], ['ing-cancheese', 15], ['ing-jalapeno', 15], ['ing-shawarma-cold', 50]])
+  fill('sy5', [['ing-baniye', 1], ['ing-crispy-potato', 50], ['ing-sauce-garlic', 15], ['ing-cancheese', 15]])
+
+  // الميكسات — أطباق ميكس بدون عجينة كريب؛ التغليف في علبة مركب.
+  fill('mx8', [['ing-cordon-blue', 50], ['ing-mozz-stick', 30], ['ing-basturma', 20], ['ing-shawarma-cold', 100]])
+  fill('mx9', [['ing-shawarma-cold', 100], ['ing-baniye', 2]])
+  fill('mx10', [['ing-shawarma-cold', 180], ['ing-chicken-breast', 50], ['ing-turkey', 15], ['ing-cheddar', 15]])
+  fill('mx11', [['ing-baniye', 1], ['ing-sosis', 50], ['ing-shawarma-cold', 50]])
+  fill('mx12', [['ing-shawarma-cold', 120], ['ing-basturma', 20], ['ing-cheddar', 15]])
+  fill('mx13', [['ing-shawarma-cold', 120], ['ing-pepperoni', 10]])
+  fill('mx14', [['ing-shawarma-cold', 70], ['ing-chicken-breast', 50], ['ing-sosis', 40], ['ing-cheddar', 15]])
+  fill('mx15', [['ing-baniye', 1], ['ing-shawarma-cold', 50], ['ing-sauce-spicy', 15], ['ing-sauce-jalapeno', 15]])
+  fill('mx16', [['ing-shawarma-cold', 100], ['ing-mushroom', 50]])
+  fill('mx17', [['ing-shrimp', 6], ['ing-chicken-cold', 15]])
+  fill('mx18', [['ing-cordon-blue', 50], ['ing-shawarma-cold', 110], ['ing-crispy-potato', 40], ['ing-texas', 15]])
+  fill('mx19', [['ing-mozzarella', 50], ['ing-pepper', 15], ['ing-cancheese', 15], ['ing-mayo', 15], ['ing-olives', 15], ['ing-lettuce', 15], ['ing-crunchy-cold', 50], ['ing-crispy-potato', 100]])
 
   // Sweets + Treat share a batter base; the named sauce is the topping.
   // Packaged items are consumed in tiny amounts per serving (grams of powder,
@@ -490,7 +522,7 @@ export async function seedDatabase() {
   // sub-recipe below. The bought كريب الصالة /
   // كريب تيكتاواي wrappers stay in inventory as
   // stock on hand.
-  for (const pid of ['m1', 'm2', 'm3', 'm4', 'b1', 'c1', 'c2', 'c3', 'c4', 'c5', 'c6', 'c7', 'c8', 'c9', 'c10']) addSub(pid, 'sub-crepe-dough', 1)
+  for (const pid of [...meatIds, 'b1', ...chickenIds, ...potatoIds]) addSub(pid, 'sub-crepe-dough', 1)
   // Waffles — one purchased waffle per Sweet (the batter base
   // stays as the from-scratch model on top).
   for (const pid of sweetsIds) addRecipe(pid, 'ing-waffle', 1)
@@ -500,9 +532,9 @@ export async function seedDatabase() {
   // boxes), crepes/wraps in sandwich paper, sweets
   // and treats on butter paper, and a production-date
   // sticker + label disc on every sold item.
-  for (const pid of ['bk1', 'bk2', 'b1', 's1', 's9', 's10', 's11']) addRecipe(pid, 'ing-potato-box', 1)
-  for (const pid of ['bk3', 'bk4', 's2']) addRecipe(pid, 'ing-potato-box-mix', 1)
-  for (const pid of [...meatIds, ...breakfastIds, ...chickenIds, ...syrianIds]) addRecipe(pid, 'ing-sandwich-paper', 1)
+  for (const pid of ['bk9', 'bk13', 'b1']) addRecipe(pid, 'ing-potato-box', 1)
+  for (const pid of ['bk10', 'bk11', 'bk12', 'bk14', ...mixIds]) addRecipe(pid, 'ing-potato-box-mix', 1)
+  for (const pid of [...meatIds, ...breakfastIds, ...chickenIds, ...potatoIds, ...syrianIds]) addRecipe(pid, 'ing-sandwich-paper', 1)
   for (const pid of [...sweetsIds, ...treatIds]) addRecipe(pid, 'ing-butter-paper', 1)
   for (const c of CATALOG) {
     for (const it of c.items) {
@@ -592,7 +624,6 @@ export async function seedDatabase() {
   // single-select: بطاقة المنتج بتفتح نافذة الاختيار (أول خيار محدد تلقائيًا)
   // والكاشير يقدر يغيّره؛ كل خيار بيجيب مكوّنه بنفسه، فالمخزون بيتخصم من
   // الاختيار الفعلي — «بيف أو تركى» و«استربس حار أو بارد» كده مش بيتقسّموا.
-  // الأرقام في اسم الجروب = الكمية في الوصفة (الميكسات متفاوتة 110/120ج).
   const modifierData: {
     id: string; name: string
     options: { id: string; name: string; ing: string; qty: number }[]
@@ -601,18 +632,6 @@ export async function seedDatabase() {
     { id: 'mg-meat-12', name: 'نوع اللحوم 12ج', products: ['c1', 'c2'], options: [
       { id: 'mg-meat-12-turkey', name: 'تركي', ing: 'ing-turkey', qty: 12 },
       { id: 'mg-meat-12-beef', name: 'بيف', ing: 'ing-beef', qty: 12 },
-    ] },
-    { id: 'mg-meat-18', name: 'نوع اللحوم 18ج', products: ['mx2', 'mx3', 'mx4', 'mx5'], options: [
-      { id: 'mg-meat-18-beef', name: 'بيف', ing: 'ing-beef', qty: 18 },
-      { id: 'mg-meat-18-turkey', name: 'تركي', ing: 'ing-turkey', qty: 18 },
-    ] },
-    { id: 'mg-strips-110', name: 'نوع الاستربس 110ج', products: ['mx3', 'mx4'], options: [
-      { id: 'mg-strips-110-hot', name: 'حار', ing: 'ing-shawarma-hot', qty: 110 },
-      { id: 'mg-strips-110-cold', name: 'بارد', ing: 'ing-shawarma-cold', qty: 110 },
-    ] },
-    { id: 'mg-strips-120', name: 'نوع الاستربس 120ج', products: ['mx1', 'mx2', 'mx5'], options: [
-      { id: 'mg-strips-120-hot', name: 'حار', ing: 'ing-shawarma-hot', qty: 120 },
-      { id: 'mg-strips-120-cold', name: 'بارد', ing: 'ing-shawarma-cold', qty: 120 },
     ] },
     { id: 'mg-strips-200', name: 'نوع الاستربس 200ج', products: ['c3', 'c4'], options: [
       { id: 'mg-strips-200-hot', name: 'حار', ing: 'ing-shawarma-hot', qty: 200 },

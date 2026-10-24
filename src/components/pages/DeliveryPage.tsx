@@ -152,9 +152,10 @@ export function DeliveryPage({ onAssigned }: { onAssigned?: () => void }) {
     ? assigned
     : assigned.filter((o) => o.deliveryProfileId === driverFilter)
 
-  const moneyCells = (b: { cashTotal: number; visaTotal: number; total: number }) => (
+  const moneyCells = (b: { cashTotal: number; visaTotal: number; deliveryFee: number; total: number }) => (
     <>
       <td className="px-3 py-2.5 font-bold text-green-400 whitespace-nowrap">{fmtMoney(b.cashTotal)}</td>
+      <td className="px-3 py-2.5 font-bold text-primary whitespace-nowrap">{fmtMoney(b.deliveryFee)}</td>
       <td className="px-3 py-2.5 font-bold text-blue-400 whitespace-nowrap">{fmtMoney(b.visaTotal)}</td>
       <td className="px-3 py-2.5 font-black whitespace-nowrap">{fmtMoney(b.total)}</td>
     </>
@@ -271,6 +272,7 @@ export function DeliveryPage({ onAssigned }: { onAssigned?: () => void }) {
                       <th className="px-3 py-2.5 font-bold text-green-400">
                         <SortButton label="كاش يسلّمه" dir={driverSort?.key === 'cashTotal' ? driverSort.dir : null} onSort={() => setDriverSort(toggleSort(driverSort, 'cashTotal', (d: any) => d.cashTotal))} />
                       </th>
+                      <th className="px-3 py-2.5 font-bold text-primary">رسوم توصيل (للشركة)</th>
                       <th className="px-3 py-2.5 font-bold text-blue-400">
                         <SortButton label="فيزا (مش إيده)" dir={driverSort?.key === 'visaTotal' ? driverSort.dir : null} onSort={() => setDriverSort(toggleSort(driverSort, 'visaTotal', (d: any) => d.visaTotal))} />
                       </th>
@@ -314,7 +316,9 @@ export function DeliveryPage({ onAssigned }: { onAssigned?: () => void }) {
               <Wallet className="h-4 w-4 shrink-0 mt-0.5 text-green-400" />
               <span>
                 عمود <b className="text-green-400">كاش يسلّمه</b> هو فلوس الديلفري (COD) اللي بيسلّمها في آخر اليوم.
-                الباقي (كاش الوردية والفيزا) بيتخلّص من الكاشير نفسه. التقرير للقراءة بس — مفيش تسجيل أو خصم من الوردية.
+                عمود <b className="text-primary">رسوم توصيل (للشركة)</b> هو الجزء اللي يخص المطعم من الكاش ده — لازم يتحصّل ويتسلّم لصاحب المطعم.
+                المبلغ ده متسجل بالفعل في كاش الوردية وقت البيع — لازم يتحصّل من السائق ويوضع في الدرج قبل إغلاق الوردية.
+                التقرير للمراجعة فقط.
               </span>
             </div>
           </TabsContent>

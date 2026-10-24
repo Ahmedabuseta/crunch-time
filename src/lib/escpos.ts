@@ -161,9 +161,16 @@ function buildReceiptBuffer(o: PrintOrder, paperWidth: string = '80mm'): Uint8Ar
     const padding = Math.max(1, cols - label.length - value.length)
     parts.push(text(`${label}${' '.repeat(padding)}${value}`), lineFeed())
   }
-  if ((o.discountAmount || 0) > 0) {
+  const explicitDiscount = Number(o.discountAmount) || 0
+  const derivedDiscount = o.total == null
+    ? 0
+    : Math.max(0, Math.round(
+      (Number(o.subtotal) || 0) + (Number(o.tax) || 0) + (Number(o.deliveryFee) || 0) - (Number(o.total) || 0),
+    ))
+  const discountAmount = explicitDiscount > 0 ? explicitDiscount : derivedDiscount
+  if (discountAmount > 0) {
     const label = 'خصم'
-    const value = `-${(o.discountAmount || 0).toFixed(0)} ج.م`
+    const value = `-${discountAmount.toFixed(0)} ج.م`
     const padding = Math.max(1, cols - label.length - value.length)
     parts.push(text(`${label}${' '.repeat(padding)}${value}`), lineFeed())
   }

@@ -157,6 +157,22 @@ describe('admin API parity over HTTP', () => {
     expect((await api('/shifts/close', { method: 'POST', body: JSON.stringify({ id: shiftId, closingCash: 120 }) })).status).toBe(200)
   })
 
+  it('opens the profit report at the start of the month', async () => {
+    const today = new Date().toISOString().slice(0, 10)
+    const monthStart = `${today.slice(0, 7)}-01`
+    // Fixed expenses are monthly, so a mid-month `from` must not shrink the
+    // window: profit always runs from the 1st through the requested end.
+    getSqlite().prepare(
+      `INSERT INTO orders (id, status, order_type, subtotal, tax, total, created_at, updated_at)
+       VALUES ('#profit-month-start', 'COMPLETED', 'takeaway', 400, 0, 400, ?, ?)`
+    ).run(`${monthStart}T09:00:00.000Z`, `${monthStart}T09:00:00.000Z`)
+
+    const report = (await json(await api(`/reports/profit?from=${today}&to=${today}`))).report
+    expect(report.from).toBe(monthStart)
+    expect(report.to).toBe(today)
+    expect(report.revenue).toBeGreaterThanOrEqual(400)
+  })
+
   it('records audit rows for each mutation', async () => {
     const entries = (await json(await api('/audit?limit=500'))).entries as any[]
     const actions = new Set(entries.map((e) => e.action))

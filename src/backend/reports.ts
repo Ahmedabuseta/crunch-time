@@ -4,11 +4,42 @@ import { getDb, getSqlite } from '../db/client'
 import * as schema from '../db/schema'
 import { abcClass, expandRecipes, r2, supplierConcentration, xyzClass } from './shared'
 import { requireAdmin } from './session'
+import { allocateNetRevenue } from '../lib/net-revenue'
 
 const {
   orders, orderItems, products, addons, categories, payments,
   shifts, users, cashMovements, ingredients, deliveryProfiles, discountCodes,
 } = schema
+
+type ReportItem = {
+  productId: string
+  quantity: number
+  unitPrice: number
+  itemDiscount?: number | null
+  selectedAddonsJson?: string | null
+}
+
+function parseAddonIds(json: string | null | undefined): string[] {
+  if (!json) return []
+  try { return JSON.parse(json) as string[] } catch { return [] }
+}
+
+// Product/add-on revenue per line with the order's discount taken out, so
+// item-level reports agree with the order totals they sit next to.
+function netRevenueByItem(
+  order: { discountAmount?: number | null },
+  items: ReportItem[],
+  addonPrices: Map<string, number>,
+) {
+  const addonIds = items.map(i => parseAddonIds(i.selectedAddonsJson))
+  const lines = items.map((i, idx) => ({
+    productGross: Number(i.unitPrice || 0) * Number(i.quantity || 0),
+    addonGross: addonIds[idx].reduce((s, id) => s + (addonPrices.get(id) || 0) * Number(i.quantity || 0), 0),
+    itemDiscount: Number(i.itemDiscount || 0),
+  }))
+  const nets = allocateNetRevenue(lines, Number(order.discountAmount || 0))
+  return items.map((item, idx) => ({ item, addonIds: addonIds[idx], ...nets[idx] }))
+}
 
 export function dailySummary(date?: string) {
   requireAdmin()
@@ -80,13 +111,18 @@ export function periodSummary(from?: string, to?: string) {
   }
 }
 
-export function profitSummary(from?: string, to?: string) {
+export function profitSummary(_from?: string, to?: string) {
   requireAdmin()
   const s = getSqlite()
+  // Fixed expenses are monthly and are charged from the 1st, so the profit
+  // window always opens there — picking "today" or a rolling week must not
+  // charge a whole month's rent against a few days of revenue.
+  const toDate = (to || new Date().toISOString().slice(0, 10)).slice(0, 10)
+  const fromDate = `${toDate.slice(0, 7)}-01`
   const all = (s.prepare('SELECT * FROM orders').all() as any[]).filter(o => {
     if (o.status === 'CANCELLED') return false
-    if (from && o.created_at < from) return false
-    if (to && o.created_at > to + '￿') return false
+    if (o.created_at < fromDate) return false
+    if (o.created_at > toDate + '￿') return false
     return true
   })
   const refunded = all.filter(o => o.status === 'REFUNDED')
@@ -108,6 +144,8 @@ export function profitSummary(from?: string, to?: string) {
   const taxCollected = all.reduce((sum, o) => sum + o.tax, 0)
 
   return {
+    from: fromDate,
+    to: toDate,
     revenue,
     costOfGoods,
     grossProfit: revenue - costOfGoods,
@@ -139,27 +177,35 @@ export function hourlyBreakdown(date?: string) {
 export function topItems(limit = 10, from?: string, to?: string) {
   requireAdmin()
   const db = getDb()
-  const all = db.select().from(orderItems).all()
-  const allOrders = db.select().from(orders).all()
-  const validOrderIds = new Set(
-    allOrders.filter(o => {
+  const orderMap = new Map(
+    db.select().from(orders).all().filter(o => {
       if (o.status === 'CANCELLED') return false
       if (from && o.createdAt < from) return false
       if (to && o.createdAt > to + '￿') return false
       return true
-    }).map(o => o.id)
+    }).map(o => [o.id, o])
   )
-  const allProducts = db.select().from(products).all()
-  const productMap = new Map(allProducts.map(p => [p.id, p]))
+  const productMap = new Map(db.select().from(products).all().map(p => [p.id, p]))
+  const addonPrices = new Map(db.select().from(addons).all().map(a => [a.id, a.price]))
+
+  const itemsByOrder = new Map<string, ReportItem[]>()
+  for (const item of db.select().from(orderItems).all()) {
+    if (!orderMap.has(item.orderId)) continue
+    const list = itemsByOrder.get(item.orderId)
+    if (list) list.push(item)
+    else itemsByOrder.set(item.orderId, [item])
+  }
 
   const counts: Record<string, { name: string; emoji: string; totalQuantity: number; totalRevenue: number }> = {}
-  for (const item of all) {
-    if (!validOrderIds.has(item.orderId)) continue
-    const p = productMap.get(item.productId)
-    if (!p) continue
-    if (!counts[p.id]) counts[p.id] = { name: p.name, emoji: p.emoji, totalQuantity: 0, totalRevenue: 0 }
-    counts[p.id].totalQuantity += item.quantity
-    counts[p.id].totalRevenue += item.unitPrice * item.quantity
+  for (const [orderId, items] of itemsByOrder) {
+    const order = orderMap.get(orderId)!
+    for (const { item, productNet } of netRevenueByItem(order, items, addonPrices)) {
+      const p = productMap.get(item.productId)
+      if (!p) continue
+      if (!counts[p.id]) counts[p.id] = { name: p.name, emoji: p.emoji, totalQuantity: 0, totalRevenue: 0 }
+      counts[p.id].totalQuantity += item.quantity
+      counts[p.id].totalRevenue += productNet
+    }
   }
   return Object.values(counts).sort((a, b) => b.totalQuantity - a.totalQuantity).slice(0, limit)
 }
@@ -167,29 +213,37 @@ export function topItems(limit = 10, from?: string, to?: string) {
 export function categoryRevenue(from?: string, to?: string) {
   requireAdmin()
   const db = getDb()
-  const allOrders = db.select().from(orders).all()
-  const validOrderIds = new Set(
-    allOrders.filter(o => {
+  const orderMap = new Map(
+    db.select().from(orders).all().filter(o => {
       if (o.status === 'CANCELLED') return false
       if (from && o.createdAt < from) return false
       if (to && o.createdAt > to + '￿') return false
       return true
-    }).map(o => o.id)
+    }).map(o => [o.id, o])
   )
-  const allItems = db.select().from(orderItems).all().filter(i => validOrderIds.has(i.orderId))
-  const allProducts = db.select().from(products).all()
-  const productMap = new Map(allProducts.map(p => [p.id, p]))
-  const allCats = db.select().from(categories).all()
-  const catMap = new Map(allCats.map(c => [c.id, c]))
+  const productMap = new Map(db.select().from(products).all().map(p => [p.id, p]))
+  const addonPrices = new Map(db.select().from(addons).all().map(a => [a.id, a.price]))
+  const catMap = new Map(db.select().from(categories).all().map(c => [c.id, c]))
+
+  const itemsByOrder = new Map<string, ReportItem[]>()
+  for (const item of db.select().from(orderItems).all()) {
+    if (!orderMap.has(item.orderId)) continue
+    const list = itemsByOrder.get(item.orderId)
+    if (list) list.push(item)
+    else itemsByOrder.set(item.orderId, [item])
+  }
 
   const catRevenue: Record<string, { name: string; totalRevenue: number }> = {}
-  for (const item of allItems) {
-    const p = productMap.get(item.productId)
-    if (!p) continue
-    const c = catMap.get(p.categoryId)
-    if (!c) continue
-    if (!catRevenue[c.id]) catRevenue[c.id] = { name: c.name, totalRevenue: 0 }
-    catRevenue[c.id].totalRevenue += item.unitPrice * item.quantity
+  for (const [orderId, items] of itemsByOrder) {
+    const order = orderMap.get(orderId)!
+    for (const { item, productNet } of netRevenueByItem(order, items, addonPrices)) {
+      const p = productMap.get(item.productId)
+      if (!p) continue
+      const c = catMap.get(p.categoryId)
+      if (!c) continue
+      if (!catRevenue[c.id]) catRevenue[c.id] = { name: c.name, totalRevenue: 0 }
+      catRevenue[c.id].totalRevenue += productNet
+    }
   }
   return Object.entries(catRevenue).map(([id, data]) => ({ categoryId: id, ...data }))
     .sort((a, b) => b.totalRevenue - a.totalRevenue)
@@ -198,29 +252,36 @@ export function categoryRevenue(from?: string, to?: string) {
 export function addonStats(from?: string, to?: string) {
   requireAdmin()
   const db = getDb()
-  const allOrders = db.select().from(orders).all()
-  const validOrderIds = new Set(
-    allOrders.filter(o => {
+  const orderMap = new Map(
+    db.select().from(orders).all().filter(o => {
       if (o.status === 'CANCELLED') return false
       if (from && o.createdAt < from) return false
       if (to && o.createdAt > to + '￿') return false
       return true
-    }).map(o => o.id)
+    }).map(o => [o.id, o])
   )
-  const allItems = db.select().from(orderItems).all().filter(i => validOrderIds.has(i.orderId))
-  const allAddons = db.select().from(addons).all()
-  const addonMap = new Map(allAddons.map(a => [a.id, a]))
+  const addonMap = new Map(db.select().from(addons).all().map(a => [a.id, a]))
+  const addonPrices = new Map([...addonMap.values()].map(a => [a.id, a.price]))
+
+  const itemsByOrder = new Map<string, ReportItem[]>()
+  for (const item of db.select().from(orderItems).all()) {
+    if (!orderMap.has(item.orderId)) continue
+    const list = itemsByOrder.get(item.orderId)
+    if (list) list.push(item)
+    else itemsByOrder.set(item.orderId, [item])
+  }
 
   const counts: Record<string, { name: string; emoji: string; totalQuantity: number; totalRevenue: number }> = {}
-  for (const item of allItems) {
-    if (!item.selectedAddonsJson) continue
-    const ids = JSON.parse(item.selectedAddonsJson) as string[]
-    for (const addonId of ids) {
-      const a = addonMap.get(addonId)
-      if (!a) continue
-      if (!counts[a.id]) counts[a.id] = { name: a.name, emoji: a.emoji, totalQuantity: 0, totalRevenue: 0 }
-      counts[a.id].totalQuantity += item.quantity
-      counts[a.id].totalRevenue += a.price * item.quantity
+  for (const [orderId, items] of itemsByOrder) {
+    const order = orderMap.get(orderId)!
+    for (const { item, addonIds, ratio } of netRevenueByItem(order, items, addonPrices)) {
+      for (const addonId of addonIds) {
+        const a = addonMap.get(addonId)
+        if (!a) continue
+        if (!counts[a.id]) counts[a.id] = { name: a.name, emoji: a.emoji, totalQuantity: 0, totalRevenue: 0 }
+        counts[a.id].totalQuantity += item.quantity
+        counts[a.id].totalRevenue += a.price * item.quantity * ratio
+      }
     }
   }
   return Object.values(counts).sort((a, b) => b.totalQuantity - a.totalQuantity)
@@ -271,6 +332,15 @@ export function orderTypeSplit(from?: string, to?: string) {
 
 export function shiftReport(shiftId: string) {
   requireAdmin()
+  return buildShiftReport(shiftId)
+}
+
+/** Same data without the admin gate — used by the cashier's close print. */
+export function shiftReportForPrint(shiftId: string) {
+  return buildShiftReport(shiftId)
+}
+
+function buildShiftReport(shiftId: string) {
   const db = getDb()
   const shift = db.select().from(shifts).where(eq(shifts.id, shiftId)).get()
   if (!shift) return null
@@ -297,12 +367,14 @@ export function shiftReport(shiftId: string) {
 
   // Top 5 items by quantity in the shift
   const productMap = new Map(db.select().from(products).all().map(p => [p.id, p]))
+  const addonPrices = new Map(db.select().from(addons).all().map(a => [a.id, a.price]))
   const itemAgg: Record<string, { productId: string; qty: number; revenue: number }> = {}
   for (const o of shiftOrders) {
-    for (const item of db.select().from(orderItems).where(eq(orderItems.orderId, o.id)).all()) {
+    const items = db.select().from(orderItems).where(eq(orderItems.orderId, o.id)).all()
+    for (const { item, productNet } of netRevenueByItem(o, items, addonPrices)) {
       if (!itemAgg[item.productId]) itemAgg[item.productId] = { productId: item.productId, qty: 0, revenue: 0 }
       itemAgg[item.productId].qty += item.quantity
-      itemAgg[item.productId].revenue += item.unitPrice * item.quantity
+      itemAgg[item.productId].revenue += productNet
     }
   }
   const topItems = Object.values(itemAgg)
@@ -334,18 +406,45 @@ export function shiftReport(shiftId: string) {
   }
   const movements = Object.entries(movAgg).map(([type, amount]) => ({ type, amount: r2(amount) }))
 
+  // Every order type in the shift, including delivery COD.
+  const orderTypes = ['delivery', 'dine-in', 'takeaway'].map(type => {
+    const list = shiftOrders.filter(o => o.orderType === type)
+    return {
+      type,
+      count: list.length,
+      revenue: r2(list.reduce((s, o) => s + o.total, 0)),
+      percentage: shiftOrders.length > 0 ? (list.length / shiftOrders.length) * 100 : 0,
+    }
+  })
+  const deliveryCashOrders = shiftOrders
+    .filter(o => o.orderType === 'delivery' && o.paymentType === 'cash' && o.status !== 'REFUNDED').length
+  const deliveryCash = r2(shiftOrders
+    .filter(o => o.orderType === 'delivery' && o.paymentType === 'cash' && o.status !== 'REFUNDED')
+    .reduce((s, o) => s + o.total, 0))
+  // Delivery fees are company revenue (paid by the customer / handed over by
+  // the driver), not part of the cashier's own sales.
+  const deliveryFees = r2(shiftOrders
+    .filter(o => o.orderType === 'delivery')
+    .reduce((s, o) => s + Number(o.deliveryFee || 0), 0))
+
   return {
     shiftId,
+    shiftNumber: shift.number,
     userName: user?.name || 'غير معروف',
     startedAt: shift.startedAt,
     endedAt: shift.endedAt,
     orderCount: shiftOrders.length,
     totalRevenue: r2(shiftOrders.reduce((s, o) => s + o.total, 0)),
+    discountTotal: r2(shiftOrders.reduce((s, o) => s + Number(o.discountAmount || 0), 0)),
     openingCash: shift.openingCash,
     closingCash: shift.closingCash,
     expectedCash: r2(expectedCash),
     cashDifference: shift.closingCash != null ? r2(shift.closingCash - expectedCash) : null,
     payments: Object.values(payAgg).map(p => ({ ...p, total: r2(p.total) })),
+    orderTypes,
+    deliveryCash,
+    deliveryCashOrders,
+    deliveryFees,
     topItems,
     hourly,
     movements,
@@ -454,6 +553,8 @@ export function laborSummary(from?: string, to?: string) {
   const allOrders = db.select().from(orders).all().filter(o => o.status !== 'CANCELLED' && inRange(o.createdAt))
 
   const totalRevenue = allOrders.reduce((sum, o) => sum + o.total, 0)
+  const totalDeliveryFees = allOrders.reduce((sum, o) =>
+    sum + (o.orderType === 'delivery' ? Number(o.deliveryFee) || 0 : 0), 0)
   let totalLaborCost = 0
   const staff: any[] = []
 
@@ -464,7 +565,12 @@ export function laborSummary(from?: string, to?: string) {
       return sum + (end.getTime() - new Date(x.startedAt).getTime()) / 3600000
     }, 0)
     const uOrders = allOrders.filter(o => o.userId === u.id)
-    const sales = uOrders.reduce((sum, o) => sum + o.total, 0)
+    const deliveryFees = uOrders.reduce((sum, o) =>
+      sum + (o.orderType === 'delivery' ? Number(o.deliveryFee) || 0 : 0), 0)
+    // Delivery fees are company money, not employee sales — commission must not
+    // be earned on them.
+    const sales = uOrders.reduce((sum, o) =>
+      sum + o.total - (o.orderType === 'delivery' ? Number(o.deliveryFee) || 0 : 0), 0)
     const wage = hoursWorked * (u.hourlyRate || 0)
     const commission = sales * ((u.commissionRate || 0) / 100)
     const laborCost = wage + commission
@@ -479,6 +585,7 @@ export function laborSummary(from?: string, to?: string) {
       hoursWorked: Math.round(hoursWorked * 100) / 100,
       orderCount: uOrders.length,
       sales,
+      deliveryFees,
       wage: Math.round(wage),
       commission: Math.round(commission),
       laborCost: Math.round(laborCost),
@@ -486,10 +593,13 @@ export function laborSummary(from?: string, to?: string) {
   }
 
   staff.sort((a, b) => b.sales - a.sales)
+  const totalSales = staff.reduce((sum, s) => sum + s.sales, 0)
   return {
     totalRevenue,
+    totalSales,
+    totalDeliveryFees,
     totalLaborCost: Math.round(totalLaborCost),
-    laborCostPct: totalRevenue > 0 ? (totalLaborCost / totalRevenue) * 100 : 0,
+    laborCostPct: totalSales > 0 ? (totalLaborCost / totalSales) * 100 : 0,
     staff,
   }
 }
@@ -750,19 +860,29 @@ export function abcXyz(from?: string, to?: string) {
     if (to && o.createdAt > to + '￿') return false
     return true
   })
-  const validOrderIds = new Set(allOrders.map(o => o.id))
-  const items = db.select().from(orderItems).all().filter(i => validOrderIds.has(i.orderId))
+  const orderMap = new Map(allOrders.map(o => [o.id, o]))
+  const itemsByOrder = new Map<string, ReportItem[]>()
+  for (const item of db.select().from(orderItems).all()) {
+    if (!orderMap.has(item.orderId)) continue
+    const list = itemsByOrder.get(item.orderId)
+    if (list) list.push(item)
+    else itemsByOrder.set(item.orderId, [item])
+  }
   const productMap = new Map(db.select().from(products).all().map(p => [p.id, p]))
+  const addonPrices = new Map(db.select().from(addons).all().map(a => [a.id, a.price]))
 
   const agg: Record<string, { productId: string; name: string; emoji: string; revenue: number; qty: number }> = {}
   let totalRevenue = 0
-  for (const item of items) {
-    const p = productMap.get(item.productId)
-    if (!p) continue
-    if (!agg[p.id]) agg[p.id] = { productId: p.id, name: p.name, emoji: p.emoji, revenue: 0, qty: 0 }
-    agg[p.id].revenue += item.unitPrice * item.quantity
-    agg[p.id].qty += item.quantity
-    totalRevenue += item.unitPrice * item.quantity
+  for (const [orderId, items] of itemsByOrder) {
+    const order = orderMap.get(orderId)!
+    for (const { item, productNet } of netRevenueByItem(order, items, addonPrices)) {
+      const p = productMap.get(item.productId)
+      if (!p) continue
+      if (!agg[p.id]) agg[p.id] = { productId: p.id, name: p.name, emoji: p.emoji, revenue: 0, qty: 0 }
+      agg[p.id].revenue += productNet
+      agg[p.id].qty += item.quantity
+      totalRevenue += productNet
+    }
   }
   const ranked = Object.values(agg).sort((a, b) => b.revenue - a.revenue)
   let cum = 0
@@ -1005,16 +1125,30 @@ export function salesTrend(opts?: { days?: number; forecastDays?: number }) {
     rec.revenue += o.total
     rec.orderCount++
   }
-  const validIds = new Set(allOrders.map(o => o.id))
-  const perProductDaily: Record<string, Record<string, number>> = {}
+  const addonPrices = new Map(db.select().from(addons).all().map(a => [a.id, a.price]))
+  const itemsByOrder = new Map<string, ReportItem[]>()
   for (const item of db.select().from(orderItems).all()) {
-    if (!validIds.has(item.orderId)) continue
-    const d = orderMap.get(item.orderId)?.createdAt.slice(0, 10)
-    if (!d || !daySet.has(d)) continue
+    if (!orderMap.has(item.orderId)) continue
+    const list = itemsByOrder.get(item.orderId)
+    if (list) list.push(item)
+    else itemsByOrder.set(item.orderId, [item])
+  }
+  const perProductDaily: Record<string, Record<string, number>> = {}
+  const productGross: Record<string, number> = {}
+  const productNet: Record<string, number> = {}
+  for (const [orderId, items] of itemsByOrder) {
+    const order = orderMap.get(orderId)
+    if (!order) continue
+    const d = order.createdAt.slice(0, 10)
+    if (!daySet.has(d)) continue
     const rec = daily.get(d)!
-    rec.qty += item.quantity
-    if (!perProductDaily[item.productId]) perProductDaily[item.productId] = {}
-    perProductDaily[item.productId][d] = (perProductDaily[item.productId][d] || 0) + item.quantity
+    for (const { item, productNet: net } of netRevenueByItem(order, items, addonPrices)) {
+      rec.qty += item.quantity
+      if (!perProductDaily[item.productId]) perProductDaily[item.productId] = {}
+      perProductDaily[item.productId][d] = (perProductDaily[item.productId][d] || 0) + item.quantity
+      productGross[item.productId] = (productGross[item.productId] || 0) + item.unitPrice * item.quantity
+      productNet[item.productId] = (productNet[item.productId] || 0) + net
+    }
   }
   const historical = dayList.map(d => {
     const v = daily.get(d)
@@ -1071,7 +1205,10 @@ export function salesTrend(opts?: { days?: number; forecastDays?: number }) {
       // 70% of last week's run rate + 30% of the long-run base: recent
       // momentum drives the forecast without letting one spike own it.
       const dailyQty = 0.7 * (last7 / 7) + 0.3 * baseDailyQty
-      const value30d = dailyQty * 30 * (Number(p.price) || 0)
+      // Value the forecast at what customers actually paid, not list price.
+      const gross = productGross[pid] || 0
+      const netRatio = gross > 0 ? (productNet[pid] || 0) / gross : 1
+      const value30d = dailyQty * 30 * (Number(p.price) || 0) * netRatio
       return { productId: pid, name: p.name, emoji: p.emoji, baseDailyQty: r2(baseDailyQty), last7Qty: r2(last7 / 7), trend, forecast30d: r2(dailyQty * 30), value30d: r2(value30d) }
     })
     .filter((x): x is NonNullable<typeof x> => x !== null)

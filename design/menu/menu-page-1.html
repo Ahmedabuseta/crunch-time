@@ -1,0 +1,680 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<title>Crunch Time — Menu 1</title>
+<style>
+  :root {
+    --ink: #1F2A26;
+    --cream: #F4ECDD;
+    --gold: #A9854F;
+    --terracotta: #A94E37;
+    --muted: #6F7468;
+    --sage: #5E6B5D;
+  }
+  @page { size: 2480px 3508px; margin: 0; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; width: 2480px; height: 3508px; }
+  body {
+    background: var(--cream);
+    color: var(--ink);
+    font-family: "Noto Naskh Arabic", serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .page {
+    position: relative;
+    width: 2480px;
+    height: 3508px;
+    padding: 58px 88px 44px;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    background: radial-gradient(120% 75% at 50% 0%, #FCF8F0 0%, #F4ECDD 52%, #EEE3D0 100%);
+  }
+  .pattern {
+    position: absolute;
+    inset: 0;
+    opacity: .12;
+    mix-blend-mode: multiply;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180' viewBox='0 0 180 180'%3E%3Cg fill='none' stroke='%23A9854F' stroke-width='1'%3E%3Cpath d='M90 8 172 90 90 172 8 90Z'/%3E%3Cpath d='M90 30 150 90 90 150 30 90Z'/%3E%3Cpath d='M30 30 150 150M150 30 30 150'/%3E%3Ccircle cx='90' cy='90' r='26'/%3E%3C/g%3E%3C/svg%3E");
+    background-size: 180px 180px;
+    pointer-events: none;
+  }
+  .frame {
+    position: absolute;
+    inset: 28px;
+    border: 1px solid rgba(169,133,79,.58);
+    pointer-events: none;
+  }
+  .frame::before {
+    content: '';
+    position: absolute;
+    inset: 9px;
+    border: 1px solid rgba(169,133,79,.22);
+  }
+  .corner {
+    position: absolute;
+    width: 16px;
+    height: 16px;
+    background: #F7F1E5;
+    border: 1px solid var(--gold);
+    transform: rotate(45deg);
+  }
+  .tl { top: -8px; left: -8px; }
+  .tr { top: -8px; right: -8px; }
+  .bl { bottom: -8px; left: -8px; }
+  .br { bottom: -8px; right: -8px; }
+
+  .masthead {
+    position: relative;
+    z-index: 2;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 24px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid rgba(169,133,79,.55);
+    flex: none;
+  }
+  .brand { display: flex; align-items: center; gap: 26px; min-width: 0; }
+  .logo {
+    width: 200px;
+    height: 200px;
+    border-radius: 50%;
+    padding: 5px;
+    border: 1px solid rgba(169,133,79,.78);
+    background: #F9F3E7;
+    flex: none;
+    overflow: hidden;
+  }
+  .logo img {
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+    object-fit: cover;
+    transform: scale(1.07);
+    display: block;
+  }
+  .logo-fallback {
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: "Noto Serif", serif;
+    font-size: 48px;
+    color: var(--gold);
+  }
+  .brand-text { min-width: 0; }
+  .eyebrow {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-family: "Noto Serif", serif;
+    font-size: 15px;
+    letter-spacing: 4px;
+    color: var(--gold);
+    text-transform: uppercase;
+  }
+  .diamond { width: 6px; height: 6px; background: var(--gold); transform: rotate(45deg); }
+  .brand-text h1 {
+    font-family: "Noto Kufi Arabic", sans-serif;
+    font-weight: 900;
+    font-size: 80px;
+    line-height: 1.02;
+    letter-spacing: -1px;
+    margin: 4px 0 2px;
+    color: var(--ink);
+  }
+  .brand-sub {
+    font-family: "Noto Kufi Arabic", sans-serif;
+    font-size: 16px;
+    letter-spacing: 1.5px;
+    color: var(--muted);
+  }
+  .brand-sub span { color: var(--gold); margin: 0 7px; }
+  .page-badge {
+    width: 96px;
+    height: 96px;
+    border: 1px solid var(--gold);
+    border-radius: 50%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    color: var(--gold);
+  }
+  .page-badge .num { font-family: "Noto Serif", serif; font-size: 30px; line-height: 1; }
+  .page-badge .of { font-family: "Noto Kufi Arabic", sans-serif; font-size: 11px; color: var(--muted); margin-top: 4px; }
+
+  .page-title {
+    position: relative;
+    z-index: 2;
+    display: flex;
+    align-items: baseline;
+    gap: 14px;
+    margin: 18px 0 14px;
+    flex: none;
+  }
+  .page-title h2 {
+    font-family: "Noto Kufi Arabic", sans-serif;
+    font-weight: 700;
+    font-size: 30px;
+    margin: 0;
+    color: var(--ink);
+    white-space: nowrap;
+  }
+  .page-title .en {
+    font-family: "Noto Serif", serif;
+    font-size: 12px;
+    letter-spacing: 2.5px;
+    color: var(--gold);
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+  .page-title .line {
+    flex: 1;
+    height: 1px;
+    background: linear-gradient(to right, rgba(169,133,79,.55), transparent);
+  }
+
+  .cards {
+    position: relative;
+    z-index: 2;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+    min-height: 0;
+  }
+  .cards.page1 .card { flex: 1; min-height: 0; }
+  .cards.page2 .card { flex: 1; min-height: 0; }
+  .cards.page2 .card.compact { flex: 0 0 auto; }
+  .card {
+    display: flex;
+    flex-direction: column;
+    border: 1px solid rgba(169,133,79,.42);
+    border-radius: 10px;
+    overflow: hidden;
+    background: rgba(255,251,244,.72);
+    min-height: 0;
+  }
+
+  .banner {
+    position: relative;
+    flex: none;
+    height: 280px;
+    overflow: hidden;
+    background: linear-gradient(135deg, #2A332D, #1F2A26);
+    border-bottom: 1px solid rgba(169,133,79,.45);
+  }
+  .cards.page2 .banner { height: 250px; }
+  .banner img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+    filter: saturate(.92) contrast(1.02) brightness(.9);
+  }
+  .banner-shade {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(to top, rgba(18,24,21,.88) 0%, rgba(18,24,21,.32) 55%, rgba(18,24,21,.04) 100%);
+  }
+  .banner-content {
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    padding: 18px 26px;
+  }
+  .banner-title h2 {
+    font-family: "Noto Kufi Arabic", sans-serif;
+    font-weight: 700;
+    font-size: 44px;
+    line-height: 1.05;
+    margin: 0;
+    color: #FBF6EC;
+    white-space: nowrap;
+  }
+  .banner-title .en {
+    font-family: "Noto Serif", serif;
+    font-size: 14px;
+    letter-spacing: 2.5px;
+    color: #E2C98F;
+    margin-top: 3px;
+    text-transform: uppercase;
+  }
+  .banner-meta { display: flex; flex-direction: column; align-items: center; gap: 5px; }
+  .cat-num {
+    width: 44px;
+    height: 44px;
+    border: 1px solid #D8B66E;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: "Noto Serif", serif;
+    font-size: 17px;
+    color: #F4E3B8;
+  }
+  .cat-count { font-family: "Noto Kufi Arabic", sans-serif; font-size: 12px; color: #E2C98F; }
+
+  .card-body { padding: 12px 26px 18px; flex: 1; min-height: 0; }
+  .card-body.two { display: flex; gap: 42px; }
+  .card-body.two .col { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  .cards.page1 .card-body.two .col,
+  .cards.page1 .card-body.one { justify-content: space-between; }
+  .cards.page1 .card-body.one { display: flex; flex-direction: column; }
+  .cards.page2 .card-body { display: flex; flex-direction: column; justify-content: space-between; }
+
+  .item { padding: 11px 0 10px; }
+  .item-line { display: flex; align-items: baseline; }
+  .item-name {
+    font-family: "Noto Naskh Arabic", serif;
+    font-weight: 600;
+    font-size: 32px;
+    line-height: 1.2;
+    color: var(--ink);
+    white-space: nowrap;
+  }
+  .leader {
+    flex: 1;
+    border-bottom: 1px dotted rgba(169,133,79,.55);
+    margin: 0 12px;
+    transform: translateY(-6px);
+  }
+  .item-price {
+    display: flex;
+    align-items: baseline;
+    gap: 4px;
+    font-family: "Noto Kufi Arabic", sans-serif;
+    font-weight: 600;
+    font-size: 29px;
+    color: var(--terracotta);
+    white-space: nowrap;
+  }
+  .item-price .num { font-weight: 600; }
+  .item-price small {
+    font-family: "Noto Kufi Arabic", sans-serif;
+    font-weight: 400;
+    font-size: 16px;
+    color: var(--gold);
+  }
+  .item-desc {
+    font-family: "Noto Naskh Arabic", serif;
+    font-size: 19px;
+    line-height: 1.35;
+    color: var(--muted);
+    margin-top: 1px;
+    max-width: 96%;
+  }
+  .cards.page1 .card-body.two .item { padding: 9px 0 8px; }
+  .cards.page1 .card-body.two .item-name { font-size: 30px; }
+  .cards.page1 .card-body.two .item-price { font-size: 27px; }
+  .cards.page1 .card-body.two .item-desc { font-size: 18px; }
+  .cards.page1 .card-body.one .item { padding: 14px 0 12px; }
+  .cards.page2 .card-body .item { padding: 13px 0 12px; }
+
+  .footer {
+    position: relative;
+    z-index: 2;
+    flex: none;
+    margin-top: 14px;
+    padding-top: 12px;
+    text-align: center;
+  }
+  .footer-rule {
+    height: 1px;
+    background: linear-gradient(to right, transparent, rgba(169,133,79,.78), transparent);
+    margin-bottom: 10px;
+  }
+  .footer-contact {
+    font-family: "Noto Kufi Arabic", sans-serif;
+    font-size: 16px;
+    color: var(--sage);
+    margin-bottom: 5px;
+  }
+  .footer-contact span { color: var(--gold); margin: 0 9px; }
+  .footer-main {
+    font-family: "Noto Kufi Arabic", sans-serif;
+    font-size: 16px;
+    letter-spacing: 2.5px;
+    color: var(--sage);
+  }
+  .footer-main span { color: var(--gold); margin: 0 11px; }
+  .footer-thanks {
+    font-family: "Noto Naskh Arabic", serif;
+    font-size: 24px;
+    color: var(--gold);
+    margin-top: 3px;
+  }
+</style>
+</head>
+<body class="page1">
+  <div class="page">
+    <div class="pattern"></div>
+    <div class="frame">
+      <span class="corner tl"></span><span class="corner tr"></span>
+      <span class="corner bl"></span><span class="corner br"></span>
+    </div>
+
+    <header class="masthead">
+      <div class="brand">
+        <div class="logo"><img src="../../build/logo-master.png" alt="Crunch Time"></div>
+        <div class="brand-text">
+          <div class="eyebrow">MENU <span class="diamond"></span> قائمة الطعام</div>
+          <h1>كرانش تايم</h1>
+          <div class="brand-sub">CRUNCH TIME <span>·</span> كريب وميكسات</div>
+        </div>
+      </div>
+      <div class="page-badge">
+        <span class="num">01</span>
+        <span class="of">/ 02</span>
+      </div>
+    </header>
+
+    <div class="page-title">
+      <h2>الأطباق الرئيسية</h2>
+      <span class="en">MAIN DISHES</span>
+      <i class="line"></i>
+    </div>
+
+    <main class="cards page1">
+      
+  <section class="card">
+    <div class="banner">
+      <img src="../../public/cat-bg/chicken_crepe.jpg" alt="" style="object-position:center 58%">
+      <div class="banner-shade"></div>
+      <div class="banner-content">
+        <div class="banner-title">
+          <h2>كريب فراخ</h2>
+          <span class="en">CHICKEN CREPE</span>
+        </div>
+        <div class="banner-meta">
+          <span class="cat-num">01</span>
+          <span class="cat-count">12 صنفاً</span>
+        </div>
+      </div>
+    </div>
+    <div class="card-body two">
+         <div class="col">
+  <div class="item">
+    <div class="item-line">
+      <span class="item-name">بانيه بطاطس</span>
+      <span class="leader"></span>
+      <span class="item-price"><span class="num">70</span><small>ج.م</small></span>
+    </div>
+    
+  </div>
+  <div class="item">
+    <div class="item-line">
+      <span class="item-name">بانيه</span>
+      <span class="leader"></span>
+      <span class="item-price"><span class="num">80</span><small>ج.م</small></span>
+    </div>
+    <div class="item-desc">موتزاريلا · زيتون · كاتشب · مايونيز · كابوتشي · فلفل</div>
+  </div>
+  <div class="item">
+    <div class="item-line">
+      <span class="item-name">كرسبي</span>
+      <span class="leader"></span>
+      <span class="item-price"><span class="num">85</span><small>ج.م</small></span>
+    </div>
+    <div class="item-desc">موتزاريلا · فلفل · كاتشب · مايونيز · زيتون · كابوتشي</div>
+  </div>
+  <div class="item">
+    <div class="item-line">
+      <span class="item-name">شاورما</span>
+      <span class="leader"></span>
+      <span class="item-price"><span class="num">95</span><small>ج.م</small></span>
+    </div>
+    <div class="item-desc">موتزاريلا · رومي · زيتون · كاتشب · مايونيز · بصل · فلفل</div>
+  </div>
+  <div class="item">
+    <div class="item-line">
+      <span class="item-name">شيش</span>
+      <span class="leader"></span>
+      <span class="item-price"><span class="num">100</span><small>ج.م</small></span>
+    </div>
+    <div class="item-desc">موتزاريلا · رومي · زيتون · كاتشب · مايونيز · بصل · فلفل</div>
+  </div>
+  <div class="item">
+    <div class="item-line">
+      <span class="item-name">فاهيتا</span>
+      <span class="leader"></span>
+      <span class="item-price"><span class="num">100</span><small>ج.م</small></span>
+    </div>
+    <div class="item-desc">موتزاريلا · زيتون · كاتشب · مايونيز · فلفل</div>
+  </div></div>
+         <div class="col">
+  <div class="item">
+    <div class="item-line">
+      <span class="item-name">كوردون بلو</span>
+      <span class="leader"></span>
+      <span class="item-price"><span class="num">100</span><small>ج.م</small></span>
+    </div>
+    <div class="item-desc">موتزاريلا · رومي · زيتون · كاتشب · شيدر · كابوتشي · فلفل</div>
+  </div>
+  <div class="item">
+    <div class="item-line">
+      <span class="item-name">كونو</span>
+      <span class="leader"></span>
+      <span class="item-price"><span class="num">109</span><small>ج.م</small></span>
+    </div>
+    <div class="item-desc">استربس · صوص شيدر · موتزاريلا · فلفل · كاتشب · مايونيز · زيتون · كابوتشي</div>
+  </div>
+  <div class="item">
+    <div class="item-line">
+      <span class="item-name">سوبر كرنشي</span>
+      <span class="leader"></span>
+      <span class="item-price"><span class="num">120</span><small>ج.م</small></span>
+    </div>
+    <div class="item-desc">استربس · موتزاريلا · فلفل · كاتشب · مايونيز · زيتون · كابوتشي</div>
+  </div>
+  <div class="item">
+    <div class="item-line">
+      <span class="item-name">زنجر</span>
+      <span class="leader"></span>
+      <span class="item-price"><span class="num">135</span><small>ج.م</small></span>
+    </div>
+    <div class="item-desc">استربس · تركي مدخن · صوص شيدر · موتزاريلا · فلفل · كاتشب · مايونيز · زيتون · كابوتشي</div>
+  </div>
+  <div class="item">
+    <div class="item-line">
+      <span class="item-name">كونو بيتزا</span>
+      <span class="leader"></span>
+      <span class="item-price"><span class="num">140</span><small>ج.م</small></span>
+    </div>
+    <div class="item-desc">استربس · صوص شيدر · موتزاريلا مزدوجة · فلفل · كاتشب · مايونيز · زيتون · كابوتشي</div>
+  </div>
+  <div class="item">
+    <div class="item-line">
+      <span class="item-name">مشوي صدور</span>
+      <span class="leader"></span>
+      <span class="item-price"><span class="num">140</span><small>ج.م</small></span>
+    </div>
+    <div class="item-desc">صدور مشويه · موتزاريلا · رومي · زيتون · كاتشب · شيدر · كابوتشي · فلفل</div>
+  </div></div>
+       </div>
+  </section>
+  <section class="card">
+    <div class="banner">
+      <img src="../../public/cat-bg/mixes.jpg" alt="" style="object-position:center 55%">
+      <div class="banner-shade"></div>
+      <div class="banner-content">
+        <div class="banner-title">
+          <h2>الميكسات</h2>
+          <span class="en">MIXES</span>
+        </div>
+        <div class="banner-meta">
+          <span class="cat-num">02</span>
+          <span class="cat-count">11 صنفاً</span>
+        </div>
+      </div>
+    </div>
+    <div class="card-body two">
+         <div class="col">
+  <div class="item">
+    <div class="item-line">
+      <span class="item-name">بانيه بطاطس</span>
+      <span class="leader"></span>
+      <span class="item-price"><span class="num">60</span><small>ج.م</small></span>
+    </div>
+    <div class="item-desc">موتزريلا · فلفل · كاتشب · مايونيز · زيتون · كابوتشي</div>
+  </div>
+  <div class="item">
+    <div class="item-line">
+      <span class="item-name">فرايداي</span>
+      <span class="leader"></span>
+      <span class="item-price"><span class="num">80</span><small>ج.م</small></span>
+    </div>
+    <div class="item-desc">شاورما · مشروم</div>
+  </div>
+  <div class="item">
+    <div class="item-line">
+      <span class="item-name">بيبروني تشكن</span>
+      <span class="leader"></span>
+      <span class="item-price"><span class="num">95</span><small>ج.م</small></span>
+    </div>
+    <div class="item-desc">استربس · ببروني</div>
+  </div>
+  <div class="item">
+    <div class="item-line">
+      <span class="item-name">الجحيم</span>
+      <span class="leader"></span>
+      <span class="item-price"><span class="num">98</span><small>ج.م</small></span>
+    </div>
+    <div class="item-desc">بانيه · شاورما · صوص حار · صوص هالبينو</div>
+  </div>
+  <div class="item">
+    <div class="item-line">
+      <span class="item-name">Bigboom</span>
+      <span class="leader"></span>
+      <span class="item-price"><span class="num">105</span><small>ج.م</small></span>
+    </div>
+    <div class="item-desc">كوردون بلو · استربس · شاورما · بطاطس · صوص تكساس</div>
+  </div>
+  <div class="item">
+    <div class="item-line">
+      <span class="item-name">Yummy</span>
+      <span class="leader"></span>
+      <span class="item-price"><span class="num">108</span><small>ج.م</small></span>
+    </div>
+    <div class="item-desc">بانيه · سوسيس · شاورما</div>
+  </div></div>
+         <div class="col">
+  <div class="item">
+    <div class="item-line">
+      <span class="item-name">اسبشيال تايم</span>
+      <span class="leader"></span>
+      <span class="item-price"><span class="num">119</span><small>ج.م</small></span>
+    </div>
+    <div class="item-desc">استربس · مشوي صدور · تركي مدخن · صوص شيدر</div>
+  </div>
+  <div class="item">
+    <div class="item-line">
+      <span class="item-name">VIP</span>
+      <span class="leader"></span>
+      <span class="item-price"><span class="num">119</span><small>ج.م</small></span>
+    </div>
+    <div class="item-desc">استربس · مشوي صدور · سوسيس · صوص شيدر</div>
+  </div>
+  <div class="item">
+    <div class="item-line">
+      <span class="item-name">ميكس فراخ</span>
+      <span class="leader"></span>
+      <span class="item-price"><span class="num">124</span><small>ج.م</small></span>
+    </div>
+    <div class="item-desc">استربس · شاورما · بانيه</div>
+  </div>
+  <div class="item">
+    <div class="item-line">
+      <span class="item-name">العالمي</span>
+      <span class="leader"></span>
+      <span class="item-price"><span class="num">134</span><small>ج.م</small></span>
+    </div>
+    <div class="item-desc">استربس · بسطرمة · شاورما · صوص شيدر</div>
+  </div>
+  <div class="item">
+    <div class="item-line">
+      <span class="item-name">كرانش تايم</span>
+      <span class="leader"></span>
+      <span class="item-price"><span class="num">155</span><small>ج.م</small></span>
+    </div>
+    <div class="item-desc">كوردون بلو · اصابع موزاريلا · بسطرمة · استربس · شاورما</div>
+  </div></div>
+       </div>
+  </section>
+  <section class="card">
+    <div class="banner">
+      <img src="../../public/cat-bg/meat_crepe.jpg" alt="" style="object-position:center 55%">
+      <div class="banner-shade"></div>
+      <div class="banner-content">
+        <div class="banner-title">
+          <h2>كريب لحوم</h2>
+          <span class="en">MEAT CREPE</span>
+        </div>
+        <div class="banner-meta">
+          <span class="cat-num">03</span>
+          <span class="cat-count">5 أصناف</span>
+        </div>
+      </div>
+    </div>
+    <div class="card-body one">
+  <div class="item">
+    <div class="item-line">
+      <span class="item-name">سوسيس</span>
+      <span class="leader"></span>
+      <span class="item-price"><span class="num">90</span><small>ج.م</small></span>
+    </div>
+    <div class="item-desc">موتزاريلا · فلفل · كاتشب · مايونيز · زيتون · كابوتشي</div>
+  </div>
+  <div class="item">
+    <div class="item-line">
+      <span class="item-name">سجق</span>
+      <span class="leader"></span>
+      <span class="item-price"><span class="num">95</span><small>ج.م</small></span>
+    </div>
+    <div class="item-desc">موتزاريلا · فلفل · كاتشب · مايونيز · زيتون · كابوتشي</div>
+  </div>
+  <div class="item">
+    <div class="item-line">
+      <span class="item-name">كفته</span>
+      <span class="leader"></span>
+      <span class="item-price"><span class="num">95</span><small>ج.م</small></span>
+    </div>
+    <div class="item-desc">كفتة · صوص تكساس · موتزاريلا · فلفل · كاتشب · مايونيز · زيتون · كابوتشي</div>
+  </div>
+  <div class="item">
+    <div class="item-line">
+      <span class="item-name">برجر</span>
+      <span class="leader"></span>
+      <span class="item-price"><span class="num">100</span><small>ج.م</small></span>
+    </div>
+    <div class="item-desc">موتزاريلا · فلفل · كاتشب · مايونيز · زيتون · كابوتشي</div>
+  </div>
+  <div class="item">
+    <div class="item-line">
+      <span class="item-name">مشكل لحوم</span>
+      <span class="leader"></span>
+      <span class="item-price"><span class="num">110</span><small>ج.م</small></span>
+    </div>
+    <div class="item-desc">سوسيس · برجر · كفتة · بسطرمة · صوص تكساس · موتزاريلا · فلفل · كاتشب · مايونيز · زيتون · كابوتشي</div>
+  </div></div>
+  </section>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-rule"></div>
+      <div class="footer-contact">طنطا <span>·</span> شارع بطرس مع المؤيد <span>·</span> ت: 3277993</div>
+      <div class="footer-main">الأسعار بالجنيه المصري <span>·</span> ALL PRICES IN EGP</div>
+      <div class="footer-thanks">شكراً لزيارتكم <span>·</span> THANK YOU</div>
+    </footer>
+  </div>
+</body>
+</html>
