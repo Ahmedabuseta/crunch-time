@@ -10,7 +10,9 @@
     "active": 1,
     "supplier": "روستي",
     "secondarySupplier": null,
-    "packagePrice": 3045
+    "packagePrice": 3045,
+    "category": "protein",
+    "storage": "freezer"
   },
   {
     "id": "ing-shawarma-hot",
@@ -23,7 +25,9 @@
     "active": 1,
     "supplier": "روستي",
     "secondarySupplier": null,
-    "packagePrice": 3045
+    "packagePrice": 3045,
+    "category": "protein",
+    "storage": "freezer"
   },
   {
     "id": "ing-mozz-stick",
@@ -36,7 +40,9 @@
     "active": 1,
     "supplier": "سمارت",
     "secondarySupplier": null,
-    "packagePrice": 150
+    "packagePrice": 150,
+    "category": "frozen",
+    "storage": "freezer"
   },
   {
     "id": "ing-bbq",
@@ -49,7 +55,9 @@
     "active": 1,
     "supplier": "هاينز",
     "secondarySupplier": null,
-    "packagePrice": 340
+    "packagePrice": 340,
+    "category": "sauces",
+    "storage": "dry"
   },
   {
     "id": "ing-buffalo",
@@ -62,7 +70,9 @@
     "active": 1,
     "supplier": "ولعين",
     "secondarySupplier": null,
-    "packagePrice": 435
+    "packagePrice": 435,
+    "category": "sauces",
+    "storage": "dry"
   },
   {
     "id": "ing-baniye",
@@ -75,7 +85,9 @@
     "active": 1,
     "supplier": "متعدد",
     "secondarySupplier": null,
-    "packagePrice": 19
+    "packagePrice": 19,
+    "category": "protein",
+    "storage": "freezer"
   },
   {
     "id": "ing-pepperoni",
@@ -88,7 +100,9 @@
     "active": 1,
     "supplier": null,
     "secondarySupplier": null,
-    "packagePrice": 165
+    "packagePrice": 165,
+    "category": "protein",
+    "storage": "fridge"
   },
   {
     "id": "ing-burger",
@@ -101,7 +115,9 @@
     "active": 1,
     "supplier": "دايم",
     "secondarySupplier": null,
-    "packagePrice": 1290
+    "packagePrice": 1290,
+    "category": "protein",
+    "storage": "freezer"
   },
   {
     "id": "ing-basturma",
@@ -114,7 +130,9 @@
     "active": 1,
     "supplier": "حلواني",
     "secondarySupplier": null,
-    "packagePrice": 1100
+    "packagePrice": 1100,
+    "category": "protein",
+    "storage": "fridge"
   },
   {
     "id": "ing-onion",
@@ -127,7 +145,9 @@
     "active": 1,
     "supplier": null,
     "secondarySupplier": null,
-    "packagePrice": 20
+    "packagePrice": 20,
+    "category": "produce",
+    "storage": "fridge"
   },
   {
     "id": "ing-crispy-potato",
@@ -140,7 +160,9 @@
     "active": 1,
     "supplier": "متعدد",
     "secondarySupplier": null,
-    "packagePrice": 720
+    "packagePrice": 720,
+    "category": "frozen",
+    "storage": "freezer"
   },
   {
     "id": "ing-egg-white-powder",
@@ -153,7 +175,9 @@
     "active": 1,
     "supplier": null,
     "secondarySupplier": null,
-    "packagePrice": 0
+    "packagePrice": 0,
+    "category": "dry",
+    "storage": "dry"
   },
   {
     "id": "ing-egg-powder",
@@ -166,7 +190,9 @@
     "active": 1,
     "supplier": null,
     "secondarySupplier": null,
-    "packagePrice": 0
+    "packagePrice": 0,
+    "category": "dry",
+    "storage": "dry"
   },
   {
     "id": "ing-beef",
@@ -179,7 +205,9 @@
     "active": 1,
     "supplier": "دايم",
     "secondarySupplier": null,
-    "packagePrice": 160
+    "packagePrice": 160,
+    "category": "protein",
+    "storage": "fridge"
   },
   {
     "id": "ing-baking-powder",
@@ -192,7 +220,9 @@
     "active": 1,
     "supplier": null,
     "secondarySupplier": null,
-    "packagePrice": 0
+    "packagePrice": 0,
+    "category": "dry",
+    "storage": "dry"
   },
   {
     "id": "ing-bacon",
@@ -205,7 +235,9 @@
     "active": 1,
     "supplier": null,
     "secondarySupplier": null,
-    "packagePrice": 250
+    "packagePrice": 250,
+    "category": "protein",
+    "storage": "fridge"
   },
   {
     "id": "ing-tatj",
@@ -218,7 +250,9 @@
     "active": 1,
     "supplier": null,
     "secondarySupplier": null,
-    "packagePrice": 0
+    "packagePrice": 0,
+    "category": "other",
+    "storage": "dry"
   },
   {
     "id": "ing-tiger",
@@ -231,7 +265,9 @@
     "active": 1,
     "supplier": "اليو",
     "secondarySupplier": null,
-    "packagePrice": 290
+    "packagePrice": 290,
+    "category": "sauces",
+    "storage": "dry"
   },
   {
     "id": "ing-turkey",
@@ -244,7 +280,9 @@
     "active": 1,
     "supplier": "دايم",
     "secondarySupplier": null,
-    "packagePrice": 125
+    "packagePrice": 125,
+    "category": "protein",
+    "storage": "fridge"
   },
   {
     "id": "ing-teriyaki",
@@ -257,7 +295,9 @@
     "active": 1,
     "supplier": null,
     "secondarySupplier": null,
-    "packagePrice": 0
+    "packagePrice": 0,
+    "category": "sauces",
+    "storage": "dry"
   },
   {
     "id": "ing-texas",
@@ -270,7 +310,9 @@
     "active": 1,
     "supplier": "اليو",
     "secondarySupplier": null,
-    "packagePrice": 650
+    "packagePrice": 650,
+    "category": "sauces",
+    "storage": "dry"
   },
   {
     "id": "ing-spices",
@@ -283,7 +325,9 @@
     "active": 1,
     "supplier": null,
     "secondarySupplier": null,
-    "packagePrice": 0
+    "packagePrice": 0,
+    "category": "sauces",
+    "storage": "dry"
   },
   {
     "id": "ing-chicken-cold",
@@ -296,7 +340,9 @@
     "active": 1,
     "supplier": "اليو",
     "secondarySupplier": null,
-    "packagePrice": 460
+    "packagePrice": 460,
+    "category": "sauces",
+    "storage": "dry"
   },
   {
     "id": "ing-onion-rings",
@@ -309,7 +355,9 @@
     "active": 1,
     "supplier": "سمارت",
     "secondarySupplier": null,
-    "packagePrice": 100
+    "packagePrice": 100,
+    "category": "frozen",
+    "storage": "freezer"
   },
   {
     "id": "ing-lettuce",
@@ -322,7 +370,9 @@
     "active": 1,
     "supplier": null,
     "secondarySupplier": null,
-    "packagePrice": 0
+    "packagePrice": 0,
+    "category": "produce",
+    "storage": "fridge"
   },
   {
     "id": "ing-sticky-disc",
@@ -335,7 +385,9 @@
     "active": 1,
     "supplier": null,
     "secondarySupplier": null,
-    "packagePrice": 400
+    "packagePrice": 400,
+    "category": "packaging",
+    "storage": "dry"
   },
   {
     "id": "ing-pomegranate",
@@ -348,7 +400,9 @@
     "active": 1,
     "supplier": "الطيبات",
     "secondarySupplier": null,
-    "packagePrice": 35.01
+    "packagePrice": 35.01,
+    "category": "sauces",
+    "storage": "dry"
   },
   {
     "id": "ing-flour",
@@ -361,7 +415,9 @@
     "active": 1,
     "supplier": null,
     "secondarySupplier": null,
-    "packagePrice": 515
+    "packagePrice": 515,
+    "category": "dry",
+    "storage": "dry"
   },
   {
     "id": "ing-ranch",
@@ -374,7 +430,9 @@
     "active": 1,
     "supplier": "اليو",
     "secondarySupplier": null,
-    "packagePrice": 460
+    "packagePrice": 460,
+    "category": "sauces",
+    "storage": "dry"
   },
   {
     "id": "ing-rome-cheese",
@@ -387,7 +445,9 @@
     "active": 1,
     "supplier": "ريفال",
     "secondarySupplier": null,
-    "packagePrice": 125
+    "packagePrice": 125,
+    "category": "dairy",
+    "storage": "fridge"
   },
   {
     "id": "ing-butter",
@@ -400,7 +460,9 @@
     "active": 1,
     "supplier": null,
     "secondarySupplier": null,
-    "packagePrice": 160
+    "packagePrice": 160,
+    "category": "dairy",
+    "storage": "fridge"
   },
   {
     "id": "ing-zinger",
@@ -413,7 +475,9 @@
     "active": 1,
     "supplier": null,
     "secondarySupplier": null,
-    "packagePrice": 0
+    "packagePrice": 0,
+    "category": "protein",
+    "storage": "freezer"
   },
   {
     "id": "ing-oil",
@@ -426,7 +490,9 @@
     "active": 1,
     "supplier": null,
     "secondarySupplier": null,
-    "packagePrice": 60
+    "packagePrice": 60,
+    "category": "dry",
+    "storage": "dry"
   },
   {
     "id": "ing-olives",
@@ -439,7 +505,9 @@
     "active": 1,
     "supplier": null,
     "secondarySupplier": null,
-    "packagePrice": 96
+    "packagePrice": 96,
+    "category": "produce",
+    "storage": "fridge"
   },
   {
     "id": "ing-prod-sticker",
@@ -452,7 +520,9 @@
     "active": 1,
     "supplier": null,
     "secondarySupplier": null,
-    "packagePrice": 390
+    "packagePrice": 390,
+    "category": "packaging",
+    "storage": "dry"
   },
   {
     "id": "ing-sausage",
@@ -465,7 +535,9 @@
     "active": 1,
     "supplier": "ميتلاند",
     "secondarySupplier": null,
-    "packagePrice": 1850
+    "packagePrice": 1850,
+    "category": "protein",
+    "storage": "freezer"
   },
   {
     "id": "ing-sosis",
@@ -478,7 +550,9 @@
     "active": 1,
     "supplier": "حلواني",
     "secondarySupplier": null,
-    "packagePrice": 300
+    "packagePrice": 300,
+    "category": "protein",
+    "storage": "freezer"
   },
   {
     "id": "ing-powdered-sugar",
@@ -491,7 +565,9 @@
     "active": 1,
     "supplier": null,
     "secondarySupplier": null,
-    "packagePrice": 81
+    "packagePrice": 81,
+    "category": "dry",
+    "storage": "dry"
   },
   {
     "id": "ing-sugar",
@@ -504,7 +580,9 @@
     "active": 1,
     "supplier": null,
     "secondarySupplier": null,
-    "packagePrice": 28
+    "packagePrice": 28,
+    "category": "dry",
+    "storage": "dry"
   },
   {
     "id": "ing-sandwich-paper",
@@ -517,7 +595,9 @@
     "active": 1,
     "supplier": null,
     "secondarySupplier": null,
-    "packagePrice": 2300
+    "packagePrice": 2300,
+    "category": "packaging",
+    "storage": "dry"
   },
   {
     "id": "ing-mint-syrup",
@@ -530,7 +610,9 @@
     "active": 1,
     "supplier": null,
     "secondarySupplier": null,
-    "packagePrice": 0
+    "packagePrice": 0,
+    "category": "other",
+    "storage": "dry"
   },
   {
     "id": "ing-cheddar",
@@ -543,7 +625,9 @@
     "active": 1,
     "supplier": "اليو",
     "secondarySupplier": null,
-    "packagePrice": 690
+    "packagePrice": 690,
+    "category": "dairy",
+    "storage": "fridge"
   },
   {
     "id": "ing-shish",
@@ -556,7 +640,9 @@
     "active": 1,
     "supplier": "متعدد",
     "secondarySupplier": null,
-    "packagePrice": 2160
+    "packagePrice": 2160,
+    "category": "protein",
+    "storage": "freezer"
   },
   {
     "id": "ing-chicken-breast",
@@ -569,7 +655,9 @@
     "active": 1,
     "supplier": null,
     "secondarySupplier": null,
-    "packagePrice": 270
+    "packagePrice": 270,
+    "category": "protein",
+    "storage": "fridge"
   },
   {
     "id": "ing-breast-marinated",
@@ -582,7 +670,9 @@
     "active": 1,
     "supplier": null,
     "secondarySupplier": null,
-    "packagePrice": 0
+    "packagePrice": 0,
+    "category": "protein",
+    "storage": "fridge"
   },
   {
     "id": "ing-sauce-bbq",
@@ -595,7 +685,9 @@
     "active": 1,
     "supplier": null,
     "secondarySupplier": null,
-    "packagePrice": 0.05
+    "packagePrice": 0.05,
+    "category": "sauces",
+    "storage": "dry"
   },
   {
     "id": "ing-balsamic",
@@ -608,7 +700,9 @@
     "active": 1,
     "supplier": null,
     "secondarySupplier": null,
-    "packagePrice": 0
+    "packagePrice": 0,
+    "category": "sauces",
+    "storage": "dry"
   },
   {
     "id": "ing-sauce-garlic",
@@ -621,7 +715,9 @@
     "active": 1,
     "supplier": null,
     "secondarySupplier": null,
-    "packagePrice": 0.05
+    "packagePrice": 0.05,
+    "category": "sauces",
+    "storage": "dry"
   },
   {
     "id": "ing-sauce-spicy",
@@ -634,7 +730,9 @@
     "active": 1,
     "supplier": null,
     "secondarySupplier": null,
-    "packagePrice": 0.06
+    "packagePrice": 0.06,
+    "category": "sauces",
+    "storage": "dry"
   },
   {
     "id": "ing-sauce-jalapeno",
@@ -647,7 +745,9 @@
     "active": 1,
     "supplier": "ميلكانا",
     "secondarySupplier": null,
-    "packagePrice": 60
+    "packagePrice": 60,
+    "category": "sauces",
+    "storage": "dry"
   },
   {
     "id": "ing-fajita-sauce",
@@ -660,7 +760,9 @@
     "active": 1,
     "supplier": null,
     "secondarySupplier": null,
-    "packagePrice": 0
+    "packagePrice": 0,
+    "category": "sauces",
+    "storage": "dry"
   },
   {
     "id": "ing-pistachio-sauce",
@@ -673,7 +775,9 @@
     "active": 1,
     "supplier": null,
     "secondarySupplier": null,
-    "packagePrice": 0
+    "packagePrice": 0,
+    "category": "sauces",
+    "storage": "dry"
   },
   {
     "id": "ing-kinder-sauce",
@@ -686,7 +790,9 @@
     "active": 1,
     "supplier": null,
     "secondarySupplier": null,
-    "packagePrice": 0
+    "packagePrice": 0,
+    "category": "sauces",
+    "storage": "dry"
   },
   {
     "id": "ing-lotus-sauce",
@@ -699,7 +805,9 @@
     "active": 1,
     "supplier": null,
     "secondarySupplier": null,
-    "packagePrice": 0
+    "packagePrice": 0,
+    "category": "sauces",
+    "storage": "dry"
   },
   {
     "id": "ing-tomato",
@@ -712,7 +820,9 @@
     "active": 1,
     "supplier": null,
     "secondarySupplier": null,
-    "packagePrice": 0
+    "packagePrice": 0,
+    "category": "produce",
+    "storage": "fridge"
   },
   {
     "id": "ing-honey",
@@ -725,7 +835,9 @@
     "active": 1,
     "supplier": null,
     "secondarySupplier": null,
-    "packagePrice": 239
+    "packagePrice": 239,
+    "category": "dry",
+    "storage": "dry"
   },
   {
     "id": "ing-potato-box",
@@ -738,7 +850,9 @@
     "active": 1,
     "supplier": null,
     "secondarySupplier": null,
-    "packagePrice": 2900
+    "packagePrice": 2900,
+    "category": "packaging",
+    "storage": "dry"
   },
   {
     "id": "ing-potato-box-mix",
@@ -751,7 +865,9 @@
     "active": 1,
     "supplier": null,
     "secondarySupplier": null,
-    "packagePrice": 3340
+    "packagePrice": 3340,
+    "category": "packaging",
+    "storage": "dry"
   },
   {
     "id": "ing-farm",
@@ -764,7 +880,9 @@
     "active": 1,
     "supplier": null,
     "secondarySupplier": null,
-    "packagePrice": 0
+    "packagePrice": 0,
+    "category": "frozen",
+    "storage": "freezer"
   },
   {
     "id": "ing-vanilla",
@@ -777,7 +895,9 @@
     "active": 1,
     "supplier": null,
     "secondarySupplier": null,
-    "packagePrice": 0
+    "packagePrice": 0,
+    "category": "dry",
+    "storage": "dry"
   },
   {
     "id": "ing-fajita",
@@ -790,7 +910,9 @@
     "active": 1,
     "supplier": null,
     "secondarySupplier": null,
-    "packagePrice": 0
+    "packagePrice": 0,
+    "category": "protein",
+    "storage": "fridge"
   },
   {
     "id": "ing-pepper",
@@ -803,7 +925,9 @@
     "active": 1,
     "supplier": null,
     "secondarySupplier": null,
-    "packagePrice": 0
+    "packagePrice": 0,
+    "category": "produce",
+    "storage": "fridge"
   },
   {
     "id": "ing-pepper-mix",
@@ -816,7 +940,9 @@
     "active": 1,
     "supplier": null,
     "secondarySupplier": null,
-    "packagePrice": 0
+    "packagePrice": 0,
+    "category": "produce",
+    "storage": "fridge"
   },
   {
     "id": "ing-jalapeno",
@@ -829,7 +955,9 @@
     "active": 1,
     "supplier": "ارابيكس",
     "secondarySupplier": null,
-    "packagePrice": 104.96
+    "packagePrice": 104.96,
+    "category": "produce",
+    "storage": "fridge"
   },
   {
     "id": "ing-cancheese",
@@ -842,7 +970,9 @@
     "active": 1,
     "supplier": "اليو",
     "secondarySupplier": null,
-    "packagePrice": 400
+    "packagePrice": 400,
+    "category": "sauces",
+    "storage": "dry"
   },
   {
     "id": "ing-ketchup",
@@ -855,7 +985,9 @@
     "active": 1,
     "supplier": "هاينز",
     "secondarySupplier": null,
-    "packagePrice": 485
+    "packagePrice": 485,
+    "category": "sauces",
+    "storage": "dry"
   },
   {
     "id": "ing-crunchy-cold",
@@ -868,7 +1000,9 @@
     "active": 1,
     "supplier": "شاهيتا",
     "secondarySupplier": null,
-    "packagePrice": 850
+    "packagePrice": 850,
+    "category": "protein",
+    "storage": "freezer"
   },
   {
     "id": "ing-crunchy-hot",
@@ -881,7 +1015,9 @@
     "active": 1,
     "supplier": "شاهيتا",
     "secondarySupplier": null,
-    "packagePrice": 850
+    "packagePrice": 850,
+    "category": "protein",
+    "storage": "freezer"
   },
   {
     "id": "ing-hall-crepe",
@@ -894,7 +1030,9 @@
     "active": 1,
     "supplier": null,
     "secondarySupplier": null,
-    "packagePrice": 4000
+    "packagePrice": 4000,
+    "category": "dry",
+    "storage": "dry"
   },
   {
     "id": "ing-tiktaway-crepe",
@@ -907,7 +1045,9 @@
     "active": 1,
     "supplier": null,
     "secondarySupplier": null,
-    "packagePrice": 11820
+    "packagePrice": 11820,
+    "category": "dry",
+    "storage": "dry"
   },
   {
     "id": "ing-kofta",
@@ -920,7 +1060,9 @@
     "active": 1,
     "supplier": "دايم",
     "secondarySupplier": null,
-    "packagePrice": 140
+    "packagePrice": 140,
+    "category": "protein",
+    "storage": "freezer"
   },
   {
     "id": "ing-cordon-blue",
@@ -933,7 +1075,9 @@
     "active": 1,
     "supplier": "سمارت",
     "secondarySupplier": null,
-    "packagePrice": 2040
+    "packagePrice": 2040,
+    "category": "protein",
+    "storage": "freezer"
   },
   {
     "id": "ing-milk-powder",
@@ -946,7 +1090,9 @@
     "active": 1,
     "supplier": null,
     "secondarySupplier": null,
-    "packagePrice": 515.04
+    "packagePrice": 515.04,
+    "category": "dairy",
+    "storage": "dry"
   },
   {
     "id": "ing-mayo",
@@ -959,7 +1105,9 @@
     "active": 1,
     "supplier": "اليو",
     "secondarySupplier": null,
-    "packagePrice": 650
+    "packagePrice": 650,
+    "category": "sauces",
+    "storage": "dry"
   },
   {
     "id": "ing-mayo-classic",
@@ -972,7 +1120,9 @@
     "active": 1,
     "supplier": "هاينز",
     "secondarySupplier": null,
-    "packagePrice": 387
+    "packagePrice": 387,
+    "category": "sauces",
+    "storage": "dry"
   },
   {
     "id": "ing-pickle",
@@ -985,7 +1135,9 @@
     "active": 1,
     "supplier": null,
     "secondarySupplier": null,
-    "packagePrice": 30
+    "packagePrice": 30,
+    "category": "produce",
+    "storage": "fridge"
   },
   {
     "id": "ing-mustard",
@@ -998,7 +1150,9 @@
     "active": 1,
     "supplier": "هاينز",
     "secondarySupplier": null,
-    "packagePrice": 349.99
+    "packagePrice": 349.99,
+    "category": "sauces",
+    "storage": "dry"
   },
   {
     "id": "ing-mushroom",
@@ -1011,7 +1165,9 @@
     "active": 1,
     "supplier": "كنانة",
     "secondarySupplier": null,
-    "packagePrice": 780
+    "packagePrice": 780,
+    "category": "produce",
+    "storage": "fridge"
   },
   {
     "id": "ing-mozzarella",
@@ -1024,7 +1180,9 @@
     "active": 1,
     "supplier": "متعدد",
     "secondarySupplier": null,
-    "packagePrice": 120
+    "packagePrice": 120,
+    "category": "dairy",
+    "storage": "fridge"
   },
   {
     "id": "ing-water",
@@ -1037,7 +1195,9 @@
     "active": 1,
     "supplier": null,
     "secondarySupplier": null,
-    "packagePrice": 0
+    "packagePrice": 0,
+    "category": "dry",
+    "storage": "dry"
   },
   {
     "id": "ing-hot-sauce",
@@ -1050,7 +1210,9 @@
     "active": 1,
     "supplier": "جولدن باك",
     "secondarySupplier": null,
-    "packagePrice": 310
+    "packagePrice": 310,
+    "category": "sauces",
+    "storage": "dry"
   },
   {
     "id": "ing-harissa",
@@ -1063,7 +1225,9 @@
     "active": 1,
     "supplier": null,
     "secondarySupplier": null,
-    "packagePrice": 0
+    "packagePrice": 0,
+    "category": "sauces",
+    "storage": "dry"
   },
   {
     "id": "ing-hotdog",
@@ -1076,7 +1240,9 @@
     "active": 1,
     "supplier": "ميتلاند",
     "secondarySupplier": null,
-    "packagePrice": 2220
+    "packagePrice": 2220,
+    "category": "protein",
+    "storage": "freezer"
   },
   {
     "id": "ing-waffle",
@@ -1089,7 +1255,9 @@
     "active": 1,
     "supplier": null,
     "secondarySupplier": null,
-    "packagePrice": 4500
+    "packagePrice": 4500,
+    "category": "dry",
+    "storage": "dry"
   },
   {
     "id": "ing-butter-paper",
@@ -1102,7 +1270,9 @@
     "active": 1,
     "supplier": null,
     "secondarySupplier": null,
-    "packagePrice": 3700
+    "packagePrice": 3700,
+    "category": "packaging",
+    "storage": "dry"
   },
   {
     "id": "ing-shrimp",
@@ -1115,6 +1285,8 @@
     "active": 1,
     "supplier": null,
     "secondarySupplier": null,
-    "packagePrice": 520
+    "packagePrice": 520,
+    "category": "protein",
+    "storage": "freezer"
   }
 ]

@@ -51,6 +51,15 @@ describe('seedDatabase — Crunch Time menu', () => {
     expect(cats.find(c => c.id === 'sweets')!.name).toBe('Sweets')
   })
 
+  it('assigns every ingredient a category and storage location', () => {
+    const rows = sqlite.prepare('SELECT id, category, storage FROM ingredients WHERE active = 1').all() as any[]
+    expect(rows.length).toBeGreaterThan(70)
+    expect(rows.every(r => r.category && r.storage)).toBe(true)
+    expect(rows.find(r => r.id === 'ing-mozzarella')).toMatchObject({ category: 'dairy', storage: 'fridge' })
+    expect(rows.find(r => r.id === 'ing-crispy-potato')).toMatchObject({ category: 'frozen', storage: 'freezer' })
+    expect(rows.find(r => r.id === 'ing-baking-powder')).toMatchObject({ category: 'dry', storage: 'dry' })
+  })
+
   it('seeds all 66 products with the given prices', () => {
     const { count } = sqlite.prepare('SELECT COUNT(*) AS count FROM products').get() as any
     expect(count).toBe(66)

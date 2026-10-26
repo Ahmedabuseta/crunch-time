@@ -1,4 +1,11 @@
 import { allocateNetRevenue } from '../lib/net-revenue'
+import {
+  categoryForIngredient,
+  defaultStorageForCategory,
+  normalizeCategory,
+  normalizeStorage,
+  storageForIngredient,
+} from '../lib/inventory-taxonomy'
 
 type Row = Record<string, any>
 
@@ -1000,9 +1007,68 @@ export const rendererApi = {
     },
   },
   inventory: {
-    listIngredients: () => T.ingredients.select(r => r.active),
-    createIngredient: (data: any) => { const id = uuid(); T.ingredients.insert({ id, ...data, active: true }); return { id } },
-    updateIngredient: (id: string, data: any) => { T.ingredients.update(r => r.id === id, data); return { ok: true } },
+    listIngredients: () => {
+      const productCount = (ingredientId: string) => {
+        const products = new Set<string>()
+        const add = (productId: unknown) => { if (productId) products.add(String(productId)) }
+        const subRecipeIds = T.subRecipeIngredients
+          .select(r => r.ingredientId === ingredientId)
+          .map(r => r.subRecipeId)
+
+        for (const recipe of T.recipes.select(r => r.ingredientId === ingredientId)) add(recipe.productId)
+        for (const recipe of T.recipes.select(r => subRecipeIds.includes(r.subRecipeId))) add(recipe.productId)
+
+        for (const ar of T.addonRecipes.select(r => r.ingredientId === ingredientId)) {
+          for (const pa of T.productAddons.select(r => r.addonId === ar.addonId)) add(pa.productId)
+        }
+        for (const ar of T.addonRecipes.select(r => subRecipeIds.includes(r.subRecipeId))) {
+          for (const pa of T.productAddons.select(r => r.addonId === ar.addonId)) add(pa.productId)
+        }
+
+        for (const mr of T.modifierRecipes.select(r => r.ingredientId === ingredientId)) {
+          const modifier = T.modifiers.get(r => r.id === mr.modifierId)
+          if (modifier) for (const link of T.productModifierGroups.select(r => r.modifierGroupId === modifier.modifierGroupId)) add(link.productId)
+        }
+        for (const mr of T.modifierRecipes.select(r => subRecipeIds.includes(r.subRecipeId))) {
+          const modifier = T.modifiers.get(r => r.id === mr.modifierId)
+          if (modifier) for (const link of T.productModifierGroups.select(r => r.modifierGroupId === modifier.modifierGroupId)) add(link.productId)
+        }
+
+        return products.size
+      }
+
+      return T.ingredients.select(r => r.active).map(i => ({
+        ...i,
+        category: i.category || categoryForIngredient(i.id),
+        storage: i.storage || storageForIngredient(i.id),
+        productCount: productCount(i.id),
+      }))
+    },
+    createIngredient: (data: any) => {
+      const id = uuid()
+      const category = normalizeCategory(data.category)
+      const storage = normalizeStorage(data.storage, category)
+      T.ingredients.insert({ id, ...data, category, storage, active: true })
+      return { id }
+    },
+    updateIngredient: (id: string, data: any) => {
+      const row = T.ingredients.get(r => r.id === id)
+      let patch = data
+      if (data.category !== undefined) {
+        const category = normalizeCategory(data.category)
+        patch = {
+          ...data,
+          category,
+          storage: data.storage !== undefined
+            ? normalizeStorage(data.storage, category)
+            : defaultStorageForCategory(category),
+        }
+      } else if (data.storage !== undefined) {
+        patch = { ...data, storage: normalizeStorage(data.storage, row?.category) }
+      }
+      T.ingredients.update(r => r.id === id, patch)
+      return { ok: true }
+    },
     deleteIngredient: (id: string, opts?: DeleteOpts) => {
       const row = T.ingredients.get(r => r.id === id)
       if (!row) return { ok: false, error: 'المادة غير موجودة' }

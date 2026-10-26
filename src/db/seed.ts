@@ -1,6 +1,7 @@
 import { getSqlite } from './client'
 import { randomUUID } from 'crypto'
 import argon2 from 'argon2'
+import { categoryForIngredient, storageForIngredient } from '../lib/inventory-taxonomy'
 
 // Seeds ONLY the reference data a brand-new install needs to log in and sell:
 // staff, menu, stock, settings. No fabricated orders, shifts, customers or
@@ -398,8 +399,8 @@ export async function seedDatabase() {
   // seed runs. Keep the seed idempotent so those rows are preserved.
   // purchase_qty defaults to a 1kg package for gram items and 1
   // for packaged items when the entry carries no explicit pack size.
-  const insertIng = db.prepare('INSERT OR IGNORE INTO ingredients (id, name, unit, stock_quantity, min_stock, cost_per_unit, purchase_qty, supplier, active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)')
-  for (const i of ingredientsData) insertIng.run(i.id, i.name, i.unit, i.stock, i.min, i.cost, i.pack ?? (i.unit === 'g' ? 1000 : 1), i.sup ?? null)
+  const insertIng = db.prepare('INSERT OR IGNORE INTO ingredients (id, name, unit, stock_quantity, min_stock, cost_per_unit, purchase_qty, supplier, category, storage, active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)')
+  for (const i of ingredientsData) insertIng.run(i.id, i.name, i.unit, i.stock, i.min, i.cost, i.pack ?? (i.unit === 'g' ? 1000 : 1), i.sup ?? null, categoryForIngredient(i.id), storageForIngredient(i.id))
 
   // ─── Product recipes ────────────────────────────────────────
   // The kitchen recipe book: fillings, cheeses, sauces — and fresh produce too.

@@ -18,6 +18,7 @@ interface ListToolbarProps {
   view?: ViewMode
   onViewChange?: (mode: ViewMode) => void
   className?: string
+  children?: ReactNode
 }
 
 export function ListToolbar({
@@ -34,11 +35,13 @@ export function ListToolbar({
   view,
   onViewChange,
   className,
+  children,
 }: ListToolbarProps) {
   return (
     <div className={cn("px-5 pt-4 pb-3 space-y-3 border-b shrink-0", className)}>
-      <div className="flex items-end gap-2 flex-wrap">
+      <div className="flex items-center gap-2 flex-wrap">
         <SearchInput value={search} onChange={onSearchChange} placeholder={searchPlaceholder} className="flex-1 min-w-0" />
+        {children}
         {sort}
         {view && onViewChange && <ViewToggle value={view} onChange={onViewChange} />}
       </div>

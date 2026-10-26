@@ -18,8 +18,43 @@ import { toast } from '@/components/ui/toast'
 import type { ViewMode } from '@/components/ui/view-toggle'
 import { SubRecipesSection } from './SubRecipesSection'
 import { Emoji } from '@/components/Emoji'
+import {
+  INVENTORY_CATEGORIES,
+  STORAGE_OPTIONS,
+  categoryForIngredient,
+  categoryLabel,
+  defaultStorageForCategory,
+  storageForIngredient,
+  storageLabel,
+  type InventoryCategoryId,
+  type InventoryStorageId,
+} from '@/lib/inventory-taxonomy'
 
 const unitLabel: Record<string, string> = { g: 'جرام', kg: 'كيلو', ml: 'مليلتر', l: 'لتر', pcs: 'قطعة' }
+
+const CATEGORY_TONES: Record<string, string> = {
+  protein: 'bg-red-500/10 text-red-400',
+  dairy: 'bg-yellow-500/10 text-yellow-400',
+  produce: 'bg-green-500/10 text-green-400',
+  frozen: 'bg-blue-500/10 text-blue-400',
+  sauces: 'bg-orange-500/10 text-orange-400',
+  dry: 'bg-amber-500/10 text-amber-400',
+  packaging: 'bg-purple-500/10 text-purple-400',
+  other: 'bg-secondary text-muted-foreground',
+}
+
+const filterTriggerClass = 'h-8 w-auto gap-1 px-3 rounded-full bg-secondary/60 text-[11px] font-bold text-foreground [&>span]:truncate'
+
+const emptyIngForm = () => ({
+  name: '', emoji: '', unit: 'g', stockQuantity: '', minStock: '', purchaseQty: '1', packagePrice: '',
+  category: 'other' as InventoryCategoryId, storage: 'dry' as InventoryStorageId,
+})
+
+const itemCategory = (ing: any): InventoryCategoryId =>
+  ing?.category || categoryForIngredient(ing?.id || '')
+
+const itemStorage = (ing: any): InventoryStorageId =>
+  ing?.storage || storageForIngredient(ing?.id || '')
 
 const fmtQty = (n: number) => Number(n || 0).toLocaleString('en-US', { maximumFractionDigits: 2 })
 
@@ -45,11 +80,14 @@ export function InventoryPage() {
   const [showIngForm, setShowIngForm] = useState(false)
   const [invTab, setInvTab] = useState<'ingredients' | 'sub-recipes'>('ingredients')
   const [editIngId, setEditIngId] = useState<string | null>(null)
-  const [ingForm, setIngForm] = useState({ name: '', emoji: '', unit: 'g', stockQuantity: '', minStock: '', purchaseQty: '1', packagePrice: '' })
+  const [ingForm, setIngForm] = useState(emptyIngForm)
   const [restockId, setRestockId] = useState<string | null>(null)
   const [restockQty, setRestockQty] = useState('')
   const [view, setView] = useState<ViewMode>('table')
-  const [stockFilter, setStockFilter] = useState<string | null>(null)
+  const [statusFilter, setStatusFilter] = useState<'low' | 'high' | 'ok' | 'noCost' | 'unused' | null>(null)
+  const [categoryFilter, setCategoryFilter] = useState<string | null>(null)
+  const [storageFilter, setStorageFilter] = useState<string | null>(null)
+  const [supplierFilter, setSupplierFilter] = useState<string | null>(null)
   const [movesFor, setMovesFor] = useState<string | null>(null)
   const [ledger, setLedger] = useState<(InventoryLedger & { total: number; page: number; pageSize: number; totalPages: number }) | null>(null)
   const [recType, setRecType] = useState<'WASTE' | 'ADJUSTMENT'>('WASTE')
@@ -72,20 +110,36 @@ export function InventoryPage() {
       .map((ing) => ing.id),
   )
 
+  const orderedIngredients = [...ingredients].sort((a, b) => {
+    const rank = (ing: any) => alertIds.has(ing.id) ? 0 : highStockIds.has(ing.id) ? 2 : 1
+    return rank(a) - rank(b) || a.name.localeCompare(b.name, 'ar')
+  })
+  const suppliers = [...new Set(ingredients.map(i => i.supplier).filter(Boolean))].sort((a, b) => String(a).localeCompare(String(b), 'ar'))
+  const unusedCount = ingredients.filter(i => !Number(i.productCount)).length
+  const hasActiveFilters = !!(categoryFilter || statusFilter || storageFilter || supplierFilter)
+
   const list = useListControls({
-    items: ingredients,
-    searchText: (ing) => `${ing.name} ${unitLabel[ing.unit] || ''}`,
+    items: orderedIngredients,
+    searchText: (ing) => `${ing.name} ${categoryLabel(itemCategory(ing))} ${storageLabel(itemStorage(ing))} ${ing.supplier || ''} ${unitLabel[ing.unit] || ''}`,
     filter: (ing) => {
-      if (!stockFilter) return true
-      if (stockFilter === 'low') return alertIds.has(ing.id)
-      if (stockFilter === 'high') return highStockIds.has(ing.id)
-      if (stockFilter === 'ok') return !alertIds.has(ing.id) && !highStockIds.has(ing.id)
+      if (categoryFilter && itemCategory(ing) !== categoryFilter) return false
+      if (storageFilter && itemStorage(ing) !== storageFilter) return false
+      if (supplierFilter === '__none__') {
+        if (ing.supplier) return false
+      } else if (supplierFilter && ing.supplier !== supplierFilter) {
+        return false
+      }
+      if (statusFilter === 'noCost') return !(Number(ing.costPerUnit) > 0)
+      if (statusFilter === 'unused') return !(Number(ing.productCount) > 0)
+      if (statusFilter === 'low') return alertIds.has(ing.id)
+      if (statusFilter === 'high') return highStockIds.has(ing.id)
+      if (statusFilter === 'ok') return !alertIds.has(ing.id) && !highStockIds.has(ing.id)
       return true
     },
     pageSize: 12,
   })
 
-  const resetIngForm = () => { setIngForm({ name: '', emoji: '', unit: 'g', stockQuantity: '', minStock: '', purchaseQty: '1', packagePrice: '' }); setEditIngId(null); setShowIngForm(false) }
+  const resetIngForm = () => { setIngForm(emptyIngForm()); setEditIngId(null); setShowIngForm(false) }
 
   // The owner enters the purchase-package price (e.g. a 1kg bag);
   // the per-unit cost stored on the ingredient is derived from it.
@@ -94,14 +148,14 @@ export function InventoryPage() {
 
   const handleCreateIng = async () => {
     if (!ingForm.name || !ingForm.unit) return
-    await createIngredient({ name: ingForm.name, emoji: ingForm.emoji || '📦', unit: ingForm.unit, stockQuantity: parseFloat(ingForm.stockQuantity) || 0, minStock: parseFloat(ingForm.minStock) || 0, costPerUnit: deriveCost(ingForm.packagePrice, ingForm.purchaseQty), purchaseQty: parseFloat(ingForm.purchaseQty) || 1 })
+    await createIngredient({ name: ingForm.name, emoji: ingForm.emoji || '📦', unit: ingForm.unit, stockQuantity: parseFloat(ingForm.stockQuantity) || 0, minStock: parseFloat(ingForm.minStock) || 0, costPerUnit: deriveCost(ingForm.packagePrice, ingForm.purchaseQty), purchaseQty: parseFloat(ingForm.purchaseQty) || 1, category: ingForm.category, storage: ingForm.storage })
     toast({ title: 'تم إنشاء المادة', description: ingForm.name, variant: 'success' })
     resetIngForm()
   }
 
   const handleUpdateIng = async () => {
     if (!editIngId || !ingForm.name) return
-    await updateIngredient(editIngId, { name: ingForm.name, unit: ingForm.unit, minStock: parseFloat(ingForm.minStock) || 0, costPerUnit: deriveCost(ingForm.packagePrice, ingForm.purchaseQty), purchaseQty: parseFloat(ingForm.purchaseQty) || 1 })
+    await updateIngredient(editIngId, { name: ingForm.name, unit: ingForm.unit, minStock: parseFloat(ingForm.minStock) || 0, costPerUnit: deriveCost(ingForm.packagePrice, ingForm.purchaseQty), purchaseQty: parseFloat(ingForm.purchaseQty) || 1, category: ingForm.category, storage: ingForm.storage })
     toast({ title: 'تم تحديث المادة', description: ingForm.name, variant: 'success' })
     resetIngForm()
   }
@@ -109,7 +163,7 @@ export function InventoryPage() {
   const startEditIng = (i: any) => {
     setEditIngId(i.id); setShowIngForm(false)
     const purchaseQty = Number(i.purchaseQty) || 1
-    setIngForm({ name: i.name, emoji: i.emoji || '', unit: i.unit, stockQuantity: String(i.stockQuantity), minStock: String(i.minStock), purchaseQty: String(purchaseQty), packagePrice: String((Number(i.costPerUnit) || 0) * purchaseQty) })
+    setIngForm({ name: i.name, emoji: i.emoji || '', unit: i.unit, stockQuantity: String(i.stockQuantity), minStock: String(i.minStock), purchaseQty: String(purchaseQty), packagePrice: String((Number(i.costPerUnit) || 0) * purchaseQty), category: itemCategory(i), storage: itemStorage(i) })
   }
 
   const handleRestock = async () => {
@@ -121,7 +175,7 @@ export function InventoryPage() {
       }
       const result = await restock(restockId, parseFloat(restockQty), 'إعادة تعبئة يدوية', opts.packagePrice || opts.supplier ? opts : undefined)
       const ing = ingredients.find(i => i.id === restockId)
-      toast({ title: 'تمت التعبئة', description: ing ? `${ing.name} +${restockQty} ${ing.unit}` : undefined, variant: 'success' })
+      toast({ title: 'تمت التعبئة', description: ing ? `${ing.name} +${restockQty} ${restockQty === '1' ? 'عبوة' : 'عبوات'}` : undefined, variant: 'success' })
       if (result?.ppv != null && ing) setLastPpv({ name: ing.name, ppv: result.ppv })
       setRestockId(null); setRestockQty(''); setRestockUnitCost(''); setRestockSupplier('')
     }
@@ -165,6 +219,27 @@ export function InventoryPage() {
       ),
     },
     {
+      key: 'category', label: 'القسم', render: (ing) => {
+        const category = itemCategory(ing)
+        return (
+          <div className="flex flex-col items-start gap-1">
+            <span className={cn("text-[9px] font-bold px-1.5 py-0.5 rounded-full whitespace-nowrap", CATEGORY_TONES[category])}>
+              {categoryLabel(category)}
+            </span>
+            <span className="text-[9px] text-muted-foreground">{storageLabel(itemStorage(ing))}</span>
+          </div>
+        )
+      },
+    },
+    {
+      key: 'products', label: 'منتجات', sortValue: (ing: any) => Number(ing.productCount) || 0, render: (ing) => {
+        const count = Number(ing.productCount) || 0
+        return count > 0
+          ? <span className="font-bold text-foreground">{count} منتج</span>
+          : <span className="text-[10px] font-bold text-orange-400">غير مرتبط</span>
+      },
+    },
+    {
       key: 'stock', label: 'المخزون', sortValue: (ing: any) => ing.stockQuantity, render: (ing) => {
         const pack = Number(ing.purchaseQty) || 1
         const packs = pack > 1 ? Number(ing.stockQuantity) / pack : null
@@ -195,8 +270,9 @@ export function InventoryPage() {
         <div className="flex items-center gap-1.5">
           {restockId === ing.id ? (
             <div className="flex items-center gap-1.5 flex-wrap">
-              <input type="number" value={restockQty} onChange={e => setRestockQty(e.target.value)} placeholder="الكمية"
-                className="w-20 h-11 px-2 rounded-lg bg-secondary text-sm border-0 focus:ring-1 focus:ring-primary focus:outline-none text-center" />
+              <input type="number" value={restockQty} onChange={e => setRestockQty(e.target.value)} placeholder="عدد العبوات"
+                className="w-24 h-11 px-2 rounded-lg bg-secondary text-sm border-0 focus:ring-1 focus:ring-primary focus:outline-none text-center"
+                title="كم عبوة؟ تُضرب تلقائياً في حجم العبوة — مثال: كرتونة 15كجم × 3 = 45,000ج" />
               <input type="number" value={restockUnitCost} onChange={e => setRestockUnitCost(e.target.value)} placeholder="سعر العبوة"
                 className="w-20 h-11 px-2 rounded-lg bg-secondary text-sm border-0 focus:ring-1 focus:ring-primary focus:outline-none text-center" title="سعر العبوة كما تشتريها — تُقسم على حجم العبوة تلقائياً" />
               <input value={restockSupplier} onChange={e => setRestockSupplier(e.target.value)} placeholder="المورد"
@@ -215,6 +291,7 @@ export function InventoryPage() {
           )}
         </div>
       ),
+
     },
   ]
 
@@ -299,6 +376,22 @@ export function InventoryPage() {
                 <SelectItem value="pcs">قطعة (pcs)</SelectItem>
               </SelectContent>
             </Select>
+            <Select value={ingForm.category} onValueChange={(v) => setIngForm(f => ({ ...f, category: v as InventoryCategoryId, storage: defaultStorageForCategory(v) }))}>
+              <SelectTrigger className="rounded-xl">
+                <SelectValue placeholder="القسم" />
+              </SelectTrigger>
+              <SelectContent>
+                {INVENTORY_CATEGORIES.map(c => <SelectItem key={c.id} value={c.id}>{c.label}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            <Select value={ingForm.storage} onValueChange={(v) => setIngForm(f => ({ ...f, storage: v as InventoryStorageId }))}>
+              <SelectTrigger className="rounded-xl">
+                <SelectValue placeholder="التخزين" />
+              </SelectTrigger>
+              <SelectContent>
+                {STORAGE_OPTIONS.map(s => <SelectItem key={s.id} value={s.id}>{s.label}</SelectItem>)}
+              </SelectContent>
+            </Select>
             <input type="number" value={ingForm.stockQuantity} onChange={e => setIngForm(f => ({ ...f, stockQuantity: e.target.value }))} placeholder="الكمية الحالية" className="px-3 py-2 rounded-xl bg-secondary text-sm border-0 focus:ring-1 focus:ring-primary focus:outline-none" disabled={!!editIngId} />
             <input type="number" value={ingForm.minStock} onChange={e => setIngForm(f => ({ ...f, minStock: e.target.value }))} placeholder="الحد الأدنى" className="px-3 py-2 rounded-xl bg-secondary text-sm border-0 focus:ring-1 focus:ring-primary focus:outline-none" />
             <input type="number" value={ingForm.purchaseQty} onChange={e => setIngForm(f => ({ ...f, purchaseQty: e.target.value }))} placeholder="حجم العبوة"
@@ -317,18 +410,77 @@ export function InventoryPage() {
       <ListToolbar
         search={list.search}
         onSearchChange={(v) => { list.setSearch(v); list.setPage(1) }}
-        searchPlaceholder="بحث عن مادة..."
+        searchPlaceholder="بحث بالاسم أو القسم أو المورد..."
         view={view}
         onViewChange={setView}
-        filters={[
-          { value: null, label: 'الكل', count: ingredients.length },
-          { value: 'low', label: 'تحت الحد', count: alerts.length },
-          { value: 'ok', label: 'طبيعي', count: ingredients.length - alerts.length - highStockIds.size },
-          { value: 'high', label: 'مخزون مرتفع', count: highStockIds.size },
-        ]}
-        filterValue={stockFilter}
-        onFilterChange={(v) => { setStockFilter(v); list.setPage(1) }}
-      />
+      >
+        <Select
+          value={categoryFilter ?? 'all'}
+          onValueChange={(v) => { setCategoryFilter(v === 'all' ? null : v); list.setPage(1) }}
+        >
+          <SelectTrigger className={filterTriggerClass} title="القسم">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">كل الأقسام ({ingredients.length})</SelectItem>
+            {INVENTORY_CATEGORIES.map(c => (
+              <SelectItem key={c.id} value={c.id}>{c.label} ({ingredients.filter(i => itemCategory(i) === c.id).length})</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Select
+          value={storageFilter ?? 'all'}
+          onValueChange={(v) => { setStorageFilter(v === 'all' ? null : v); list.setPage(1) }}
+        >
+          <SelectTrigger className={filterTriggerClass} title="التخزين">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">كل التخزين</SelectItem>
+            {STORAGE_OPTIONS.map(s => <SelectItem key={s.id} value={s.id}>{s.label}</SelectItem>)}
+          </SelectContent>
+        </Select>
+        <Select
+          value={statusFilter ?? 'all'}
+          onValueChange={(v) => { setStatusFilter((v === 'all' ? null : v) as typeof statusFilter); list.setPage(1) }}
+        >
+          <SelectTrigger className={filterTriggerClass} title="الحالة">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">كل الحالات</SelectItem>
+            <SelectItem value="low">تحت الحد ({alerts.length})</SelectItem>
+            <SelectItem value="high">مخزون مرتفع ({highStockIds.size})</SelectItem>
+            <SelectItem value="ok">طبيعي</SelectItem>
+            <SelectItem value="noCost">بدون تكلفة</SelectItem>
+            <SelectItem value="unused">غير مرتبط ({unusedCount})</SelectItem>
+          </SelectContent>
+        </Select>
+        <Select
+          value={supplierFilter ?? 'all'}
+          onValueChange={(v) => { setSupplierFilter(v === 'all' ? null : v); list.setPage(1) }}
+        >
+          <SelectTrigger className={filterTriggerClass} title="المورد">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">كل الموردين</SelectItem>
+            <SelectItem value="__none__">بدون مورد</SelectItem>
+            {suppliers.map(s => <SelectItem key={s} value={String(s)}>{s}</SelectItem>)}
+          </SelectContent>
+        </Select>
+        {hasActiveFilters && (
+          <button
+            onClick={() => {
+              setCategoryFilter(null); setStatusFilter(null); setStorageFilter(null)
+              setSupplierFilter(null); list.setPage(1)
+            }}
+            className="h-8 px-3 rounded-full text-[11px] font-bold text-destructive hover:bg-destructive/10 transition-colors cursor-pointer"
+          >
+            مسح
+          </button>
+        )}
+      </ListToolbar>
 
       {view === 'table' ? (
         <div className="flex-1 p-5 overflow-auto">
@@ -343,8 +495,19 @@ export function InventoryPage() {
         </div>
       ) : (
         <ScrollArea className="flex-1 p-5">
-          <div className="space-y-2">
-            {list.items.map(ing => {
+          <div className="space-y-4">
+            {INVENTORY_CATEGORIES.map(cat => {
+              const items = list.items.filter(ing => itemCategory(ing) === cat.id)
+              if (items.length === 0) return null
+              return (
+                <div key={cat.id} className="space-y-2">
+                  <div className="flex items-center justify-between px-1">
+                    <div className="flex items-center gap-2">
+                      <span className={cn("text-[10px] font-black px-2 py-0.5 rounded-full", CATEGORY_TONES[cat.id])}>{cat.label}</span>
+                      <span className="text-[10px] text-muted-foreground font-bold">{items.length} مادة</span>
+                    </div>
+                  </div>
+                  {items.map(ing => {
               const isLow = alertIds.has(ing.id)
               const isHigh = highStockIds.has(ing.id)
               const pack = Number(ing.purchaseQty) || 1
@@ -357,6 +520,10 @@ export function InventoryPage() {
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-bold">{ing.name}</p>
+                    <p className="text-[10px] text-muted-foreground mt-0.5">{storageLabel(itemStorage(ing))}</p>
+                    <p className={cn("text-[10px] font-bold mt-0.5", Number(ing.productCount) > 0 ? "text-muted-foreground" : "text-orange-400")}>
+                      {Number(ing.productCount) > 0 ? `مرتبط بـ ${ing.productCount} منتج` : 'غير مرتبط بأي منتج'}
+                    </p>
                     <div className="flex items-center gap-2 mt-1">
                       <div className="flex-1 h-2 rounded-full bg-secondary overflow-hidden">
                         <div className={cn("h-full rounded-full transition-all", isHigh ? "bg-orange-500" : isLow ? "bg-yellow-500" : "bg-primary")} style={{ width: `${Math.min(percentage, 100)}%` }} />
@@ -388,7 +555,7 @@ export function InventoryPage() {
                     <Button variant="ghost" className="rounded-xl h-11 px-3 text-xs font-bold gap-1.5" onClick={() => startEditIng(ing)}><Pencil className="h-4 w-4" /> تعديل</Button>
                     {restockId === ing.id ? (
                       <div className="flex items-center gap-1.5 flex-wrap">
-                        <input type="number" value={restockQty} onChange={e => setRestockQty(e.target.value)} placeholder="الكمية" className="w-20 h-11 px-2 rounded-lg bg-secondary text-sm border-0 focus:ring-1 focus:ring-primary focus:outline-none text-center" />
+                        <input type="number" value={restockQty} onChange={e => setRestockQty(e.target.value)} placeholder="عدد العبوات" className="w-24 h-11 px-2 rounded-lg bg-secondary text-sm border-0 focus:ring-1 focus:ring-primary focus:outline-none text-center" title="كم عبوة؟ تُضرب تلقائياً في حجم العبوة" />
                         <input type="number" value={restockUnitCost} onChange={e => setRestockUnitCost(e.target.value)} placeholder="سعر العبوة" className="w-20 h-11 px-2 rounded-lg bg-secondary text-sm border-0 focus:ring-1 focus:ring-primary focus:outline-none text-center" title="سعر العبوة كما تشتريها — تُقسم على حجم العبوة تلقائياً" />
                         <input value={restockSupplier} onChange={e => setRestockSupplier(e.target.value)} placeholder="المورد" className="w-24 h-11 px-2 rounded-lg bg-secondary text-sm border-0 focus:ring-1 focus:ring-primary focus:outline-none text-center" title="اسم المورد" />
                         <Button className="rounded-xl h-11 px-4 text-sm font-bold" onClick={handleRestock}>تأكيد</Button>
@@ -400,6 +567,9 @@ export function InventoryPage() {
                       </Button>
                     )}
                   </div>
+                </div>
+              )
+            })}
                 </div>
               )
             })}

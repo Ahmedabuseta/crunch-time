@@ -48,7 +48,8 @@ describe('inventory package pricing', () => {
     ).run()
 
     // A 1kg bag bought for 100 ج.م → 0.1 ج.م per gram.
-    const res = await call('inventory:restock', 'ing-pack', 5000, 'شراء', { packagePrice: 100, supplier: 'مورد' })
+    // The owner enters the package count: 5 packages × 1000g pack = 5000g.
+    const res = await call('inventory:restock', 'ing-pack', 5, 'شراء', { packagePrice: 100, supplier: 'مورد' })
     expect(res.ok).toBe(true)
 
     const purchase = sqlite.prepare(
@@ -100,5 +101,57 @@ describe('inventory package pricing', () => {
     ).get() as any
     expect(row.purchase_qty).toBe(500)
     expect(row.cost_per_unit).toBe(0.25)
+  })
+
+  it('persists and defaults the inventory category and storage', async () => {
+    const created = await call('inventory:createIngredient', {
+      name: 'مادة مصنفة', unit: 'g', stockQuantity: 0, minStock: 0,
+      category: 'produce', storage: 'fridge',
+    }) as { id: string }
+
+    const row = getSqlite().prepare(
+      `SELECT category, storage FROM ingredients WHERE id = ?`,
+    ).get(created.id) as any
+    expect(row.category).toBe('produce')
+    expect(row.storage).toBe('fridge')
+
+    await call('inventory:updateIngredient', created.id, { category: 'sauces' })
+    const changed = getSqlite().prepare(
+      `SELECT category, storage FROM ingredients WHERE id = ?`,
+    ).get(created.id) as any
+    expect(changed.category).toBe('sauces')
+    expect(changed.storage).toBe('dry')
+  })
+
+  it('counts the products each ingredient is connected to', async () => {
+    const rows = await call('inventory:listIngredients') as any[]
+    const pack = rows.find(r => r.id === 'ing-pack')
+    expect(pack.productCount).toBe(1)
+  })
+
+  it('counts products reached through sub-recipes, addons and modifiers', async () => {
+    const sqlite = getSqlite()
+    sqlite.prepare(`INSERT INTO products (id, name, price, category_id, emoji, description)
+      VALUES ('prod-sub', 'منتج فرعي', 10, 'cat-pack', '🧪', 'اختبار')`).run()
+    sqlite.prepare(`INSERT INTO products (id, name, price, category_id, emoji, description)
+      VALUES ('prod-addon', 'منتج إضافة', 10, 'cat-pack', '🧪', 'اختبار')`).run()
+    sqlite.prepare(`INSERT INTO products (id, name, price, category_id, emoji, description)
+      VALUES ('prod-mod', 'منتج خيار', 10, 'cat-pack', '🧪', 'اختبار')`).run()
+
+    sqlite.prepare("INSERT INTO sub_recipes (id, name, unit, created_at) VALUES ('sub-pack', 'وصفة فرعية', 'وحدة', '2026-01-01T00:00:00Z')").run()
+    sqlite.prepare("INSERT INTO sub_recipe_ingredients (id, sub_recipe_id, ingredient_id, quantity_per_unit) VALUES ('sri-pack', 'sub-pack', 'ing-pack', 1)").run()
+    sqlite.prepare("INSERT INTO recipes (id, product_id, sub_recipe_id, quantity_per_unit) VALUES ('rec-sub', 'prod-sub', 'sub-pack', 1)").run()
+
+    sqlite.prepare("INSERT INTO addons (id, name, price, emoji) VALUES ('addon-pack', 'إضافة', 1, '🧪')").run()
+    sqlite.prepare("INSERT INTO addon_recipes (id, addon_id, ingredient_id, quantity_per_unit) VALUES ('ar-pack', 'addon-pack', 'ing-pack', 1)").run()
+    sqlite.prepare("INSERT INTO product_addons (product_id, addon_id) VALUES ('prod-addon', 'addon-pack')").run()
+
+    sqlite.prepare("INSERT INTO modifier_groups (id, name, type) VALUES ('grp-pack', 'خيار', 'single-select')").run()
+    sqlite.prepare("INSERT INTO modifiers (id, modifier_group_id, name) VALUES ('mod-pack', 'grp-pack', 'خيار')").run()
+    sqlite.prepare("INSERT INTO modifier_recipes (id, modifier_id, ingredient_id, quantity_per_unit) VALUES ('mr-pack', 'mod-pack', 'ing-pack', 1)").run()
+    sqlite.prepare("INSERT INTO product_modifier_groups (product_id, modifier_group_id) VALUES ('prod-mod', 'grp-pack')").run()
+
+    const rows = await call('inventory:listIngredients') as any[]
+    expect(rows.find(r => r.id === 'ing-pack').productCount).toBe(4)
   })
 })

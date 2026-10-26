@@ -8,6 +8,7 @@ import { migration as employeeDiscountMigration } from './migrations/006-employe
 import { migration as idempotencyKeysMigration } from './migrations/007-idempotency-keys'
 import { migration as auditLogMigration } from './migrations/008-audit-log'
 import { migration as welcome20Migration } from './migrations/009-welcome20'
+import { migration as inventoryCategoriesMigration } from './migrations/010-inventory-categories'
 import type { Migration } from './migrations/types'
 
 function ensureColumn(db: import('better-sqlite3').Database, table: string, column: string, definition: string) {
@@ -67,6 +68,7 @@ export function runMigrations() {
     idempotencyKeysMigration,
     auditLogMigration,
     welcome20Migration,
+    inventoryCategoriesMigration,
   ]
   const applied = db.prepare('SELECT id FROM schema_migrations').all() as { id: string }[]
   const appliedIds = new Set(applied.map(({ id }) => id))

@@ -1244,6 +1244,8 @@ export function daysOnHand() {
   const rows = active.map(ing => {
     const stock = Number(ing.stockQuantity) || 0
     const unitCost = Number(ing.costPerUnit) || 0
+    const unit = ing.unit
+    const pack = Number(ing.purchaseQty) || 1
     const avgDailyUse = (used[ing.id] || 0) / 30
     const dio = avgDailyUse > 0 ? stock / avgDailyUse : null
     let status: 'ok' | 'low' | 'critical' = 'ok'
@@ -1258,9 +1260,10 @@ export function daysOnHand() {
       supplierRatio: Number(ing.supplierRatio) || 0.7,
       plannedCost: Number(ing.plannedCost) || 0,
       stock: r2(stock),
+      stockPackages: unit === 'g' && pack > 1 ? r2(stock / pack) : null,
+      packSize: pack,
       minStock: Number(ing.minStock) || 0,
       unitCost: r2(unitCost),
-      stockValue: r2(stock * unitCost),
       avgDailyUse: r2(avgDailyUse),
       dio: dio != null ? r2(dio) : null,
       status,

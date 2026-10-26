@@ -23,7 +23,7 @@ interface NavItem {
 
 const adminItems: NavItem[] = [
   { id: 'reports', label: 'التقارير', icon: 'M3 3v18h18', iconActive: 'M3 3v18h18' },
-  { id: 'products', label: 'المنتجات', icon: 'M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4', iconActive: 'M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4' },
+  { id: 'products', label: 'الكريبات', icon: 'M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4', iconActive: 'M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4' },
   { id: 'categories', label: 'الأقسام', icon: 'M4 6h16M4 10h16M4 14h16M4 18h16', iconActive: 'M4 6h16M4 10h16M4 14h8M4 18h10' },
   { id: 'addons', label: 'الإضافات', icon: 'M12 5v14m-7-7h14', iconActive: 'M12 5v14m-7-7h14' },
   { id: 'modifiers', label: 'الموديفاير', icon: 'M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4', iconActive: 'M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4' },

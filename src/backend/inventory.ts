@@ -5,6 +5,7 @@ import * as schema from '../db/schema'
 import { deductInventory, listRecipeRows, now, recomputeProductCost, r2, uuid } from './shared'
 import { hardDelete } from './shared'
 import { requireAdmin } from './session'
+import { defaultStorageForCategory, normalizeCategory, normalizeStorage } from '../lib/inventory-taxonomy'
 
 const {
   ingredients, recipes, addonRecipes, modifierRecipes,
@@ -12,9 +13,57 @@ const {
   purchasePriceHistory,
 } = schema
 
+/** Distinct menu products each ingredient reaches — directly, through a
+ * sub-recipe, or through an addon/modifier recipe. */
+function productUsageCounts(): Map<string, number> {
+  const rows = getSqlite().prepare(`
+    SELECT ingredient_id, COUNT(DISTINCT product_id) AS count
+    FROM (
+      SELECT ingredient_id, product_id
+      FROM recipes
+      WHERE ingredient_id IS NOT NULL
+      UNION
+      SELECT sri.ingredient_id, r.product_id
+      FROM recipes r
+      JOIN sub_recipe_ingredients sri ON sri.sub_recipe_id = r.sub_recipe_id
+      UNION
+      SELECT ar.ingredient_id, pa.product_id
+      FROM addon_recipes ar
+      JOIN product_addons pa ON pa.addon_id = ar.addon_id
+      WHERE ar.ingredient_id IS NOT NULL
+      UNION
+      SELECT sri.ingredient_id, pa.product_id
+      FROM addon_recipes ar
+      JOIN sub_recipe_ingredients sri ON sri.sub_recipe_id = ar.sub_recipe_id
+      JOIN product_addons pa ON pa.addon_id = ar.addon_id
+      UNION
+      SELECT mr.ingredient_id, pmg.product_id
+      FROM modifier_recipes mr
+      JOIN modifiers m ON m.id = mr.modifier_id
+      JOIN product_modifier_groups pmg ON pmg.modifier_group_id = m.modifier_group_id
+      WHERE mr.ingredient_id IS NOT NULL
+      UNION
+      SELECT sri.ingredient_id, pmg.product_id
+      FROM modifier_recipes mr
+      JOIN sub_recipe_ingredients sri ON sri.sub_recipe_id = mr.sub_recipe_id
+      JOIN modifiers m ON m.id = mr.modifier_id
+      JOIN product_modifier_groups pmg ON pmg.modifier_group_id = m.modifier_group_id
+    )
+    WHERE ingredient_id IS NOT NULL
+    GROUP BY ingredient_id
+  `).all() as { ingredient_id: string; count: number }[]
+  return new Map(rows.map(r => [r.ingredient_id, Number(r.count) || 0]))
+}
+
+function withProductCounts<T extends { id: string }>(rows: T[]): (T & { productCount: number })[] {
+  const counts = productUsageCounts()
+  return rows.map(row => ({ ...row, productCount: counts.get(row.id) || 0 }))
+}
+
 export function listIngredients() {
   const db = getDb()
-  return db.select().from(ingredients).where(eq(ingredients.active, true))
+  const rows = db.select().from(ingredients).where(eq(ingredients.active, true)).all()
+  return withProductCounts(rows)
 }
 
 /** Sortable ingredient fields. */
@@ -60,7 +109,7 @@ export function listIngredientsPaged(options: {
     .offset(options.offset)
     .all() as any[]
 
-  return { items, total }
+  return { items: withProductCounts(items), total }
 }
 
 export function getIngredientById(id: string) {
@@ -72,7 +121,9 @@ export function createIngredient(data: any) {
   requireAdmin()
   const db = getDb()
   const id = uuid()
-  db.insert(ingredients).values({ id, ...data, active: true }).run()
+  const category = normalizeCategory(data?.category)
+  const storage = normalizeStorage(data?.storage, category)
+  db.insert(ingredients).values({ ...data, id, category, storage, active: true }).run()
   if (Number(data?.stockQuantity) > 0) {
     db.insert(inventoryTransactions).values({
       id: uuid(), ingredientId: id, type: 'ADJUSTMENT', quantity: Number(data.stockQuantity), note: 'رصيد افتتاحي', createdAt: now(),
@@ -84,7 +135,16 @@ export function createIngredient(data: any) {
 export function updateIngredient(id: string, data: any) {
   requireAdmin()
   const db = getDb()
-  db.update(ingredients).set(data).where(eq(ingredients.id, id)).run()
+  const current = getIngredientById(id)
+  const patch = { ...data }
+  if (patch.category !== undefined) {
+    patch.category = normalizeCategory(patch.category)
+    if (patch.storage === undefined) patch.storage = defaultStorageForCategory(patch.category)
+  }
+  if (patch.storage !== undefined) {
+    patch.storage = normalizeStorage(patch.storage, patch.category ?? current?.category)
+  }
+  db.update(ingredients).set(patch).where(eq(ingredients.id, id)).run()
   // A cost change must reach product costs immediately — the
   // startup recompute is not enough once the app is running.
   if (data?.costPerUnit != null) {
@@ -168,9 +228,10 @@ export function deleteRecipe(id: string) {
 
 export function getAlerts() {
   const db = getDb()
-  return db.select().from(ingredients)
+  const rows = db.select().from(ingredients)
     .where(and(eq(ingredients.active, true), sql`${ingredients.stockQuantity} <= ${ingredients.minStock}`))
     .all()
+  return withProductCounts(rows)
 }
 
 // ─── Sub-recipes (reusable prepared components) ──────────────
@@ -293,18 +354,23 @@ export function restock(ingredientId: string, qty: number, note?: string, opts?:
   requireAdmin()
   const db = getDb()
   const supplier = opts?.supplier?.trim() || null
-  // The owner enters the price of the purchase package (e.g. a 1kg
-  // bag); divide by the package size to get the per-stock-unit cost.
-  // A raw unitCost is still accepted (API compatibility).
+  // The owner counts what they bought in PACKAGES (cartons, jars, bags),
+  // not in stock units. qty is the package count; the stock add and the
+  // ledger row are the real stock-unit amount (packages × pack size).
   const ing = db.select().from(ingredients).where(eq(ingredients.id, ingredientId)).get()
   const packQty = Number(ing?.purchaseQty) || 1
+  const packages = Math.abs(Number(qty) || 0)
+  const stockQty = packages * (packQty > 0 ? packQty : 1)
   const unitCost = opts?.packagePrice != null
     ? Number(opts.packagePrice) / (packQty > 0 ? packQty : 1)
     : (opts?.unitCost != null ? Number(opts.unitCost) : null)
-  db.update(ingredients).set({ stockQuantity: sql`${ingredients.stockQuantity} + ${qty}` })
+  db.update(ingredients).set({ stockQuantity: sql`${ingredients.stockQuantity} + ${stockQty}` })
     .where(eq(ingredients.id, ingredientId)).run()
   db.insert(inventoryTransactions).values({
-    id: uuid(), ingredientId, type: 'PURCHASE', quantity: qty, unitCost, supplier, note: note || 'إعادة تعبئة', createdAt: now(),
+    id: uuid(), ingredientId, type: 'PURCHASE', quantity: stockQty,
+    unitCost, supplier,
+    note: `${packages} ${packages === 1 ? 'عبوة' : 'عبوات'} × ${packQty}${note ? ` — ${note}` : ''}`,
+    createdAt: now(),
   }).run()
   if (ing && !ing.supplier && supplier) {
     db.update(ingredients).set({ supplier }).where(eq(ingredients.id, ingredientId)).run()
@@ -314,13 +380,13 @@ export function restock(ingredientId: string, qty: number, note?: string, opts?:
   const effectiveUnitCost = unitCost != null ? unitCost : (ing?.costPerUnit || 0)
   if (effectiveUnitCost > 0) {
     db.insert(purchasePriceHistory).values({
-      id: uuid(), ingredientId, supplier: supplier || ing?.supplier || null, unitCost: effectiveUnitCost, quantity: qty,
+      id: uuid(), ingredientId, supplier: supplier || ing?.supplier || null, unitCost: effectiveUnitCost, quantity: stockQty,
       purchasedAt: now().slice(0, 10), createdAt: now(),
     }).run()
   }
   if (unitCost != null) {
     const baseline = ing && ing.plannedCost > 0 ? ing.plannedCost : ing?.costPerUnit || 0
-    const ppv = baseline > 0 ? (unitCost - baseline) * qty : 0
+    const ppv = baseline > 0 ? (unitCost - baseline) * stockQty : 0
     return { ok: true, ppv: r2(ppv) }
   }
   return { ok: true }

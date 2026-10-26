@@ -166,6 +166,8 @@ export const ingredients = sqliteTable('ingredients', {
   secondarySupplier: text('secondary_supplier'),
   supplierRatio: real('supplier_ratio').notNull().default(0.7),
   plannedCost: real('planned_cost').notNull().default(0),
+  category: text('category').notNull().default('other'),
+  storage: text('storage').notNull().default('dry'),
 })
 
 // ─── Sub-recipes (reusable prepared components, e.g. صوص/عجينة) ──

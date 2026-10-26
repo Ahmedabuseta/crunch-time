@@ -1,3 +1,5 @@
+import type { InventoryCategoryId, InventoryStorageId } from '@/lib/inventory-taxonomy'
+
 export interface Ingredient {
   id: string
   name: string
@@ -12,6 +14,9 @@ export interface Ingredient {
   secondarySupplier: string | null
   supplierRatio: number
   plannedCost: number
+  category: InventoryCategoryId
+  storage: InventoryStorageId
+  productCount: number
 }
 
 export interface Recipe {
@@ -50,6 +55,8 @@ export interface CreateIngredientInput {
   minStock?: number
   costPerUnit?: number
   purchaseQty?: number
+  category?: InventoryCategoryId
+  storage?: InventoryStorageId
 }
 
 export interface UpdateIngredientInput {
@@ -60,6 +67,8 @@ export interface UpdateIngredientInput {
   minStock?: number
   costPerUnit?: number
   purchaseQty?: number
+  category?: InventoryCategoryId
+  storage?: InventoryStorageId
 }
 
 export interface InventoryAlert extends Ingredient {
