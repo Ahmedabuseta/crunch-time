@@ -295,10 +295,36 @@ export interface ApiBridge {
     deleteIngredient: (id: string) => Promise<{ ok: boolean; error?: string }>
   }
   inventory: {
-    listIngredients: () => Promise<any[]>
+    listIngredients: (opts?: { includeInactive?: boolean }) => Promise<any[]>
     createIngredient: (data: any) => Promise<{ id: string }>
     updateIngredient: (id: string, data: any) => Promise<{ ok: boolean }>
     deleteIngredient: (id: string, opts?: DeleteOpts) => Promise<{ ok: boolean; error?: string }>
+    setIngredientActive: (id: string, active: boolean) => Promise<{ ok: boolean; error?: string }>
+    listIngredientProducts: (ingredientId: string) => Promise<{ id: string; name: string; emoji: string; active: boolean; inBase: boolean; links: string[] }[]>
+    consumptionSummary: (opts?: { from?: string; to?: string }) => Promise<{
+      from: string | null
+      to: string | null
+      days: number | null
+      rows: {
+        ingredientId: string; name: string; unit: string; category: string; storage: string
+        active: boolean; stock: number; unitCost: number; consumed: number; waste: number; adjustment: number
+        orderCount: number; cost: number; wasteCost: number; avgDaily: number; daysCover: number | null
+        lastConsumedAt: string | null
+      }[]
+      totals: { cost: number; wasteCost: number; ingredients: number }
+    }>
+    backfillConsumption: (opts?: { from?: string; to?: string; statuses?: string[]; orderType?: string; dryRun?: boolean }) => Promise<{
+      ok: boolean
+      error?: string
+      dryRun: boolean
+      matchedOrders: number
+      alreadyCounted: number
+      readyOrders: number
+      noRecipeOrders: number
+      ingredients: number
+      inserted: number
+      cost: number
+    }>
     listRecipes: (productId: string) => Promise<any[]>
     upsertRecipe: (data: any) => Promise<{ id: string }>
     deleteRecipe: (id: string) => Promise<{ ok: boolean; error?: string }>

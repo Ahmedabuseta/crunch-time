@@ -494,8 +494,8 @@ export function registerIpcHandlers() {
   // ═══════════════════════════════════════════════════════════
   // INVENTORY
   // ═══════════════════════════════════════════════════════════
-  ipcMain.handle('inventory:listIngredients', () =>
-    b.inventory.listIngredients()
+  ipcMain.handle('inventory:listIngredients', (_e, opts?: { includeInactive?: boolean }) =>
+    b.inventory.listIngredients(opts)
   )
 
   ipcMain.handle('inventory:createIngredient', (_e, data: any) =>
@@ -509,6 +509,26 @@ export function registerIpcHandlers() {
   ipcMain.handle('inventory:deleteIngredient', (_e, id: string, opts?: { hard?: boolean }) =>
     b.inventory.deleteIngredient(id, opts)
   )
+
+  ipcMain.handle('inventory:setIngredientActive', (_e, id: string, active: boolean) =>
+    b.inventory.setIngredientActive(id, active)
+  )
+
+  ipcMain.handle('inventory:listIngredientProducts', (_e, ingredientId: string) =>
+    b.inventory.listIngredientProducts(ingredientId)
+  )
+
+  ipcMain.handle('inventory:consumptionSummary', (_e, opts?: { from?: string; to?: string }) =>
+    b.inventory.consumptionSummary(opts)
+  )
+
+  ipcMain.handle('inventory:backfillConsumption', (_e, opts?: {
+    from?: string
+    to?: string
+    statuses?: string[]
+    orderType?: string
+    dryRun?: boolean
+  }) => b.inventory.backfillConsumption(opts))
 
   ipcMain.handle('inventory:listRecipes', (_e, productId: string) =>
     b.inventory.listRecipes(productId)

@@ -172,6 +172,47 @@ function deductInventory(orderId: string) {
   }
 }
 
+function ingredientUsage(ingredientId: string) {
+  const usage = new Map<string, { inBase: boolean; links: string[] }>()
+  const add = (productId: unknown, inBase: boolean, link: string) => {
+    if (!productId) return
+    const id = String(productId)
+    const row = usage.get(id) ?? { inBase: false, links: [] }
+    if (inBase) row.inBase = true
+    if (!row.links.includes(link)) row.links.push(link)
+    usage.set(id, row)
+  }
+  const subRecipeIds = T.subRecipeIngredients.select(r => r.ingredientId === ingredientId).map(r => r.subRecipeId)
+
+  for (const recipe of T.recipes.select(r => r.ingredientId === ingredientId)) add(recipe.productId, true, 'وصفة مباشرة')
+  for (const recipe of T.recipes.select(r => subRecipeIds.includes(r.subRecipeId))) {
+    const sub = T.subRecipes.get(r => r.id === recipe.subRecipeId)
+    add(recipe.productId, true, `وصفة فرعية: ${sub?.name ?? ''}`)
+  }
+
+  for (const ar of T.addonRecipes.select(r => r.ingredientId === ingredientId)) {
+    const addon = T.addons.get(r => r.id === ar.addonId)
+    for (const pa of T.productAddons.select(r => r.addonId === ar.addonId)) add(pa.productId, false, `إضافة: ${addon?.name ?? ''}`)
+  }
+  for (const ar of T.addonRecipes.select(r => subRecipeIds.includes(r.subRecipeId))) {
+    const addon = T.addons.get(r => r.id === ar.addonId)
+    const sub = T.subRecipes.get(r => r.id === ar.subRecipeId)
+    for (const pa of T.productAddons.select(r => r.addonId === ar.addonId)) add(pa.productId, false, `إضافة: ${addon?.name ?? ''} · وصفة فرعية: ${sub?.name ?? ''}`)
+  }
+
+  for (const mr of T.modifierRecipes.select(r => r.ingredientId === ingredientId)) {
+    const modifier = T.modifiers.get(r => r.id === mr.modifierId)
+    if (modifier) for (const link of T.productModifierGroups.select(r => r.modifierGroupId === modifier.modifierGroupId)) add(link.productId, false, `خيار: ${modifier.name}`)
+  }
+  for (const mr of T.modifierRecipes.select(r => subRecipeIds.includes(r.subRecipeId))) {
+    const modifier = T.modifiers.get(r => r.id === mr.modifierId)
+    const sub = T.subRecipes.get(r => r.id === mr.subRecipeId)
+    if (modifier) for (const link of T.productModifierGroups.select(r => r.modifierGroupId === modifier.modifierGroupId)) add(link.productId, false, `خيار: ${modifier.name} · وصفة فرعية: ${sub?.name ?? ''}`)
+  }
+
+  return usage
+}
+
 function seed() {
   // Settings
   T.settings.insert({ id: 'settings', deliveryFee: 25, taxRate: 0.14, restaurantName: 'Crunch Time', currency: 'EGP', receiptWidth: '80mm', receiptCopies: 1, receiptFooter: 'شكراً لزيارتكم', currencyLabel: 'ج.م', showLogo: true, showCashier: true, showOrderId: true, showTax: true })
@@ -1007,42 +1048,83 @@ export const rendererApi = {
     },
   },
   inventory: {
-    listIngredients: () => {
-      const productCount = (ingredientId: string) => {
-        const products = new Set<string>()
-        const add = (productId: unknown) => { if (productId) products.add(String(productId)) }
-        const subRecipeIds = T.subRecipeIngredients
-          .select(r => r.ingredientId === ingredientId)
-          .map(r => r.subRecipeId)
-
-        for (const recipe of T.recipes.select(r => r.ingredientId === ingredientId)) add(recipe.productId)
-        for (const recipe of T.recipes.select(r => subRecipeIds.includes(r.subRecipeId))) add(recipe.productId)
-
-        for (const ar of T.addonRecipes.select(r => r.ingredientId === ingredientId)) {
-          for (const pa of T.productAddons.select(r => r.addonId === ar.addonId)) add(pa.productId)
+    listIngredients: (opts?: { includeInactive?: boolean }) =>
+      T.ingredients.select(r => opts?.includeInactive || r.active).map(i => {
+        const usage = ingredientUsage(i.id)
+        const rows = [...usage.values()]
+        return {
+          ...i,
+          category: i.category || categoryForIngredient(i.id),
+          storage: i.storage || storageForIngredient(i.id),
+          productCount: rows.length,
+          recipeProductCount: rows.filter(u => u.inBase).length,
+          optionalProductCount: rows.filter(u => !u.inBase).length,
         }
-        for (const ar of T.addonRecipes.select(r => subRecipeIds.includes(r.subRecipeId))) {
-          for (const pa of T.productAddons.select(r => r.addonId === ar.addonId)) add(pa.productId)
-        }
-
-        for (const mr of T.modifierRecipes.select(r => r.ingredientId === ingredientId)) {
-          const modifier = T.modifiers.get(r => r.id === mr.modifierId)
-          if (modifier) for (const link of T.productModifierGroups.select(r => r.modifierGroupId === modifier.modifierGroupId)) add(link.productId)
-        }
-        for (const mr of T.modifierRecipes.select(r => subRecipeIds.includes(r.subRecipeId))) {
-          const modifier = T.modifiers.get(r => r.id === mr.modifierId)
-          if (modifier) for (const link of T.productModifierGroups.select(r => r.modifierGroupId === modifier.modifierGroupId)) add(link.productId)
-        }
-
-        return products.size
+      }),
+    listIngredientProducts: (ingredientId: string) =>
+      [...ingredientUsage(ingredientId).entries()]
+        .map(([id, u]) => {
+          const product = T.products.get(r => r.id === id)
+          return product ? { id, name: product.name, emoji: product.emoji, active: product.active, inBase: u.inBase, links: u.links } : null
+        })
+        .filter(Boolean)
+        .sort((a, b) => String(a!.name).localeCompare(String(b!.name), 'ar')),
+    setIngredientActive: (id: string, active: boolean) => {
+      const row = T.ingredients.get(r => r.id === id)
+      if (!row) return { ok: false, error: 'المادة غير موجودة' }
+      T.ingredients.update(r => r.id === id, { active })
+      return { ok: true }
+    },
+    consumptionSummary: (opts?: { from?: string; to?: string }) => {
+      const from = opts?.from || null
+      const to = opts?.to || null
+      const txs = T.inventoryTransactions.select(t => {
+        if (!['CONSUMPTION', 'WASTE', 'ADJUSTMENT'].includes(String(t.type))) return false
+        if (from && String(t.createdAt) < from) return false
+        if (to && String(t.createdAt) > to + '\uffff') return false
+        return true
+      })
+      const byIngredient = new Map<string, any[]>()
+      for (const t of txs) {
+        if (!byIngredient.has(t.ingredientId)) byIngredient.set(t.ingredientId, [])
+        byIngredient.get(t.ingredientId)!.push(t)
       }
-
-      return T.ingredients.select(r => r.active).map(i => ({
-        ...i,
-        category: i.category || categoryForIngredient(i.id),
-        storage: i.storage || storageForIngredient(i.id),
-        productCount: productCount(i.id),
-      }))
+      const rows = T.ingredients.select()
+        .map(i => {
+          const rows = byIngredient.get(i.id) ?? []
+          const sum = (type: string) => rows.filter(t => t.type === type).reduce((s, t) => s + Number(t.quantity || 0), 0)
+          const consumed = -sum('CONSUMPTION')
+          const waste = -sum('WASTE')
+          if (consumed <= 0 && waste <= 0) return null
+          const unitCost = Number(i.costPerUnit) || 0
+          const lastConsumedAt = rows.filter(t => t.type === 'CONSUMPTION').map(t => String(t.createdAt)).sort().pop() || null
+          return {
+            ingredientId: i.id, name: i.name, unit: i.unit,
+            category: i.category || categoryForIngredient(i.id),
+            storage: i.storage || storageForIngredient(i.id),
+            active: Boolean(i.active), stock: Number(i.stockQuantity) || 0, unitCost,
+            consumed, waste, adjustment: sum('ADJUSTMENT'),
+            orderCount: new Set(rows.filter(t => t.type === 'CONSUMPTION' && t.referenceOrderId).map(t => t.referenceOrderId)).size,
+            cost: consumed * unitCost, wasteCost: waste * unitCost, avgDaily: 0, daysCover: null as number | null,
+            lastConsumedAt,
+          }
+        })
+        .filter(Boolean) as any[]
+      const coverStart = from || rows.map(r => r.lastConsumedAt).filter(Boolean).sort()[0]?.slice(0, 10) || null
+      const coverEnd = to || rows.map(r => r.lastConsumedAt).filter(Boolean).sort().pop()?.slice(0, 10) || null
+      const days = coverStart && coverEnd ? Math.max(1, Math.round((Date.parse(coverEnd) - Date.parse(coverStart)) / 86400000) + 1) : null
+      for (const row of rows) {
+        row.avgDaily = days ? Math.round((row.consumed / days) * 100) / 100 : 0
+        row.daysCover = row.avgDaily > 0 ? Math.round((Math.max(0, row.stock) / row.avgDaily) * 100) / 100 : null
+      }
+      return {
+        from, to, days, rows,
+        totals: {
+          cost: rows.reduce((s, r) => s + r.cost, 0),
+          wasteCost: rows.reduce((s, r) => s + r.wasteCost, 0),
+          ingredients: rows.length,
+        },
+      }
     },
     createIngredient: (data: any) => {
       const id = uuid()
@@ -1091,7 +1173,90 @@ export const rendererApi = {
       T.ingredients.update(r => r.id === id, { active: false })
       return { ok: true }
     },
-    listRecipes: (productId: string) => T.recipes.select(r => r.productId === productId),
+    backfillConsumption: (opts?: { from?: string; to?: string; statuses?: string[]; orderType?: string; dryRun?: boolean }) => {
+      const statuses = opts?.statuses?.length ? opts.statuses : ['COMPLETED']
+      const orders = T.orders.select(o => {
+        if (!statuses.includes(String(o.status))) return false
+        if (opts?.from && String(o.createdAt) < opts.from) return false
+        if (opts?.to && String(o.createdAt) > opts.to + '\uffff') return false
+        if (opts?.orderType && o.orderType !== opts.orderType) return false
+        return true
+      })
+      const hasConsumption = (orderId: string) =>
+        T.inventoryTransactions.select(t => t.referenceOrderId === orderId && t.type === 'CONSUMPTION').length > 0
+      const eligible = orders.filter(o => !hasConsumption(o.id))
+
+      const expand = (rows: Row[], totals: Map<string, number>, quantity: number) => {
+        for (const row of rows) {
+          const factor = (Number(row.quantityPerUnit) || 0) * quantity
+          if (row.subRecipeId) {
+            for (const part of T.subRecipeIngredients.select(p => p.subRecipeId === row.subRecipeId)) {
+              totals.set(part.ingredientId, (totals.get(part.ingredientId) || 0) + factor * (Number(part.quantityPerUnit) || 0))
+            }
+          } else if (row.ingredientId) {
+            totals.set(row.ingredientId, (totals.get(row.ingredientId) || 0) + factor)
+          }
+        }
+      }
+
+      const pending = new Map<string, Map<string, number>>()
+      for (const order of eligible) {
+        const totals = new Map<string, number>()
+        for (const item of T.orderItems.select(i => i.orderId === order.id)) {
+          const quantity = Number(item.quantity) || 0
+          if (quantity <= 0) continue
+          expand(T.recipes.select(r => r.productId === item.productId), totals, quantity)
+          try {
+            for (const addonId of JSON.parse(item.selectedAddonsJson || '[]') as string[]) {
+              expand(T.addonRecipes.select(r => r.addonId === addonId), totals, quantity)
+            }
+          } catch {}
+          try {
+            for (const mod of JSON.parse(item.selectedModifiersJson || '[]') as { modifierId: string }[]) {
+              expand(T.modifierRecipes.select(r => r.modifierId === mod.modifierId), totals, quantity)
+            }
+          } catch {}
+        }
+        if (totals.size > 0) pending.set(order.id, totals)
+      }
+
+      let cost = 0
+      const ingredientTotals = new Map<string, number>()
+      for (const totals of pending.values()) {
+        for (const [ingredientId, qty] of totals) {
+          ingredientTotals.set(ingredientId, (ingredientTotals.get(ingredientId) || 0) + qty)
+        }
+      }
+      for (const [ingredientId, qty] of ingredientTotals) {
+        cost += qty * (Number(T.ingredients.get(r => r.id === ingredientId)?.costPerUnit) || 0)
+      }
+
+      let inserted = 0
+      if (!opts?.dryRun) {
+        for (const [orderId, totals] of pending) {
+          if (hasConsumption(orderId)) continue
+          for (const [ingredientId, qty] of totals) {
+            T.inventoryTransactions.insert({
+              id: uuid(), ingredientId, type: 'CONSUMPTION', quantity: -qty,
+              referenceOrderId: orderId, note: `احتساب طلب قديم — ${orderId}`, createdAt: now(),
+            })
+            inserted += 1
+          }
+        }
+      }
+
+      return {
+        ok: true,
+        dryRun: Boolean(opts?.dryRun),
+        matchedOrders: orders.length,
+        alreadyCounted: orders.length - eligible.length,
+        readyOrders: pending.size,
+        noRecipeOrders: eligible.length - pending.size,
+        ingredients: ingredientTotals.size,
+        inserted,
+        cost,
+      }
+    },
     upsertRecipe: (data: any) => { if (data.id) { T.recipes.update(r => r.id === data.id, { quantityPerUnit: data.quantityPerUnit }); return { id: data.id } } const id = uuid(); T.recipes.insert({ id, ...data }); return { id } },
     deleteRecipe: (id: string) => {
       const row = T.recipes.get(r => r.id === id)

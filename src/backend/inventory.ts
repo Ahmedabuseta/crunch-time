@@ -2,7 +2,7 @@
 import { and, asc, desc, eq, sql } from 'drizzle-orm'
 import { getDb, getSqlite } from '../db/client'
 import * as schema from '../db/schema'
-import { deductInventory, listRecipeRows, now, recomputeProductCost, r2, uuid } from './shared'
+import { deductInventory, expandRecipes, listRecipeRows, now, recomputeProductCost, r2, uuid } from './shared'
 import { hardDelete } from './shared'
 import { requireAdmin } from './session'
 import { defaultStorageForCategory, normalizeCategory, normalizeStorage } from '../lib/inventory-taxonomy'
@@ -13,56 +13,95 @@ const {
   purchasePriceHistory,
 } = schema
 
-/** Distinct menu products each ingredient reaches — directly, through a
- * sub-recipe, or through an addon/modifier recipe. */
-function productUsageCounts(): Map<string, number> {
+type UsagePath = {
+  ingredientId: string
+  productId: string
+  kind: 'base' | 'optional'
+  link: string
+}
+
+/**
+ * Every (ingredient → product) path, classified:
+ *  - `base`: the product's own recipe (directly or through a sub-recipe), so
+ *    the ingredient is consumed on every sale.
+ *  - `optional`: the ingredient is only reachable through an addon or a
+ *    modifier choice, so it is consumed only when the customer picks it.
+ * Counting the two together made a single topping look like it was linked to
+ * every product offering the addon list.
+ */
+function usagePaths(ingredientId?: string): UsagePath[] {
   const rows = getSqlite().prepare(`
-    SELECT ingredient_id, COUNT(DISTINCT product_id) AS count
+    SELECT paths.ingredientId, paths.productId, paths.kind, paths.link
     FROM (
-      SELECT ingredient_id, product_id
-      FROM recipes
-      WHERE ingredient_id IS NOT NULL
-      UNION
-      SELECT sri.ingredient_id, r.product_id
+      SELECT r.ingredient_id AS ingredientId, r.product_id AS productId, 'base' AS kind,
+             'وصفة مباشرة' AS link
+      FROM recipes r
+      UNION ALL
+      SELECT sri.ingredient_id, r.product_id, 'base', 'وصفة فرعية: ' || sr.name
       FROM recipes r
       JOIN sub_recipe_ingredients sri ON sri.sub_recipe_id = r.sub_recipe_id
-      UNION
-      SELECT ar.ingredient_id, pa.product_id
+      JOIN sub_recipes sr ON sr.id = r.sub_recipe_id
+      UNION ALL
+      SELECT ar.ingredient_id, pa.product_id, 'optional', 'إضافة: ' || a.name
       FROM addon_recipes ar
+      JOIN addons a ON a.id = ar.addon_id
       JOIN product_addons pa ON pa.addon_id = ar.addon_id
-      WHERE ar.ingredient_id IS NOT NULL
-      UNION
-      SELECT sri.ingredient_id, pa.product_id
+      UNION ALL
+      SELECT sri.ingredient_id, pa.product_id, 'optional', 'إضافة: ' || a.name || ' · وصفة فرعية: ' || sr.name
       FROM addon_recipes ar
       JOIN sub_recipe_ingredients sri ON sri.sub_recipe_id = ar.sub_recipe_id
+      JOIN sub_recipes sr ON sr.id = ar.sub_recipe_id
+      JOIN addons a ON a.id = ar.addon_id
       JOIN product_addons pa ON pa.addon_id = ar.addon_id
-      UNION
-      SELECT mr.ingredient_id, pmg.product_id
+      UNION ALL
+      SELECT mr.ingredient_id, pmg.product_id, 'optional', 'خيار: ' || m.name
       FROM modifier_recipes mr
       JOIN modifiers m ON m.id = mr.modifier_id
       JOIN product_modifier_groups pmg ON pmg.modifier_group_id = m.modifier_group_id
-      WHERE mr.ingredient_id IS NOT NULL
-      UNION
-      SELECT sri.ingredient_id, pmg.product_id
+      UNION ALL
+      SELECT sri.ingredient_id, pmg.product_id, 'optional', 'خيار: ' || m.name || ' · وصفة فرعية: ' || sr.name
       FROM modifier_recipes mr
       JOIN sub_recipe_ingredients sri ON sri.sub_recipe_id = mr.sub_recipe_id
+      JOIN sub_recipes sr ON sr.id = mr.sub_recipe_id
       JOIN modifiers m ON m.id = mr.modifier_id
       JOIN product_modifier_groups pmg ON pmg.modifier_group_id = m.modifier_group_id
-    )
-    WHERE ingredient_id IS NOT NULL
-    GROUP BY ingredient_id
-  `).all() as { ingredient_id: string; count: number }[]
-  return new Map(rows.map(r => [r.ingredient_id, Number(r.count) || 0]))
+    ) paths
+    WHERE paths.ingredientId IS NOT NULL
+    ${ingredientId ? 'AND paths.ingredientId = ?' : ''}
+  `).all(...(ingredientId ? [ingredientId] : [])) as UsagePath[]
+  return rows
 }
 
-function withProductCounts<T extends { id: string }>(rows: T[]): (T & { productCount: number })[] {
-  const counts = productUsageCounts()
-  return rows.map(row => ({ ...row, productCount: counts.get(row.id) || 0 }))
+function withProductCounts<T extends { id: string }>(
+  rows: T[],
+): (T & { productCount: number; recipeProductCount: number; optionalProductCount: number })[] {
+  const base = new Map<string, Set<string>>()
+  const optional = new Map<string, Set<string>>()
+  for (const path of usagePaths()) {
+    const target = path.kind === 'base' ? base : optional
+    if (!target.has(path.ingredientId)) target.set(path.ingredientId, new Set())
+    target.get(path.ingredientId)!.add(path.productId)
+  }
+  return rows.map(row => {
+    const inBase = base.get(row.id) ?? new Set<string>()
+    const onlyOptional = [...(optional.get(row.id) ?? [])].filter(id => !inBase.has(id))
+    return {
+      ...row,
+      // A hidden product still holds the recipe link, so it counts as linked.
+      productCount: inBase.size + onlyOptional.length,
+      // Products whose recipe always consumes it.
+      recipeProductCount: inBase.size,
+      // Extra products where it is offered as an addon / modifier choice.
+      optionalProductCount: onlyOptional.length,
+    }
+  })
 }
 
-export function listIngredients() {
+export function listIngredients(opts?: { includeInactive?: boolean }) {
   const db = getDb()
-  const rows = db.select().from(ingredients).where(eq(ingredients.active, true)).all()
+  const rows = opts?.includeInactive
+    ? db.select().from(ingredients).all()
+    : db.select().from(ingredients).where(eq(ingredients.active, true)).all()
   return withProductCounts(rows)
 }
 
@@ -193,6 +232,39 @@ export function deleteIngredient(id: string, opts?: { hard?: boolean }) {
   }
 
   db.update(ingredients).set({ active: false }).where(eq(ingredients.id, id)).run()
+  return { ok: true }
+}
+
+/**
+ * Menu products an ingredient reaches, each with the paths that reach it:
+ * direct recipe, through a sub-recipe, or through an addon/modifier recipe.
+ */
+export function listIngredientProducts(ingredientId: string) {
+  const s = getSqlite()
+  const products = new Map(
+    (s.prepare('SELECT id, name, emoji, active FROM products').all() as any[]).map(p => [p.id, p]),
+  )
+  const byProduct = new Map<string, { id: string; name: string; emoji: string; active: boolean; inBase: boolean; links: string[] }>()
+  for (const path of usagePaths(ingredientId)) {
+    const product = products.get(path.productId)
+    if (!product) continue
+    let row = byProduct.get(product.id)
+    if (!row) {
+      row = { id: product.id, name: product.name, emoji: product.emoji, active: Boolean(product.active), inBase: false, links: [] }
+      byProduct.set(product.id, row)
+    }
+    if (path.kind === 'base') row.inBase = true
+    if (!row.links.includes(path.link)) row.links.push(path.link)
+  }
+  return [...byProduct.values()].sort((a, b) => a.name.localeCompare(b.name, 'ar'))
+}
+
+export function setIngredientActive(id: string, active: boolean) {
+  requireAdmin()
+  const db = getDb()
+  const ingredient = db.select({ id: ingredients.id }).from(ingredients).where(eq(ingredients.id, id)).get()
+  if (!ingredient) return { ok: false, error: 'المادة غير موجودة' }
+  db.update(ingredients).set({ active: Boolean(active) }).where(eq(ingredients.id, id)).run()
   return { ok: true }
 }
 
@@ -390,6 +462,213 @@ export function restock(ingredientId: string, qty: number, note?: string, opts?:
     return { ok: true, ppv: r2(ppv) }
   }
   return { ok: true }
+}
+
+export function consumptionSummary(opts?: { from?: string; to?: string }) {
+  const s = getSqlite()
+  const from = opts?.from || null
+  const to = opts?.to || null
+  const conds = ["t.type IN ('CONSUMPTION', 'WASTE', 'ADJUSTMENT')"]
+  const params: any[] = []
+  if (from) { conds.push('t.created_at >= ?'); params.push(from) }
+  if (to) { conds.push('t.created_at <= ?'); params.push(to + '￿') }
+
+  const rows = s.prepare(`
+    SELECT i.id AS ingredientId, i.name, i.unit, i.stock_quantity AS stock,
+           i.cost_per_unit AS unitCost, i.category, i.storage, i.active,
+           COALESCE(SUM(CASE WHEN t.type = 'CONSUMPTION' THEN -t.quantity ELSE 0 END), 0) AS consumed,
+           COALESCE(SUM(CASE WHEN t.type = 'WASTE' THEN -t.quantity ELSE 0 END), 0) AS waste,
+           COALESCE(SUM(CASE WHEN t.type = 'ADJUSTMENT' THEN t.quantity ELSE 0 END), 0) AS adjustment,
+           COUNT(DISTINCT CASE WHEN t.type = 'CONSUMPTION' THEN t.reference_order_id END) AS orderCount,
+           MIN(CASE WHEN t.type = 'CONSUMPTION' THEN t.created_at END) AS firstConsumedAt,
+           MAX(CASE WHEN t.type = 'CONSUMPTION' THEN t.created_at END) AS lastConsumedAt
+    FROM ingredients i
+    LEFT JOIN inventory_transactions t ON t.ingredient_id = i.id AND ${conds.join(' AND ')}
+    GROUP BY i.id
+    ORDER BY i.name
+  `).all(...params) as any[]
+
+  const used = rows.filter(r => Number(r.consumed) > 0 || Number(r.waste) > 0)
+
+  // Per-day averages share one window: the requested range, or the span the
+  // recorded consumption actually covers when no range was given.
+  const firsts = used.map(r => r.firstConsumedAt).filter(Boolean).sort() as string[]
+  const lasts = used.map(r => r.lastConsumedAt).filter(Boolean).sort() as string[]
+  const windowStart = from || (firsts[0] ? firsts[0].slice(0, 10) : null)
+  const windowEnd = to || (lasts.length ? lasts[lasts.length - 1].slice(0, 10) : null)
+  const days = windowStart && windowEnd
+    ? Math.max(1, Math.round((Date.parse(windowEnd) - Date.parse(windowStart)) / 86400000) + 1)
+    : null
+
+  let totalCost = 0
+  let totalWasteCost = 0
+  const mapped = used.map(r => {
+    const unitCost = Number(r.unitCost) || 0
+    const stock = Number(r.stock) || 0
+    const consumed = r2(Number(r.consumed) || 0)
+    const waste = r2(Number(r.waste) || 0)
+    const cost = r2(consumed * unitCost)
+    const wasteCost = r2(waste * unitCost)
+    const avgDaily = days ? r2(consumed / days) : 0
+    totalCost += cost
+    totalWasteCost += wasteCost
+    return {
+      ingredientId: r.ingredientId,
+      name: r.name,
+      unit: r.unit,
+      category: r.category,
+      storage: r.storage,
+      active: Boolean(r.active),
+      stock: r2(stock),
+      unitCost: r2(unitCost),
+      consumed,
+      waste,
+      adjustment: r2(Number(r.adjustment) || 0),
+      orderCount: Number(r.orderCount) || 0,
+      cost,
+      wasteCost,
+      avgDaily,
+      daysCover: avgDaily > 0 ? r2(Math.max(0, stock) / avgDaily) : null,
+      lastConsumedAt: r.lastConsumedAt || null,
+    }
+  }).sort((a, b) => b.cost - a.cost || a.name.localeCompare(b.name, 'ar'))
+
+  return {
+    from,
+    to,
+    days,
+    rows: mapped,
+    totals: {
+      cost: r2(totalCost),
+      wasteCost: r2(totalWasteCost),
+      ingredients: mapped.length,
+    },
+  }
+}
+
+/**
+ * Rebuild missing CONSUMPTION rows for historical orders.
+ *
+ * - Never touches `stock_quantity`: this is a reporting backfill, not a new
+ *   deduction, so the current stock the owner counted stays intact.
+ * - Idempotent: an order that already has any CONSUMPTION row is skipped, so
+ *   running the tool twice can never double-count.
+ * - Quantities come from the same recipe tree the live checkout uses
+ *   (product recipe + sub-recipes + selected addons/modifiers).
+ */
+export function backfillConsumption(opts?: {
+  from?: string
+  to?: string
+  statuses?: string[]
+  orderType?: string
+  dryRun?: boolean
+}) {
+  requireAdmin()
+  const s = getSqlite()
+  const statuses = opts?.statuses?.length ? opts.statuses : ['COMPLETED']
+  const params: any[] = [...statuses]
+  const conds = [`o.status IN (${statuses.map(() => '?').join(', ')})`]
+  if (opts?.from) { conds.push('o.created_at >= ?'); params.push(opts.from) }
+  if (opts?.to) { conds.push('o.created_at <= ?'); params.push(opts.to + '￿') }
+  if (opts?.orderType) { conds.push('o.order_type = ?'); params.push(opts.orderType) }
+
+  const orders = s.prepare(`
+    SELECT o.id,
+           EXISTS (
+             SELECT 1 FROM inventory_transactions t
+             WHERE t.reference_order_id = o.id AND t.type = 'CONSUMPTION'
+           ) AS hasConsumption
+    FROM orders o
+    WHERE ${conds.join(' AND ')}
+    ORDER BY o.created_at, o.id
+  `).all(...params) as { id: string; hasConsumption: number }[]
+
+  const eligible = orders.filter(o => !o.hasConsumption)
+  const alreadyCounted = orders.length - eligible.length
+
+  const itemsStmt = s.prepare(
+    'SELECT product_id, quantity, selected_addons_json, selected_modifiers_json FROM order_items WHERE order_id = ?',
+  )
+  const recipesStmt = s.prepare('SELECT ingredient_id, sub_recipe_id, quantity_per_unit FROM recipes WHERE product_id = ?')
+  const addonStmt = s.prepare('SELECT ingredient_id, sub_recipe_id, quantity_per_unit FROM addon_recipes WHERE addon_id = ?')
+  const modifierStmt = s.prepare('SELECT ingredient_id, sub_recipe_id, quantity_per_unit FROM modifier_recipes WHERE modifier_id = ?')
+
+  const pending = new Map<string, Map<string, number>>()
+  for (const order of eligible) {
+    const totals = new Map<string, number>()
+    const bump = (ingredientId: string, qty: number) => {
+      if (qty > 0) totals.set(ingredientId, (totals.get(ingredientId) || 0) + qty)
+    }
+    for (const item of itemsStmt.all(order.id) as any[]) {
+      const quantity = Number(item.quantity) || 0
+      if (quantity <= 0) continue
+      for (const c of expandRecipes(recipesStmt.all(item.product_id) as any[])) bump(c.ingredientId, c.qty * quantity)
+      if (item.selected_addons_json) {
+        try {
+          for (const addonId of JSON.parse(item.selected_addons_json) as string[]) {
+            for (const c of expandRecipes(addonStmt.all(addonId) as any[])) bump(c.ingredientId, c.qty * quantity)
+          }
+        } catch { /* malformed JSON on an old row — skip that part */ }
+      }
+      if (item.selected_modifiers_json) {
+        try {
+          for (const mod of JSON.parse(item.selected_modifiers_json) as { modifierId: string }[]) {
+            for (const c of expandRecipes(modifierStmt.all(mod.modifierId) as any[])) bump(c.ingredientId, c.qty * quantity)
+          }
+        } catch { /* same */ }
+      }
+    }
+    if (totals.size > 0) pending.set(order.id, totals)
+  }
+
+  const ingredientTotals = new Map<string, number>()
+  for (const totals of pending.values()) {
+    for (const [ingredientId, qty] of totals) {
+      ingredientTotals.set(ingredientId, (ingredientTotals.get(ingredientId) || 0) + qty)
+    }
+  }
+
+  let cost = 0
+  const costStmt = s.prepare('SELECT cost_per_unit AS unitCost FROM ingredients WHERE id = ?')
+  for (const [ingredientId, qty] of ingredientTotals) {
+    const unitCost = Number((costStmt.get(ingredientId) as any)?.unitCost) || 0
+    cost += qty * unitCost
+  }
+
+  let inserted = 0
+  if (!opts?.dryRun && pending.size > 0) {
+    const insert = s.prepare(
+      `INSERT INTO inventory_transactions (id, ingredient_id, type, quantity, reference_order_id, note, created_at)
+       VALUES (?, ?, 'CONSUMPTION', ?, ?, ?, ?)`,
+    )
+    const check = s.prepare(
+      "SELECT 1 FROM inventory_transactions WHERE reference_order_id = ? AND type = 'CONSUMPTION' LIMIT 1",
+    )
+    const run = s.transaction(() => {
+      for (const [orderId, totals] of pending) {
+        // Re-check inside the write transaction: an order that gained a real
+        // consumption row after the scan must not be counted a second time.
+        if (check.get(orderId)) continue
+        for (const [ingredientId, qty] of totals) {
+          insert.run(uuid(), ingredientId, -r2(qty), orderId, `احتساب طلب قديم — ${orderId}`, now())
+          inserted += 1
+        }
+      }
+    })
+    run()
+  }
+
+  return {
+    ok: true,
+    dryRun: Boolean(opts?.dryRun),
+    matchedOrders: orders.length,
+    alreadyCounted,
+    readyOrders: pending.size,
+    noRecipeOrders: eligible.length - pending.size,
+    ingredients: ingredientTotals.size,
+    inserted,
+    cost: r2(cost),
+  }
 }
 
 export function listTransactions(ingredientId: string, filters?: { type?: string; from?: string; to?: string; page?: number; pageSize?: number }) {

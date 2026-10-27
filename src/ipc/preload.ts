@@ -236,10 +236,14 @@ contextBridge.exposeInMainWorld('api', {
 
   // ─── Inventory ────────────────────────────────────────────
   inventory: {
-    listIngredients: () => invoke('inventory:listIngredients'),
+    listIngredients: (opts?: { includeInactive?: boolean }) => invoke('inventory:listIngredients', opts),
     createIngredient: (data: unknown) => invoke('inventory:createIngredient', data),
     updateIngredient: (id: string, data: unknown) => invoke('inventory:updateIngredient', id, data),
     deleteIngredient: (id: string, opts?: DeleteOpts) => invoke('inventory:deleteIngredient', id, opts),
+    setIngredientActive: (id: string, active: boolean) => invoke('inventory:setIngredientActive', id, active),
+    listIngredientProducts: (ingredientId: string) => invoke('inventory:listIngredientProducts', ingredientId),
+    consumptionSummary: (opts?: { from?: string; to?: string }) => invoke('inventory:consumptionSummary', opts),
+    backfillConsumption: (opts?: { from?: string; to?: string; statuses?: string[]; orderType?: string; dryRun?: boolean }) => invoke('inventory:backfillConsumption', opts),
     listRecipes: (productId: string) => invoke('inventory:listRecipes', productId),
     upsertRecipe: (data: unknown) => invoke('inventory:upsertRecipe', data),
     deleteRecipe: (id: string) => invoke('inventory:deleteRecipe', id),

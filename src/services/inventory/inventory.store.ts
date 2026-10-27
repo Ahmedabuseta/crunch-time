@@ -1,8 +1,9 @@
 import { create } from 'zustand'
-import type { Ingredient, CreateIngredientInput, UpdateIngredientInput, Recipe, InventoryAlert, InventoryLedger } from './inventory.types'
+import type { Ingredient, CreateIngredientInput, UpdateIngredientInput, Recipe, InventoryAlert, InventoryLedger, ConsumptionSummary } from './inventory.types'
 
 interface InventoryStore {
   ingredients: Ingredient[]
+  allIngredients: Ingredient[]
   alerts: InventoryAlert[]
   loading: boolean
   fetchIngredients: () => Promise<void>
@@ -10,10 +11,12 @@ interface InventoryStore {
   createIngredient: (data: CreateIngredientInput) => Promise<string>
   updateIngredient: (id: string, data: UpdateIngredientInput) => Promise<void>
   removeIngredient: (id: string, opts?: { hard?: boolean }) => Promise<void>
+  setIngredientActive: (id: string, active: boolean) => Promise<void>
   restock: (ingredientId: string, qty: number, note?: string, opts?: { unitCost?: number; supplier?: string }) => Promise<{ ok: boolean; ppv?: number }>
   recordWaste: (ingredientId: string, qty: number, note?: string) => Promise<void>
   adjust: (ingredientId: string, delta: number, note?: string) => Promise<void>
   fetchLedger: (ingredientId: string, filters?: { type?: string; from?: string; to?: string; page?: number; pageSize?: number }) => Promise<InventoryLedger & { total: number; page: number; pageSize: number; totalPages: number }>
+  fetchConsumption: (from?: string, to?: string) => Promise<ConsumptionSummary>
   fetchRecipes: (productId: string) => Promise<Recipe[]>
   upsertRecipe: (data: any) => Promise<string>
   deleteRecipe: (id: string) => Promise<void>
@@ -24,14 +27,15 @@ interface InventoryStore {
 
 export const useInventoryStore = create<InventoryStore>((set, get) => ({
   ingredients: [],
+  allIngredients: [],
   alerts: [],
   loading: false,
   alertsDismissed: false,
 
   fetchIngredients: async () => {
     set({ loading: true })
-    const data = await window.api.inventory.listIngredients()
-    set({ ingredients: data as Ingredient[], loading: false })
+    const data = await window.api.inventory.listIngredients({ includeInactive: true }) as Ingredient[]
+    set({ allIngredients: data, ingredients: data.filter((i) => i.active), loading: false })
   },
 
   fetchAlerts: async () => {
@@ -60,6 +64,14 @@ export const useInventoryStore = create<InventoryStore>((set, get) => ({
     const result = await window.api.inventory.deleteIngredient(id, opts) as { ok: boolean; error?: string }
     if (!result.ok) throw new Error(result.error || 'فشل تعطيل المادة')
     await get().fetchIngredients()
+    await get().fetchAlerts()
+  },
+
+  setIngredientActive: async (id, active) => {
+    const result = await window.api.inventory.setIngredientActive(id, active) as { ok: boolean; error?: string }
+    if (!result.ok) throw new Error(result.error || 'فشل تحديث حالة المادة')
+    await get().fetchIngredients()
+    await get().fetchAlerts()
   },
 
 restock: async (ingredientId, qty, note?, opts?) => {
@@ -82,6 +94,10 @@ restock: async (ingredientId, qty, note?, opts?) => {
 
   fetchLedger: async (ingredientId, filters?) => {
     return await window.api.inventory.listTransactions(ingredientId, filters) as InventoryLedger & { total: number; page: number; pageSize: number; totalPages: number }
+  },
+
+  fetchConsumption: async (from?, to?) => {
+    return await window.api.inventory.consumptionSummary({ from, to }) as ConsumptionSummary
   },
 
   fetchRecipes: async (productId) => {

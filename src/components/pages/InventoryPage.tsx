@@ -1,22 +1,25 @@
 import { useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select'
 import { useInventoryStore } from '@/services/inventory/inventory.store'
 import type { InventoryLedger } from '@/services/inventory/inventory.types'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { Plus, Package, AlertTriangle, Pencil, X, History, TrendingDown, TrendingUp, ShieldAlert } from 'lucide-react'
+import { Plus, Package, AlertTriangle, Pencil, X, History, TrendingDown, TrendingUp, ShieldAlert, Power, PowerOff, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { monthStart, today } from '@/lib/dates'
 import { fmtMoney } from '@/lib/format'
 import { EmojiPicker } from '@/components/ui/emoji-picker'
 import { ListToolbar } from '@/components/ui/list-toolbar'
 import { DataTable, type DataColumn } from '@/components/ui/data-table'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { Pagination } from '@/components/ui/pagination'
 import { useListControls } from '@/components/ui/list-controls'
 import { DatePicker } from '@/components/ui/date-picker'
 import { toast } from '@/components/ui/toast'
 import type { ViewMode } from '@/components/ui/view-toggle'
 import { SubRecipesSection } from './SubRecipesSection'
+import { ConsumptionSection } from './ConsumptionSection'
 import { Emoji } from '@/components/Emoji'
 import {
   INVENTORY_CATEGORIES,
@@ -58,6 +61,18 @@ const itemStorage = (ing: any): InventoryStorageId =>
 
 const fmtQty = (n: number) => Number(n || 0).toLocaleString('en-US', { maximumFractionDigits: 2 })
 
+const warnIfBelowMin = (name: string, stock: string, min: string, unit: string) => {
+  const qty = parseFloat(stock) || 0
+  const threshold = parseFloat(min) || 0
+  if (threshold <= 0 || qty > threshold) return
+  const label = unitLabel[unit] || unit
+  toast({
+    title: 'المادة تحت الحد الأدنى',
+    description: `${name}: الرصيد ${fmtQty(qty)} ${label} والحد الأدنى ${fmtQty(threshold)} ${label}`,
+    variant: 'warning',
+  })
+}
+
 const typeMeta: Record<string, { label: string; cls: string }> = {
   PURCHASE: { label: 'شراء', cls: 'bg-green-500/10 text-green-600' },
   CONSUMPTION: { label: 'بيع', cls: 'bg-red-500/10 text-red-600' },
@@ -66,7 +81,7 @@ const typeMeta: Record<string, { label: string; cls: string }> = {
 }
 
 export function InventoryPage() {
-  const ingredients = useInventoryStore((s) => s.ingredients)
+  const ingredients = useInventoryStore((s) => s.allIngredients)
   const alerts = useInventoryStore((s) => s.alerts)
   const fetchIngredients = useInventoryStore((s) => s.fetchIngredients)
   const fetchAlerts = useInventoryStore((s) => s.fetchAlerts)
@@ -76,15 +91,21 @@ export function InventoryPage() {
   const fetchLedger = useInventoryStore((s) => s.fetchLedger)
   const createIngredient = useInventoryStore((s) => s.createIngredient)
   const updateIngredient = useInventoryStore((s) => s.updateIngredient)
+  const removeIngredient = useInventoryStore((s) => s.removeIngredient)
+  const setIngredientActive = useInventoryStore((s) => s.setIngredientActive)
 
   const [showIngForm, setShowIngForm] = useState(false)
-  const [invTab, setInvTab] = useState<'ingredients' | 'sub-recipes'>('ingredients')
+  const [invTab, setInvTab] = useState<'ingredients' | 'consumption' | 'sub-recipes'>('ingredients')
   const [editIngId, setEditIngId] = useState<string | null>(null)
   const [ingForm, setIngForm] = useState(emptyIngForm)
   const [restockId, setRestockId] = useState<string | null>(null)
   const [restockQty, setRestockQty] = useState('')
   const [view, setView] = useState<ViewMode>('table')
-  const [statusFilter, setStatusFilter] = useState<'low' | 'high' | 'ok' | 'noCost' | 'unused' | null>(null)
+  const [statusFilter, setStatusFilter] = useState<'low' | 'high' | 'ok' | 'noCost' | 'unused' | 'inactive' | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<any | null>(null)
+  const [linkedFor, setLinkedFor] = useState<any | null>(null)
+  const [linkedProducts, setLinkedProducts] = useState<{ id: string; name: string; emoji: string; active: boolean; inBase: boolean; links: string[] }[]>([])
+  const [linkedLoading, setLinkedLoading] = useState(false)
   const [categoryFilter, setCategoryFilter] = useState<string | null>(null)
   const [storageFilter, setStorageFilter] = useState<string | null>(null)
   const [supplierFilter, setSupplierFilter] = useState<string | null>(null)
@@ -103,19 +124,24 @@ export function InventoryPage() {
 
   useEffect(() => { fetchIngredients(); fetchAlerts() }, [])
 
+  const activeIngredients = ingredients.filter((i) => i.active)
+  const inactiveCount = ingredients.length - activeIngredients.length
+  const linkedBaseProducts = linkedProducts.filter((p) => p.inBase)
+  const linkedOptionalProducts = linkedProducts.filter((p) => !p.inBase)
+
   const alertIds = new Set(alerts.map(a => a.id))
   const highStockIds = new Set(
-    ingredients
+    activeIngredients
       .filter((ing) => Number(ing.minStock) > 0 && Number(ing.stockQuantity) > Number(ing.minStock) * 5)
       .map((ing) => ing.id),
   )
 
   const orderedIngredients = [...ingredients].sort((a, b) => {
-    const rank = (ing: any) => alertIds.has(ing.id) ? 0 : highStockIds.has(ing.id) ? 2 : 1
+    const rank = (ing: any) => !ing.active ? 3 : alertIds.has(ing.id) ? 0 : highStockIds.has(ing.id) ? 2 : 1
     return rank(a) - rank(b) || a.name.localeCompare(b.name, 'ar')
   })
   const suppliers = [...new Set(ingredients.map(i => i.supplier).filter(Boolean))].sort((a, b) => String(a).localeCompare(String(b), 'ar'))
-  const unusedCount = ingredients.filter(i => !Number(i.productCount)).length
+  const unusedCount = activeIngredients.filter(i => !Number(i.productCount)).length
   const hasActiveFilters = !!(categoryFilter || statusFilter || storageFilter || supplierFilter)
 
   const list = useListControls({
@@ -129,6 +155,8 @@ export function InventoryPage() {
       } else if (supplierFilter && ing.supplier !== supplierFilter) {
         return false
       }
+      if (statusFilter === 'inactive') return !ing.active
+      if (!ing.active) return !statusFilter
       if (statusFilter === 'noCost') return !(Number(ing.costPerUnit) > 0)
       if (statusFilter === 'unused') return !(Number(ing.productCount) > 0)
       if (statusFilter === 'low') return alertIds.has(ing.id)
@@ -150,6 +178,7 @@ export function InventoryPage() {
     if (!ingForm.name || !ingForm.unit) return
     await createIngredient({ name: ingForm.name, emoji: ingForm.emoji || '📦', unit: ingForm.unit, stockQuantity: parseFloat(ingForm.stockQuantity) || 0, minStock: parseFloat(ingForm.minStock) || 0, costPerUnit: deriveCost(ingForm.packagePrice, ingForm.purchaseQty), purchaseQty: parseFloat(ingForm.purchaseQty) || 1, category: ingForm.category, storage: ingForm.storage })
     toast({ title: 'تم إنشاء المادة', description: ingForm.name, variant: 'success' })
+    warnIfBelowMin(ingForm.name, ingForm.stockQuantity, ingForm.minStock, ingForm.unit)
     resetIngForm()
   }
 
@@ -157,6 +186,7 @@ export function InventoryPage() {
     if (!editIngId || !ingForm.name) return
     await updateIngredient(editIngId, { name: ingForm.name, unit: ingForm.unit, minStock: parseFloat(ingForm.minStock) || 0, costPerUnit: deriveCost(ingForm.packagePrice, ingForm.purchaseQty), purchaseQty: parseFloat(ingForm.purchaseQty) || 1, category: ingForm.category, storage: ingForm.storage })
     toast({ title: 'تم تحديث المادة', description: ingForm.name, variant: 'success' })
+    warnIfBelowMin(ingForm.name, ingForm.stockQuantity, ingForm.minStock, ingForm.unit)
     resetIngForm()
   }
 
@@ -164,6 +194,41 @@ export function InventoryPage() {
     setEditIngId(i.id); setShowIngForm(false)
     const purchaseQty = Number(i.purchaseQty) || 1
     setIngForm({ name: i.name, emoji: i.emoji || '', unit: i.unit, stockQuantity: String(i.stockQuantity), minStock: String(i.minStock), purchaseQty: String(purchaseQty), packagePrice: String((Number(i.costPerUnit) || 0) * purchaseQty), category: itemCategory(i), storage: itemStorage(i) })
+  }
+
+  const handleToggleActive = async (ing: any) => {
+    try {
+      await setIngredientActive(ing.id, !ing.active)
+      toast({ title: ing.active ? 'تم تعطيل المادة' : 'تم تفعيل المادة', description: ing.name, variant: 'success' })
+    } catch (err: any) {
+      toast({ title: err?.message || 'فشل تحديث حالة المادة', variant: 'error' })
+    }
+  }
+
+  const handleDeleteIng = async ({ hard }: { hard: boolean }) => {
+    if (!deleteTarget) return
+    const target = deleteTarget
+    setDeleteTarget(null)
+    try {
+      if (hard) await removeIngredient(target.id, { hard: true })
+      else await setIngredientActive(target.id, false)
+      toast({ title: hard ? 'تم الحذف النهائي للمادة' : 'تم تعطيل المادة', description: target.name, variant: 'success' })
+    } catch (err: any) {
+      toast({ title: err?.message || 'فشل حذف المادة', variant: 'error' })
+    }
+  }
+
+  const openLinkedProducts = async (ing: any) => {
+    setLinkedFor(ing)
+    setLinkedProducts([])
+    setLinkedLoading(true)
+    try {
+      setLinkedProducts(await window.api.inventory.listIngredientProducts(ing.id))
+    } catch (err: any) {
+      toast({ title: err?.message || 'فشل تحميل المنتجات المرتبطة', variant: 'error' })
+    } finally {
+      setLinkedLoading(false)
+    }
   }
 
   const handleRestock = async () => {
@@ -190,10 +255,15 @@ export function InventoryPage() {
     }))
   }
 
-  const openMoves = async (ingId: string) => {
+  const openMoves = async (ingId: string, opts?: { type?: string; from?: string; to?: string }) => {
     setMovesFor(ingId)
-    setMovTypeFilter(null); setMovFrom(''); setMovTo(''); setMovPage(1)
-    setLedger(await fetchLedger(ingId, { page: 1, pageSize: 20 }))
+    setMovTypeFilter(opts?.type ?? null); setMovFrom(opts?.from ?? ''); setMovTo(opts?.to ?? ''); setMovPage(1)
+    setLedger(await fetchLedger(ingId, {
+      page: 1, pageSize: 20,
+      ...(opts?.type ? { type: opts.type } : {}),
+      ...(opts?.from ? { from: opts.from } : {}),
+      ...(opts?.to ? { to: opts.to } : {}),
+    }))
   }
 
   const handleRecordMovement = async () => {
@@ -208,13 +278,31 @@ export function InventoryPage() {
     await loadLedger(movesFor, 1)
   }
 
+  const renderLinkedProduct = (p: { id: string; name: string; emoji: string; active: boolean; inBase: boolean; links: string[] }) => (
+    <div key={p.id} className="rounded-2xl bg-secondary/50 p-3 flex items-start gap-3">
+      <Emoji className="text-xl">{p.emoji}</Emoji>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2">
+          <p className={cn("text-sm font-bold truncate", !p.active && "text-muted-foreground line-through")}>{p.name}</p>
+          {!p.active && <span className="shrink-0 text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-secondary text-muted-foreground">مخفي</span>}
+        </div>
+        <div className="flex flex-wrap gap-1 mt-1">
+          {p.links.map((link) => (
+            <span key={link} className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-background/60 text-muted-foreground">{link}</span>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+
   const columns: DataColumn<any>[] = [
     {
       key: 'name', label: 'المادة', render: (ing) => (
         <div className="flex items-center gap-2">
-          <Package className={cn("h-4 w-4", alertIds.has(ing.id) ? "text-yellow-500" : "text-muted-foreground")} />
-          <span className="font-bold">{ing.name}</span>
-          {alertIds.has(ing.id) && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-yellow-500/10 text-yellow-500">⚠️ منخفض</span>}
+          <Package className={cn("h-4 w-4", !ing.active ? "text-muted-foreground/40" : alertIds.has(ing.id) ? "text-yellow-500" : "text-muted-foreground")} />
+          <span className={cn("font-bold", !ing.active && "text-muted-foreground line-through")}>{ing.name}</span>
+          {!ing.active && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-secondary text-muted-foreground">معطّل</span>}
+          {ing.active && alertIds.has(ing.id) && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-yellow-500/10 text-yellow-500">⚠️ تحت الحد</span>}
         </div>
       ),
     },
@@ -232,11 +320,37 @@ export function InventoryPage() {
       },
     },
     {
-      key: 'products', label: 'منتجات', sortValue: (ing: any) => Number(ing.productCount) || 0, render: (ing) => {
-        const count = Number(ing.productCount) || 0
-        return count > 0
-          ? <span className="font-bold text-foreground">{count} منتج</span>
-          : <span className="text-[10px] font-bold text-orange-400">غير مرتبط</span>
+      key: 'products', label: 'منتجات', sortValue: (ing: any) => Number(ing.recipeProductCount) || 0, render: (ing) => {
+        const base = Number(ing.recipeProductCount) || 0
+        const optional = Number(ing.optionalProductCount) || 0
+        if (base > 0) {
+          return (
+            <div className="flex flex-col items-start gap-0.5">
+              <button
+                type="button"
+                onClick={() => openLinkedProducts(ing)}
+                title="عرض المنتجات المرتبطة"
+                className="font-bold text-foreground underline decoration-dotted decoration-muted-foreground/50 underline-offset-4 hover:text-primary transition-colors cursor-pointer"
+              >
+                {base} منتج
+              </button>
+              {optional > 0 && <span className="text-[9px] font-bold text-muted-foreground">+{optional} كإضافة</span>}
+            </div>
+          )
+        }
+        if (optional > 0) {
+          return (
+            <button
+              type="button"
+              onClick={() => openLinkedProducts(ing)}
+              title="عرض المنتجات المرتبطة"
+              className="text-[10px] font-bold text-muted-foreground underline decoration-dotted decoration-muted-foreground/50 underline-offset-2 hover:text-primary transition-colors cursor-pointer"
+            >
+              كإضافة في {optional}
+            </button>
+          )
+        }
+        return <span className="text-[10px] font-bold text-orange-400">غير مرتبط</span>
       },
     },
     {
@@ -251,6 +365,9 @@ export function InventoryPage() {
               {high && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-orange-500/10 text-orange-500">مرتفع</span>}
             </span>
             {packs != null && <span className="text-[10px] text-muted-foreground">≈ {fmtQty(packs)} عبوة</span>}
+            {ing.active && alertIds.has(ing.id) && (
+              <span className="text-[10px] font-bold text-yellow-500">ناقص {fmtQty(Number(ing.minStock) - Number(ing.stockQuantity))} {unitLabel[ing.unit] || ing.unit}</span>
+            )}
           </div>
         )
       },
@@ -284,8 +401,22 @@ export function InventoryPage() {
             <>
               <Button variant="ghost" className="rounded-xl h-11 px-3 text-xs font-bold gap-1.5" onClick={() => openMoves(ing.id)}><History className="h-4 w-4" /> السجل</Button>
               <Button variant="ghost" className="rounded-xl h-11 px-3 text-xs font-bold gap-1.5" onClick={() => startEditIng(ing)}><Pencil className="h-4 w-4" /> تعديل</Button>
-              <Button variant="outline" className="rounded-xl h-11 px-3 text-xs font-bold gap-1.5" onClick={() => { setRestockId(ing.id); setRestockQty('') }}>
-                <Plus className="h-4 w-4" /> تعبئة
+              {ing.active && (
+                <Button variant="outline" className="rounded-xl h-11 px-3 text-xs font-bold gap-1.5" onClick={() => { setRestockId(ing.id); setRestockQty('') }}>
+                  <Plus className="h-4 w-4" /> تعبئة
+                </Button>
+              )}
+              <Button
+                variant="ghost"
+                size="touchIcon"
+                title={ing.active ? 'تعطيل المادة' : 'تفعيل المادة'}
+                onClick={() => handleToggleActive(ing)}
+                className={cn("rounded-xl", ing.active ? "text-muted-foreground hover:text-foreground" : "text-green-500 hover:text-green-400")}
+              >
+                {ing.active ? <PowerOff className="h-4 w-4" /> : <Power className="h-4 w-4" />}
+              </Button>
+              <Button variant="ghost" size="touchIcon" title="حذف المادة" onClick={() => setDeleteTarget(ing)} className="rounded-xl text-destructive hover:text-destructive">
+                <Trash2 className="h-4 w-4" />
               </Button>
             </>
           )}
@@ -310,6 +441,13 @@ export function InventoryPage() {
             </button>
             <button
               type="button"
+              onClick={() => setInvTab('consumption')}
+              className={cn("px-3 py-1 text-xs font-bold rounded-lg transition-colors cursor-pointer", invTab === 'consumption' ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}
+            >
+              الاستهلاك
+            </button>
+            <button
+              type="button"
               onClick={() => setInvTab('sub-recipes')}
               className={cn("px-3 py-1 text-xs font-bold rounded-lg transition-colors cursor-pointer", invTab === 'sub-recipes' ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}
             >
@@ -317,19 +455,22 @@ export function InventoryPage() {
             </button>
           </div>
         </div>
-        {invTab === 'ingredients' ? (
+        {invTab === 'ingredients' && (
           <div className="flex gap-2">
             <Button size="sm" className="gap-1.5 rounded-xl" onClick={() => { showIngForm ? resetIngForm() : setShowIngForm(true); setEditIngId(null) }}>
               {showIngForm ? <X className="h-4 w-4" /> : <Plus className="h-4 w-4" />} {showIngForm ? 'إغلاق' : 'إضافة مادة'}
             </Button>
           </div>
-        ) : (
+        )}
+        {invTab === 'sub-recipes' && (
           <p className="text-[11px] text-muted-foreground">مكونات مُحضَّرة تُعاد جاهزة للاستخدام داخل الوصفات</p>
         )}
       </div>
 
       {invTab === 'sub-recipes' ? (
         <SubRecipesSection />
+      ) : invTab === 'consumption' ? (
+        <ConsumptionSection onOpenLedger={(id, opts) => void openMoves(id, opts)} />
       ) : (
       <>
       {/* Alerts */}
@@ -400,6 +541,18 @@ export function InventoryPage() {
               className="px-3 py-2 rounded-xl bg-secondary text-sm border-0 focus:ring-1 focus:ring-primary focus:outline-none col-span-2" title="السعر كما يُكتب على الفاتورة — التكلفة لكل وحدة تُحسب تلقائياً" />
           </div>
           <p className="text-[11px] text-muted-foreground">التكلفة لكل وحدة تُحسب تلقائياً من سعر العبوة — تُستخدم في تكلفة الوصفة، السعر المقترح، وتقارير الأرباح والمخزون</p>
+          {(() => {
+            const qty = parseFloat(ingForm.stockQuantity) || 0
+            const min = parseFloat(ingForm.minStock) || 0
+            if (min <= 0 || qty > min) return null
+            const label = unitLabel[ingForm.unit] || ingForm.unit
+            return (
+              <p className="flex items-center gap-1.5 text-[11px] font-bold text-yellow-500">
+                <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                الكمية الحالية {fmtQty(qty)} {label} أقل من أو تساوي الحد الأدنى ({fmtQty(min)} {label}) — المادة هتظهر في تنبيهات النقص
+              </p>
+            )
+          })()}
           <div className="flex gap-2">
             <Button className="flex-1 rounded-xl" onClick={editIngId ? handleUpdateIng : handleCreateIng}>{editIngId ? 'تحديث' : 'إضافة'}</Button>
             {editIngId && <Button variant="ghost" className="rounded-xl" onClick={resetIngForm}>إلغاء</Button>}
@@ -454,6 +607,7 @@ export function InventoryPage() {
             <SelectItem value="ok">طبيعي</SelectItem>
             <SelectItem value="noCost">بدون تكلفة</SelectItem>
             <SelectItem value="unused">غير مرتبط ({unusedCount})</SelectItem>
+            <SelectItem value="inactive">معطّل ({inactiveCount})</SelectItem>
           </SelectContent>
         </Select>
         <Select
@@ -488,7 +642,7 @@ export function InventoryPage() {
             columns={columns}
             data={list.items}
             keyExtractor={(ing) => ing.id}
-            rowClassName={(ing) => alertIds.has(ing.id) ? "bg-yellow-500/5" : highStockIds.has(ing.id) ? "bg-orange-500/5" : ""}
+            rowClassName={(ing) => !ing.active ? "bg-secondary/20" : alertIds.has(ing.id) ? "bg-yellow-500/5" : highStockIds.has(ing.id) ? "bg-orange-500/5" : ""}
             sort={list.sort}
             onSortChange={list.setSort}
           />
@@ -514,16 +668,38 @@ export function InventoryPage() {
               const packs = pack > 1 ? Number(ing.stockQuantity) / pack : null
               const percentage = ing.minStock > 0 ? (ing.stockQuantity / (ing.minStock * 5)) * 100 : 100
               return (
-                <div key={ing.id} className={cn("border-2 rounded-xl bg-card p-4 flex items-center gap-4", isLow && "border-yellow-500/30", isHigh && "border-orange-500/30")}>
+                <div key={ing.id} className={cn("border-2 rounded-xl bg-card p-4 flex items-center gap-4", !ing.active ? "opacity-60" : isLow ? "border-yellow-500/30" : isHigh && "border-orange-500/30")}>
                   <div className={cn("w-10 h-10 rounded-xl flex items-center justify-center", isHigh ? "bg-orange-500/10" : isLow ? "bg-yellow-500/10" : "bg-secondary")}>
                     <Package className={cn("h-5 w-5", isHigh ? "text-orange-500" : isLow ? "text-yellow-500" : "text-muted-foreground")} />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-bold">{ing.name}</p>
-                    <p className="text-[10px] text-muted-foreground mt-0.5">{storageLabel(itemStorage(ing))}</p>
-                    <p className={cn("text-[10px] font-bold mt-0.5", Number(ing.productCount) > 0 ? "text-muted-foreground" : "text-orange-400")}>
-                      {Number(ing.productCount) > 0 ? `مرتبط بـ ${ing.productCount} منتج` : 'غير مرتبط بأي منتج'}
+                    <p className="text-sm font-bold flex items-center gap-1.5">
+                      {ing.name}
+                      {!ing.active && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-secondary text-muted-foreground">معطّل</span>}
                     </p>
+                    <p className="text-[10px] text-muted-foreground mt-0.5">{storageLabel(itemStorage(ing))}</p>
+                    {Number(ing.recipeProductCount) > 0 ? (
+                      <button
+                        type="button"
+                        onClick={() => openLinkedProducts(ing)}
+                        title="عرض المنتجات المرتبطة"
+                        className="text-[10px] font-bold mt-0.5 text-muted-foreground underline decoration-dotted decoration-muted-foreground/50 underline-offset-2 hover:text-primary transition-colors cursor-pointer"
+                      >
+                        مرتبط بـ {ing.recipeProductCount} منتج
+                        {Number(ing.optionalProductCount) > 0 ? ` · +${ing.optionalProductCount} كإضافة` : ''}
+                      </button>
+                    ) : Number(ing.optionalProductCount) > 0 ? (
+                      <button
+                        type="button"
+                        onClick={() => openLinkedProducts(ing)}
+                        title="عرض المنتجات المرتبطة"
+                        className="text-[10px] font-bold mt-0.5 text-muted-foreground underline decoration-dotted decoration-muted-foreground/50 underline-offset-2 hover:text-primary transition-colors cursor-pointer"
+                      >
+                        كإضافة في {ing.optionalProductCount} منتج
+                      </button>
+                    ) : (
+                      <p className="text-[10px] font-bold mt-0.5 text-orange-400">غير مرتبط بأي منتج</p>
+                    )}
                     <div className="flex items-center gap-2 mt-1">
                       <div className="flex-1 h-2 rounded-full bg-secondary overflow-hidden">
                         <div className={cn("h-full rounded-full transition-all", isHigh ? "bg-orange-500" : isLow ? "bg-yellow-500" : "bg-primary")} style={{ width: `${Math.min(percentage, 100)}%` }} />
@@ -534,6 +710,7 @@ export function InventoryPage() {
                   </div>
                   <div className="text-right">
                     <p className="text-xs text-muted-foreground">الحد الأدنى: {ing.minStock} {ing.unit}</p>
+                    {ing.active && isLow && <p className="text-[10px] text-yellow-500 font-bold mt-0.5">تحت الحد الأدنى — ناقص {fmtQty(Number(ing.minStock) - Number(ing.stockQuantity))} {unitLabel[ing.unit] || ing.unit}</p>}
                     {isHigh && <p className="text-[10px] text-orange-500 font-bold mt-0.5">مخزون مرتفع</p>}
                     {(() => {
                       const pack = Number(ing.purchaseQty) || 1
@@ -553,7 +730,7 @@ export function InventoryPage() {
                   <div className="flex gap-1.5 flex-wrap">
                     <Button variant="ghost" className="rounded-xl h-11 px-3 text-xs font-bold gap-1.5" onClick={() => openMoves(ing.id)}><History className="h-4 w-4" /> السجل</Button>
                     <Button variant="ghost" className="rounded-xl h-11 px-3 text-xs font-bold gap-1.5" onClick={() => startEditIng(ing)}><Pencil className="h-4 w-4" /> تعديل</Button>
-                    {restockId === ing.id ? (
+                    {ing.active && (restockId === ing.id ? (
                       <div className="flex items-center gap-1.5 flex-wrap">
                         <input type="number" value={restockQty} onChange={e => setRestockQty(e.target.value)} placeholder="عدد العبوات" className="w-24 h-11 px-2 rounded-lg bg-secondary text-sm border-0 focus:ring-1 focus:ring-primary focus:outline-none text-center" title="كم عبوة؟ تُضرب تلقائياً في حجم العبوة" />
                         <input type="number" value={restockUnitCost} onChange={e => setRestockUnitCost(e.target.value)} placeholder="سعر العبوة" className="w-20 h-11 px-2 rounded-lg bg-secondary text-sm border-0 focus:ring-1 focus:ring-primary focus:outline-none text-center" title="سعر العبوة كما تشتريها — تُقسم على حجم العبوة تلقائياً" />
@@ -565,7 +742,19 @@ export function InventoryPage() {
                       <Button variant="outline" className="rounded-xl h-11 px-3 text-xs font-bold gap-1.5" onClick={() => { setRestockId(ing.id); setRestockQty('') }}>
                         <Plus className="h-4 w-4" /> تعبئة
                       </Button>
-                    )}
+                    ))}
+                    <Button
+                      variant="ghost"
+                      size="touchIcon"
+                      title={ing.active ? 'تعطيل المادة' : 'تفعيل المادة'}
+                      onClick={() => handleToggleActive(ing)}
+                      className={cn("rounded-xl", ing.active ? "text-muted-foreground hover:text-foreground" : "text-green-500 hover:text-green-400")}
+                    >
+                      {ing.active ? <PowerOff className="h-4 w-4" /> : <Power className="h-4 w-4" />}
+                    </Button>
+                    <Button variant="ghost" size="touchIcon" title="حذف المادة" onClick={() => setDeleteTarget(ing)} className="rounded-xl text-destructive hover:text-destructive">
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
                   </div>
                 </div>
               )
@@ -582,6 +771,63 @@ export function InventoryPage() {
 
       <Pagination page={list.page} totalPages={list.totalPages} total={list.total} start={list.start} end={list.end} onPageChange={(p) => list.setPage(p)} />
       </>
+      )}
+
+      <ConfirmDialog
+        open={Boolean(deleteTarget)}
+        title="حذف المادة"
+        description={deleteTarget ? `تعطيل «${deleteTarget.name}» يخفيه من القوائم والوصفات الجديدة مع الحفاظ على سجل الحركات.` : undefined}
+        confirmLabel="تعطيل"
+        allowHardDelete
+        hardDeleteDescription="يحذف المادة من قاعدة البيانات نهائياً. متاح فقط لو مفيش حركات مخزون أو ارتباطات بوصفات."
+        onConfirm={handleDeleteIng}
+        onCancel={() => setDeleteTarget(null)}
+      />
+
+      {linkedFor && createPortal(
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={() => setLinkedFor(null)}>
+          <div
+            dir="rtl"
+            className="bg-card border-2 rounded-3xl shadow-2xl w-[460px] max-w-[92vw] max-h-[80vh] flex flex-col overflow-hidden animate-slide-up"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-3 p-5 pb-3 border-b">
+              <div className="min-w-0">
+                <h3 className="font-black text-base">المنتجات المرتبطة</h3>
+                <p className="text-xs text-muted-foreground mt-0.5 truncate">
+                  <Emoji>{linkedFor.emoji}</Emoji> {linkedFor.name} ·{' '}
+                  {linkedLoading ? '…' : `${linkedBaseProducts.length} داخل الوصفة · ${linkedOptionalProducts.length} كإضافة`}
+                </p>
+              </div>
+              <Button variant="ghost" size="icon" className="h-9 w-9 rounded-lg shrink-0" onClick={() => setLinkedFor(null)}>
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+            <div className="p-3 overflow-y-auto space-y-3">
+              {linkedLoading ? (
+                <p className="py-8 text-center text-xs text-muted-foreground">جارٍ التحميل…</p>
+              ) : linkedProducts.length === 0 ? (
+                <p className="py-8 text-center text-xs text-muted-foreground">لا توجد منتجات مرتبطة</p>
+              ) : (
+                <>
+                  {linkedBaseProducts.length > 0 && (
+                    <div className="space-y-1.5">
+                      <p className="px-1 text-[10px] font-black text-muted-foreground">داخل وصفة المنتج ({linkedBaseProducts.length})</p>
+                      {linkedBaseProducts.map(renderLinkedProduct)}
+                    </div>
+                  )}
+                  {linkedOptionalProducts.length > 0 && (
+                    <div className="space-y-1.5">
+                      <p className="px-1 text-[10px] font-black text-muted-foreground">متاح كإضافة أو خيار ({linkedOptionalProducts.length})</p>
+                      {linkedOptionalProducts.map(renderLinkedProduct)}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          </div>
+        </div>,
+        document.body
       )}
 
       {/* Inventory movements drawer */}

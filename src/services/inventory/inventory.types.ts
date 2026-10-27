@@ -17,6 +17,36 @@ export interface Ingredient {
   category: InventoryCategoryId
   storage: InventoryStorageId
   productCount: number
+  recipeProductCount: number
+  optionalProductCount: number
+}
+
+export interface ConsumptionRow {
+  ingredientId: string
+  name: string
+  unit: string
+  category: InventoryCategoryId
+  storage: InventoryStorageId
+  active: boolean
+  stock: number
+  unitCost: number
+  consumed: number
+  waste: number
+  adjustment: number
+  orderCount: number
+  cost: number
+  wasteCost: number
+  avgDaily: number
+  daysCover: number | null
+  lastConsumedAt: string | null
+}
+
+export interface ConsumptionSummary {
+  from: string | null
+  to: string | null
+  days: number | null
+  rows: ConsumptionRow[]
+  totals: { cost: number; wasteCost: number; ingredients: number }
 }
 
 export interface Recipe {
