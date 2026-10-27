@@ -98,6 +98,16 @@ function toEgyptianTime(iso: string) {
   return d.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })
 }
 
+function toEgyptianShortDate(iso: string) {
+  const d = new Date(iso)
+  const sameYear = d.getFullYear() === new Date().getFullYear()
+  return d.toLocaleDateString('ar-EG', {
+    day: 'numeric',
+    month: 'short',
+    ...(sameYear ? {} : { year: 'numeric' }),
+  })
+}
+
 export function OrderHistory() {
   const orders = useOrderStore((s) => s.orders)
   const fetchOrders = useOrderStore((s) => s.fetch)
@@ -415,7 +425,14 @@ export function OrderHistory() {
       },
     },
     { key: 'total', label: 'الإجمالي', className: 'text-left', render: (o) => <span className="font-black text-primary">{o.total.toFixed(0)} ج.م</span> },
-    { key: 'time', label: 'الوقت', sortValue: (o: any) => o.createdAt, render: (o) => <span className="text-[11px] text-muted-foreground">{toEgyptianTime(o.createdAt)}</span> },
+    {
+      key: 'time', label: 'التاريخ والوقت', sortValue: (o: any) => o.createdAt, render: (o) => (
+        <div className="flex flex-col gap-0.5 whitespace-nowrap">
+          <span className="text-[11px] font-bold">{toEgyptianShortDate(o.createdAt)}</span>
+          <span className="text-[11px] text-muted-foreground">{toEgyptianTime(o.createdAt)}</span>
+        </div>
+      ),
+    },
     {
       key: 'actions', label: 'إجراءات', render: (o) => (
         <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
@@ -837,7 +854,7 @@ export function OrderHistory() {
                     </span>
                   </div>
                   <div className="flex items-center gap-2">
-                    <span className="text-[11px] text-muted-foreground font-medium">{toEgyptianTime(order.createdAt)}</span>
+                    <span className="text-[11px] text-muted-foreground font-medium">{toEgyptianShortDate(order.createdAt)} · {toEgyptianTime(order.createdAt)}</span>
                     <ChevronDown className={cn("h-4 w-4 text-muted-foreground transition-transform", isExpanded && "rotate-180")} />
                   </div>
                 </div>
