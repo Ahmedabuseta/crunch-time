@@ -1,7 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useOrderStore } from '@/services/order/order.store'
 import { useUserStore } from '@/services/user/user.store'
-import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Search, Truck, UtensilsCrossed, ChevronDown, X, Printer, ChefHat, RefreshCw, SlidersHorizontal, Trash2, BadgePercent, ReceiptText, Banknote, XCircle } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -17,6 +16,7 @@ import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import type { ViewMode } from '@/components/ui/view-toggle'
 import { Emoji } from '@/components/Emoji'
+import { OrderVoidDialog } from './pages/OrderVoidDialog'
 
 const statusConfig: Record<string, { label: string; color: string; bg: string }> = {
   COMPLETED: { label: 'مكتمل', color: 'text-green-400', bg: 'bg-green-500/10' },
@@ -79,15 +79,6 @@ function StatCard({ icon: Icon, label, value, tone }: {
   )
 }
 
-const VOID_REASONS = [
-  'العميل طلب الإلغاء',
-  'خطأ في إدخال الطلب',
-  'تأخير التوصيل',
-  'مشكلة في جودة الطعام',
-  'العميل لم يستلم',
-  'دفع مكرر',
-]
-
 function toEgyptianDate(iso: string) {
   const d = new Date(iso)
   return d.toLocaleDateString('ar-EG', { year: 'numeric', month: 'long', day: 'numeric' })
@@ -122,9 +113,7 @@ export function OrderHistory() {
   const [cashierFilter, setCashierFilter] = useState<string | null>(null)
   const [discountFilter, setDiscountFilter] = useState<'all' | 'with' | 'without'>('all')
   const [sortMode, setSortMode] = useState<SortMode>('latest')
-  const [reasonMap, setReasonMap] = useState<Record<string, string>>({})
-  const [reasonError, setReasonError] = useState<string | null>(null)
-  const [showReasonFor, setShowReasonFor] = useState<string | null>(null)
+  const [voidTarget, setVoidTarget] = useState<any | null>(null)
   const [view, setView] = useState<ViewMode>('table')
   const [printMsg, setPrintMsg] = useState<Record<string, string>>({})
   const [printingId, setPrintingId] = useState<string | null>(null)
@@ -424,6 +413,22 @@ export function OrderHistory() {
         )
       },
     },
+    {
+      key: 'items', label: 'الأصناف', sortValue: (o: any) => (o.items || []).length, render: (o) => {
+        const rows = o.items || []
+        const units = rows.reduce((sum: number, item: any) => sum + (Number(item.quantity) || 0), 0)
+        if (rows.length === 0) return <span className="text-[11px] text-muted-foreground">—</span>
+        return (
+          <div
+            className="flex flex-col gap-0.5"
+            title={rows.map((item: any) => `${item.productName || 'منتج'} ×${item.quantity}`).join('، ')}
+          >
+            <span className="font-bold">{rows.length} صنف</span>
+            <span className="text-[10px] text-muted-foreground">{units} قطعة</span>
+          </div>
+        )
+      },
+    },
     { key: 'total', label: 'الإجمالي', className: 'text-left', render: (o) => <span className="font-black text-primary">{o.total.toFixed(0)} ج.م</span> },
     {
       key: 'time', label: 'التاريخ والوقت', sortValue: (o: any) => o.createdAt, render: (o) => (
@@ -453,7 +458,7 @@ export function OrderHistory() {
             </button>
           )}
           {o.status === 'COMPLETED' && (
-            <button onClick={() => { setShowReasonFor(o.id); setReasonError(null); setExpandedOrder(o.id) }} title="إلغاء / استرداد"
+            <button onClick={() => setVoidTarget(o)} title="إلغاء / استرداد"
               className="flex items-center justify-center h-9 w-9 rounded-lg bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20 transition-colors cursor-pointer">
               <X className="h-4 w-4" />
             </button>
@@ -463,27 +468,20 @@ export function OrderHistory() {
     },
   ]
 
-  const confirmStatusWithReason = async (orderId: string, status: string) => {
-    const reason = (reasonMap[orderId] || '').trim()
-    if (!reason) {
-      setReasonError('اختر سبباً أو اكتب سبباً مخصصاً')
-      return
-    }
-    setReasonError(null)
-    try {
-      await updateStatus(orderId, status as any, reason)
-      setShowReasonFor(null)
-      setReasonMap(r => { const n = { ...r }; delete n[orderId]; return n })
-    } catch (err: any) {
-      setReasonError(err?.message || 'فشل تحديث حالة الطلب')
-    }
+  const handleVoidConfirm = async (status: 'CANCELLED' | 'REFUNDED', reason: string) => {
+    if (!voidTarget) return
+    await updateStatus(voidTarget.id, status, reason)
+    toast({
+      title: status === 'CANCELLED' ? 'تم إلغاء الطلب' : 'تم استرداد الطلب',
+      description: voidTarget.id,
+      variant: 'success',
+    })
   }
-
-  const showReasonForOrder = (orderId: string) => showReasonFor === orderId
 
   const renderOrderDetails = (order: any) => {
     const o = order as any
-    const showReason = showReasonForOrder(order.id)
+    const items: any[] = o.items || []
+    const units = items.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0)
     return (
       <div className="space-y-3 animate-slide-up">
         {/* Order info grid */}
@@ -523,7 +521,11 @@ export function OrderHistory() {
 
         {/* Items */}
         <div className="space-y-1.5">
-          {(o.items || []).map((item: any) => {
+          <div className="flex items-center justify-between">
+            <p className="text-[11px] font-black text-muted-foreground">الأصناف ({items.length})</p>
+            <span className="text-[10px] font-bold text-muted-foreground">{units} قطعة إجمالًا</span>
+          </div>
+          {items.map((item: any) => {
             let mods: string[] = []
             try {
               const parsed = JSON.parse(item.selectedModifiersJson || '[]')
@@ -608,71 +610,10 @@ export function OrderHistory() {
           </div>
         )}
 
-        {/* Refund info — show which items support rollback */}
-        {showReason && (
-          <div className="bg-red-500/5 border border-red-500/20 rounded-xl p-3 space-y-3 animate-slide-up">
-            <p className="text-xs font-bold text-red-400">سبب الإلغاء/الاسترداد (مطلوب)</p>
-
-            {/* Rollback preview */}
-            <div className="bg-secondary/60 rounded-xl p-2.5 space-y-1.5">
-              <p className="text-[10px] font-bold text-muted-foreground">المنتجات القابلة للإرجاع:</p>
-              {(o.items || []).map((item: any) => (
-                <div key={item.id} className="space-y-0.5">
-                  <div className="flex items-center justify-between text-[10px]">
-                    <span>{item.productEmoji} {item.productName}</span>
-                    {item.supportsRollback ? (
-                      <span className="text-green-400 font-bold">✓ يُرجع</span>
-                    ) : (
-                      <span className="text-red-400 font-bold">✗ لا يُرجع</span>
-                    )}
-                  </div>
-                  {/* Addon rollback info */}
-                  {(item.addonRollbackInfo || []).map((addon: any, ai: number) => (
-                    <div key={ai} className="flex items-center justify-between text-[9px] mr-4 text-muted-foreground">
-                      <span>↳ <Emoji>{addon.emoji}</Emoji> {addon.name}</span>
-                      {addon.supportsRollback ? (
-                        <span className="text-green-400/70 font-bold">✓</span>
-                      ) : (
-                        <span className="text-red-400/70 font-bold">✗</span>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              ))}
-            </div>
-
-            <input value={reasonMap[order.id] || ''} onChange={e => { setReasonMap(r => ({ ...r, [order.id]: e.target.value })); setReasonError(null) }} placeholder="أو اكتب سبباً مخصصاً..."
-              className="w-full px-3 py-2 rounded-lg bg-secondary text-xs border-0 focus:ring-1 focus:ring-primary focus:outline-none" dir="rtl" />
-
-            {/* Popular reason chips */}
-            <div className="flex flex-wrap gap-1.5">
-              {VOID_REASONS.map(reason => {
-                const selected = (reasonMap[order.id] || '') === reason
-                return (
-                  <button key={reason} onClick={() => { setReasonMap(r => ({ ...r, [order.id]: reason })); setReasonError(null) }}
-                    className={cn("px-2.5 py-1 rounded-full text-[10px] font-bold cursor-pointer transition-all border",
-                      selected ? "bg-primary text-primary-foreground border-primary" : "bg-secondary/60 text-muted-foreground border-transparent hover:text-foreground")}>
-                    {reason}
-                  </button>
-                )
-              })}
-            </div>
-
-            {reasonError && (
-              <p className="text-[11px] font-bold text-red-400">{reasonError}</p>
-            )}
-            <div className="flex gap-2">
-              <Button size="sm" variant="destructive" className="rounded-lg text-xs flex-1" onClick={() => confirmStatusWithReason(order.id, 'CANCELLED')}>إلغاء كامل</Button>
-              <Button size="sm" variant="outline" className="rounded-lg text-xs flex-1 border-yellow-500/30 text-yellow-400 hover:bg-yellow-500/10" onClick={() => confirmStatusWithReason(order.id, 'REFUNDED')}>استرداد جزئي</Button>
-              <Button size="sm" variant="ghost" className="rounded-lg text-xs" onClick={() => { setShowReasonFor(null); setReasonError(null) }}>رجوع</Button>
-            </div>
-          </div>
-        )}
-
         {/* Status controls — for COMPLETED orders */}
-        {!showReason && order.status === 'COMPLETED' && (
+        {order.status === 'COMPLETED' && (
           <div className="flex gap-2 pt-1">
-            <button onClick={() => { setShowReasonFor(order.id); setReasonError(null) }}
+            <button onClick={() => setVoidTarget(order)}
               className="flex-1 py-2 rounded-xl text-xs font-bold bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20 transition-all cursor-pointer">
               إلغاء / استرداد
             </button>
@@ -877,6 +818,14 @@ export function OrderHistory() {
         onConfirm={() => void handleDelete()}
         onCancel={() => { if (!deleting) setDeleteTarget(null) }}
       />
+
+      {voidTarget && (
+        <OrderVoidDialog
+          order={voidTarget}
+          onClose={() => setVoidTarget(null)}
+          onConfirm={handleVoidConfirm}
+        />
+      )}
     </div>
   )
 }

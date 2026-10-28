@@ -1520,18 +1520,25 @@ export function Reports() {
                   </div>
                 }>
                 <div className="divide-y divide-border -mx-4 -mb-4">
-                  {pageRows.map(o => (
+                  {pageRows.map(o => {
+                    const rows: any[] = o.items || []
+                    const units = rows.reduce((sum: number, item: any) => sum + (Number(item.quantity) || 0), 0)
+                    return (
                     <div key={o.id} className="px-4 py-3 flex items-center gap-3">
                       <div className="w-10 h-10 rounded-xl bg-secondary/60 flex items-center justify-center text-[9px] font-bold text-muted-foreground">
                         {PAY_ICONS[o.paymentType] || 'نقدي'}
                       </div>
-                      <div className="flex-1 min-w-0">
+                      <div
+                        className="flex-1 min-w-0"
+                        title={rows.map((item: any) => `${item.productName || 'منتج'} ×${item.quantity}`).join('، ')}
+                      >
                         <div className="flex items-center gap-2">
                           <span className="text-xs font-black">{o.id}</span>
                           {o.customerName && <span className="text-[10px] text-muted-foreground">{o.customerName}</span>}
                         </div>
                         <div className="text-[10px] text-muted-foreground font-medium mt-0.5">
                           {new Date(o.createdAt).toLocaleString('ar-EG', { dateStyle: 'short', timeStyle: 'short' })} · {o.orderType === 'delivery' ? 'توصيل' : o.orderType === 'takeaway' ? 'تيك أوي' : 'صالة'}
+                          {' · '}{rows.length} صنف · {units} قطعة
                         </div>
                       </div>
                       <span className={cn(
@@ -1544,7 +1551,8 @@ export function Reports() {
                       </span>
                       <span className="text-sm font-black w-20 text-left">{o.total.toFixed(0)} ج.م</span>
                     </div>
-                  ))}
+                    )
+                  })}
                   {pageRows.length === 0 && (
                     <div className="px-4 py-8 text-center text-xs text-muted-foreground">لا توجد معاملات بهذه الحالة</div>
                   )}
