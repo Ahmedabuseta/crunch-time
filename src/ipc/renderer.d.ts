@@ -122,6 +122,10 @@ export interface Customer {
   orderCount: number
   lastOrderAt: string | null
   createdAt: string
+  lastZoneId?: string | null
+  lastZoneName?: string | null
+  lastProfileId?: string | null
+  lastProfileName?: string | null
 }
 export interface DeliveryZone {
   id: string

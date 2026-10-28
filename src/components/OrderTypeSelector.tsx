@@ -1,10 +1,20 @@
 import { useState, useRef, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select'
 import { useCartStore } from '@/services/cart/cart.store'
 import { useCustomerStore } from '@/services/customer/customer.store'
 import { useDeliveryStore, useProfileStore } from '@/services/delivery/delivery.store'
 import { cn } from '@/lib/utils'
 import { Truck, UtensilsCrossed, ShoppingBag, MapPin, Phone, User, Clock, StickyNote, Hash } from 'lucide-react'
+import type { Customer } from '../ipc/renderer'
+
+interface DropdownPos {
+  top: number
+  left: number
+  width: number
+  up: boolean
+  maxH: number
+}
 
 export function OrderTypeSelector() {
   const orderType = useCartStore((s) => s.orderType)
@@ -33,7 +43,9 @@ export function OrderTypeSelector() {
   const clearSuggestions = useCustomerStore((s) => s.clearSuggestions)
 
   const [showSuggestions, setShowSuggestions] = useState(false)
+  const [pos, setPos] = useState<DropdownPos | null>(null)
   const phoneRef = useRef<HTMLDivElement>(null)
+  const portalRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => { fetchZones(); fetchProfiles() }, [])
   const activeZones = zones.filter((z) => z.active)
@@ -57,13 +69,57 @@ export function OrderTypeSelector() {
     }
   }
 
-  const handleSelect = (phone: string, name: string | null, address: string | null) => {
-    setDeliveryPhone(phone)
-    if (name) setCustomerName(name)
-    if (address) setDeliveryAddress(address)
+  const handleSelect = (c: Customer) => {
+    setDeliveryPhone(c.phone)
+    if (c.name) setCustomerName(c.name)
+    if (c.address) setDeliveryAddress(c.address)
+    if (c.lastZoneId && activeZones.some((z) => z.id === c.lastZoneId)) setDeliveryZoneId(c.lastZoneId)
+    if (c.lastProfileId && activeProfiles.some((p) => p.id === c.lastProfileId)) {
+      setDeliveryProfileId(c.lastProfileId)
+      setDeliveryProfileName(c.lastProfileName || activeProfiles.find((p) => p.id === c.lastProfileId)?.name || '')
+    }
     clearSuggestions()
     setShowSuggestions(false)
   }
+
+  // The delivery fields live inside a scroll area, so the suggestion list is
+  // rendered in a portal and positioned against the phone input — otherwise it
+  // gets clipped by the scroll container.
+  useEffect(() => {
+    if (!showSuggestions || suggestions.length === 0) { setPos(null); return }
+    const update = () => {
+      const r = phoneRef.current?.getBoundingClientRect()
+      if (!r) return
+      const below = window.innerHeight - r.bottom - 10
+      const above = r.top - 10
+      const up = below < Math.min(240, above) && above >= 8
+      const maxH = Math.min(300, Math.max(0, up ? above : below))
+      setPos({ top: up ? r.top - 6 : r.bottom + 6, left: r.left, width: Math.max(r.width, 260), up, maxH })
+    }
+    update()
+    window.addEventListener('resize', update)
+    window.addEventListener('scroll', update, true)
+    return () => {
+      window.removeEventListener('resize', update)
+      window.removeEventListener('scroll', update, true)
+    }
+  }, [showSuggestions, suggestions.length])
+
+  useEffect(() => {
+    if (!showSuggestions) return
+    const onDown = (e: MouseEvent) => {
+      const t = e.target as Node
+      if (phoneRef.current?.contains(t) || portalRef.current?.contains(t)) return
+      setShowSuggestions(false)
+    }
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setShowSuggestions(false) }
+    document.addEventListener('mousedown', onDown)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onDown)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [showSuggestions])
 
   const inputCls = "w-full pr-9 pl-3 py-2 rounded-lg bg-secondary/60 text-sm font-medium border-0 focus:ring-1 focus:ring-primary/30 focus:outline-none placeholder:text-muted-foreground"
   const iconCls = "absolute right-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground"
@@ -82,58 +138,18 @@ export function OrderTypeSelector() {
 
       {orderType === 'delivery' && (
         <div className="space-y-1.5 animate-slide-up">
-          {/* Delivery boy selector */}
-          {activeProfiles.length > 0 && (
-            <div className="relative">
-              <User className={iconCls} />
-              <Select value={deliveryProfileId} onValueChange={(id) => {
-                setDeliveryProfileId(id)
-                const p = activeProfiles.find(pr => pr.id === id)
-                if (p) setDeliveryProfileName(p.name)
-              }}>
-                <SelectTrigger className={cn(inputCls, !deliveryProfileId && "text-muted-foreground")}>
-                  <SelectValue placeholder="اختار الديلفري…" />
-                </SelectTrigger>
-                <SelectContent>
-                  {activeProfiles.map(p => (
-                    <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          )}
+          {/* Mobile number first: it searches saved customers and fills the rest. */}
+          <div className="relative" ref={phoneRef}>
+            <Phone className={iconCls} />
+            <input type="tel" placeholder="رقم الموبايل" value={deliveryPhone} onChange={e => handlePhoneChange(e.target.value)}
+              onFocus={() => { if (suggestions.length > 0) setShowSuggestions(true) }}
+              autoComplete="tel" inputMode="tel"
+              className={inputCls} dir="ltr" />
+          </div>
           <div className="relative">
             <User className={iconCls} />
             <input type="text" placeholder="اسم العميل" value={customerName} onChange={e => setCustomerName(e.target.value)} autoComplete="name"
               className={inputCls} dir="rtl" />
-          </div>
-          <div className="relative" ref={phoneRef}>
-            <Phone className={iconCls} />
-            <input type="tel" placeholder="رقم التليفون" value={deliveryPhone} onChange={e => handlePhoneChange(e.target.value)}
-              onFocus={() => { if (suggestions.length > 0) setShowSuggestions(true) }}
-              autoComplete="tel" inputMode="tel"
-              className={inputCls} dir="ltr" />
-            {showSuggestions && suggestions.length > 0 && (
-              <div className="absolute top-full mt-1 inset-x-0 bg-card border-2 rounded-xl shadow-lg z-50 overflow-hidden animate-slide-up">
-                {suggestions.map(c => (
-                  <button key={c.id} onPointerDown={(e) => { e.preventDefault(); handleSelect(c.phone, c.name, c.address) }}
-                    className="w-full text-right px-3 py-3 min-h-[52px] hover:bg-secondary cursor-pointer transition-colors flex items-center gap-3 border-b border-border/30 last:border-0">
-                    <div className="w-9 h-9 rounded-lg bg-secondary flex items-center justify-center shrink-0">
-                      <User className="h-4 w-4 text-muted-foreground" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-bold" dir="ltr">{c.phone}</p>
-                      {c.name && <p className="text-[11px] text-muted-foreground truncate">{c.name} · {c.address || ''}</p>}
-                    </div>
-                    {c.orderCount > 0 && (
-                      <span className="text-[10px] font-bold text-muted-foreground bg-secondary rounded-full px-2 py-1 flex items-center gap-1 shrink-0">
-                        <Clock className="h-3 w-3" />{c.orderCount}
-                      </span>
-                    )}
-                  </button>
-                ))}
-              </div>
-            )}
           </div>
           <div className="relative">
             <MapPin className={iconCls} />
@@ -161,6 +177,26 @@ export function OrderTypeSelector() {
               <span>التوصيل لـ {selectedZone.name}: {selectedZone.fee} ج.م</span>
             </div>
           )}
+          {/* Delivery boy selector */}
+          {activeProfiles.length > 0 && (
+            <div className="relative">
+              <User className={iconCls} />
+              <Select value={deliveryProfileId} onValueChange={(id) => {
+                setDeliveryProfileId(id)
+                const p = activeProfiles.find(pr => pr.id === id)
+                if (p) setDeliveryProfileName(p.name)
+              }}>
+                <SelectTrigger className={cn(inputCls, !deliveryProfileId && "text-muted-foreground")}>
+                  <SelectValue placeholder="اختار الديلفري…" />
+                </SelectTrigger>
+                <SelectContent>
+                  {activeProfiles.map(p => (
+                    <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
           <div className="relative">
             <StickyNote className={iconCls} />
             <input type="text" placeholder="ملاحظة للدليفري… (الاتصال قبل الوصول، الدور الثالث…)" value={deliveryNote} onChange={e => setDeliveryNote(e.target.value)}
@@ -185,6 +221,45 @@ export function OrderTypeSelector() {
         <div className="animate-slide-up text-xs text-muted-foreground text-center py-2">
           طلب تيك أوي — يتجهز ويتاخد
         </div>
+      )}
+
+      {showSuggestions && suggestions.length > 0 && pos && createPortal(
+        <div
+          ref={portalRef}
+          style={{ position: 'fixed', top: pos.top, left: pos.left, width: pos.width, zIndex: 100 }}
+          className={cn(
+            "bg-card border-2 rounded-2xl shadow-2xl overflow-hidden",
+            pos.up ? "-translate-y-full" : "animate-slide-up",
+          )}
+        >
+          <div style={{ maxHeight: pos.maxH }} className="overflow-y-auto p-1.5">
+            {suggestions.map(c => (
+              <button key={c.id} onPointerDown={(e) => { e.preventDefault(); handleSelect(c) }}
+                className="w-full text-right px-3 py-2.5 hover:bg-secondary rounded-xl cursor-pointer transition-colors flex items-center gap-3">
+                <div className="w-9 h-9 rounded-lg bg-secondary flex items-center justify-center shrink-0">
+                  <User className="h-4 w-4 text-muted-foreground" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-bold" dir="ltr">{c.phone}</p>
+                  <p className="text-[11px] text-muted-foreground truncate">
+                    {c.name || 'عميل'}{c.address ? ` · ${c.address}` : ''}
+                  </p>
+                  {c.lastZoneName && (
+                    <p className="text-[10px] text-blue-400 font-bold truncate">
+                      آخر توصيل: {c.lastZoneName}{c.lastProfileName ? ` · ${c.lastProfileName}` : ''}
+                    </p>
+                  )}
+                </div>
+                {c.orderCount > 0 && (
+                  <span className="text-[10px] font-bold text-muted-foreground bg-secondary rounded-full px-2 py-1 flex items-center gap-1 shrink-0">
+                    <Clock className="h-3 w-3" />{c.orderCount}
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
+        </div>,
+        document.body,
       )}
     </div>
   )
