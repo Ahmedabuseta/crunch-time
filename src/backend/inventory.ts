@@ -715,12 +715,15 @@ export function listTransactions(ingredientId: string, filters?: { type?: string
   const sameTsNewer = newerIds
     ? ((s.prepare(`SELECT COALESCE(SUM(quantity), 0) as t FROM inventory_transactions t ${where} AND t.created_at = (SELECT MIN(created_at) FROM inventory_transactions WHERE id IN (${newerIds})) AND t.id NOT IN (${newerIds})`).get(...params) as any).t || 0)
     : 0
+  // `running` starts as the balance AFTER the oldest row on this page, then
+  // walks forward in time by adding each following row's quantity. (The old
+  // code subtracted instead, so every balance after the oldest was wrong.)
   let running = r2(currentStock - newerTotal - sameTsNewer)
   const asc = [...rows].reverse()
-  const withBal = asc.map(r => {
-    const bal = running
-    running = r2(running - (Number(r.quantity) || 0))
-    return { ...r, quantity: Number(r.quantity) || 0, balance: bal }
+  const withBal = asc.map((r, index) => {
+    const qty = Number(r.quantity) || 0
+    if (index > 0) running = r2(running + qty)
+    return { ...r, quantity: qty, balance: running }
   })
   const movements = withBal.reverse()
   return { ingredient, currentStock, openingBalance: r2(currentStock - grandTotal), movements, total, page, pageSize, totalPages }

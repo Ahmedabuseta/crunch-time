@@ -212,4 +212,34 @@ describe('inventory package pricing', () => {
     expect(row.purchases).toBe(1)
     expect(row.qty).toBe(10)
   })
+
+  it('shows the running balance after each movement', async () => {
+    const sqlite = getSqlite()
+    // 1000 opening → -40 sale → -864 scale adjustment → +125 → +125 → -125.
+    sqlite.prepare(
+      `INSERT INTO ingredients (id, name, unit, stock_quantity, min_stock, cost_per_unit, purchase_qty, active)
+       VALUES ('ing-balance', 'مادة رصيد', 'g', 221, 0, 1, 1, 1)`,
+    ).run()
+    const ins = sqlite.prepare(
+      `INSERT INTO inventory_transactions (id, ingredient_id, type, quantity, note, created_at)
+       VALUES (?, 'ing-balance', ?, ?, NULL, ?)`,
+    )
+    ins.run('bal-1', 'CONSUMPTION', -40, '2026-01-01T10:00:00.000Z')
+    ins.run('bal-2', 'ADJUSTMENT', -864, '2026-01-02T10:00:00.000Z')
+    ins.run('bal-3', 'PURCHASE', 125, '2026-01-03T10:00:00.000Z')
+    ins.run('bal-4', 'PURCHASE', 125, '2026-01-04T10:00:00.000Z')
+    ins.run('bal-5', 'ADJUSTMENT', -125, '2026-01-05T10:00:00.000Z')
+
+    const ledger = await call('inventory:listTransactions', 'ing-balance', { page: 1, pageSize: 20 })
+    expect(ledger.openingBalance).toBe(1000)
+    expect(ledger.currentStock).toBe(221)
+    // Newest first: -125 → 221, +125 → 346, +125 → 221, -864 → 96, -40 → 960.
+    expect(ledger.movements.map((m: any) => [m.quantity, m.balance])).toEqual([
+      [-125, 221],
+      [125, 346],
+      [125, 221],
+      [-864, 96],
+      [-40, 960],
+    ])
+  })
 })
