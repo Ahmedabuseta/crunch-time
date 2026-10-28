@@ -575,7 +575,7 @@ export function registerIpcHandlers() {
     b.inventory.getPurchaseSavings()
   )
 
-  ipcMain.handle('inventory:restock', (_e, ingredientId: string, qty: number, note?: string, opts?: { unitCost?: number; packagePrice?: number; supplier?: string }) =>
+  ipcMain.handle('inventory:restock', (_e, ingredientId: string, qty: number, note?: string, opts?: { unitCost?: number; packagePrice?: number; totalPrice?: number; supplier?: string; byQuantity?: boolean }) =>
     b.inventory.restock(ingredientId, qty, note, opts)
   )
 

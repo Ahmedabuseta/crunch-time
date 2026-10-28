@@ -1265,9 +1265,24 @@ export const rendererApi = {
       return { ok: true }
     },
     getAlerts: () => T.ingredients.select(r => r.active && r.stockQuantity <= r.minStock),
-    restock: (ingredientId: string, qty: number, note?: string) => {
-      const ing = T.ingredients.get(r => r.id === ingredientId); if (ing) ing.stockQuantity += qty
-      T.inventoryTransactions.insert({ id: uuid(), ingredientId, type: 'PURCHASE', quantity: qty, note: note || 'إعادة تعبئة', createdAt: now() }); return { ok: true }
+    restock: (ingredientId: string, qty: number, note?: string, opts?: { packagePrice?: number; totalPrice?: number; supplier?: string; byQuantity?: boolean }) => {
+      const ing = T.ingredients.get(r => r.id === ingredientId)
+      if (!ing) return { ok: false }
+      const pack = Number(ing.purchaseQty) || 1
+      const amount = Math.abs(Number(qty) || 0)
+      const stockQty = opts?.byQuantity ? amount : amount * pack
+      const unitCost = opts?.byQuantity
+        ? (opts?.totalPrice != null && stockQty > 0 ? opts.totalPrice / stockQty : undefined)
+        : (opts?.packagePrice != null ? opts.packagePrice / pack : undefined)
+      ing.stockQuantity = Number(ing.stockQuantity || 0) + stockQty
+      if (!ing.supplier && opts?.supplier) ing.supplier = opts.supplier
+      T.inventoryTransactions.insert({
+        id: uuid(), ingredientId, type: 'PURCHASE', quantity: stockQty, unitCost,
+        supplier: opts?.supplier || null,
+        note: `${opts?.byQuantity ? `${stockQty} (كمية مباشرة)` : `${amount} عبوة × ${pack}`}${note ? ` — ${note}` : ''}`,
+        createdAt: now(),
+      })
+      return { ok: true }
     },
     deductForOrder: (orderId: string) => { deductInventory(orderId); return { ok: true } },
     listTransactions: (ingredientId: string, filters?: any) => {

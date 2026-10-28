@@ -249,7 +249,7 @@ contextBridge.exposeInMainWorld('api', {
     deleteRecipe: (id: string) => invoke('inventory:deleteRecipe', id),
     getAlerts: () => invoke('inventory:getAlerts'),
     getPurchaseSavings: () => invoke('inventory:getPurchaseSavings'),
-    restock: (ingredientId: string, qty: number, note?: string, opts?: { unitCost?: number; supplier?: string }) => invoke('inventory:restock', ingredientId, qty, note, opts),
+    restock: (ingredientId: string, qty: number, note?: string, opts?: { unitCost?: number; packagePrice?: number; totalPrice?: number; supplier?: string; byQuantity?: boolean }) => invoke('inventory:restock', ingredientId, qty, note, opts),
     deductForOrder: (orderId: string) => invoke('inventory:deductForOrder', orderId),
     listTransactions: (ingredientId: string, filters?: unknown) => invoke('inventory:listTransactions', ingredientId, filters),
     recordWaste: (ingredientId: string, qty: number, note?: string) => invoke('inventory:recordWaste', ingredientId, qty, note),

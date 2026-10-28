@@ -422,26 +422,38 @@ export function getPurchaseSavings() {
   return out
 }
 
-export function restock(ingredientId: string, qty: number, note?: string, opts?: { unitCost?: number; packagePrice?: number; supplier?: string }) {
+export function restock(
+  ingredientId: string,
+  qty: number,
+  note?: string,
+  opts?: { unitCost?: number; packagePrice?: number; totalPrice?: number; supplier?: string; byQuantity?: boolean },
+) {
   requireAdmin()
   const db = getDb()
   const supplier = opts?.supplier?.trim() || null
-  // The owner counts what they bought in PACKAGES (cartons, jars, bags),
-  // not in stock units. qty is the package count; the stock add and the
-  // ledger row are the real stock-unit amount (packages × pack size).
+  // Two ways to receive stock: the usual purchase PACKAGES (cartons, jars,
+  // bags — qty × pack size), or a direct quantity in the ingredient's own
+  // unit (e.g. 300 g of a loose item).
   const ing = db.select().from(ingredients).where(eq(ingredients.id, ingredientId)).get()
   const packQty = Number(ing?.purchaseQty) || 1
-  const packages = Math.abs(Number(qty) || 0)
-  const stockQty = packages * (packQty > 0 ? packQty : 1)
-  const unitCost = opts?.packagePrice != null
-    ? Number(opts.packagePrice) / (packQty > 0 ? packQty : 1)
-    : (opts?.unitCost != null ? Number(opts.unitCost) : null)
+  const byQuantity = Boolean(opts?.byQuantity)
+  const amount = Math.abs(Number(qty) || 0)
+  const stockQty = byQuantity ? amount : amount * (packQty > 0 ? packQty : 1)
+  const unitCost = byQuantity
+    ? (opts?.totalPrice != null && stockQty > 0
+        ? Number(opts.totalPrice) / stockQty
+        : (opts?.unitCost != null ? Number(opts.unitCost) : null))
+    : (opts?.packagePrice != null
+        ? Number(opts.packagePrice) / (packQty > 0 ? packQty : 1)
+        : (opts?.unitCost != null ? Number(opts.unitCost) : null))
   db.update(ingredients).set({ stockQuantity: sql`${ingredients.stockQuantity} + ${stockQty}` })
     .where(eq(ingredients.id, ingredientId)).run()
   db.insert(inventoryTransactions).values({
     id: uuid(), ingredientId, type: 'PURCHASE', quantity: stockQty,
     unitCost, supplier,
-    note: `${packages} ${packages === 1 ? 'عبوة' : 'عبوات'} × ${packQty}${note ? ` — ${note}` : ''}`,
+    note: byQuantity
+      ? `${r2(stockQty)} (كمية مباشرة)${note ? ` — ${note}` : ''}`
+      : `${amount} ${amount === 1 ? 'عبوة' : 'عبوات'} × ${packQty}${note ? ` — ${note}` : ''}`,
     createdAt: now(),
   }).run()
   if (ing && !ing.supplier && supplier) {

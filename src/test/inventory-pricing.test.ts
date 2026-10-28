@@ -154,4 +154,31 @@ describe('inventory package pricing', () => {
     const rows = await call('inventory:listIngredients') as any[]
     expect(rows.find(r => r.id === 'ing-pack').productCount).toBe(4)
   })
+
+  it('adds a direct quantity without multiplying by the package size', async () => {
+    const sqlite = getSqlite()
+    sqlite.prepare(
+      `INSERT INTO ingredients (id, name, unit, stock_quantity, min_stock, cost_per_unit, purchase_qty, active)
+       VALUES ('ing-direct', 'مادة مباشرة', 'g', 0, 0, 0.2, 1000, 1)`,
+    ).run()
+
+    // 300 g bought for 15 ج.م → 0.05 per gram, against a 0.2 standard.
+    const res = await call('inventory:restock', 'ing-direct', 300, 'شراء مباشر', {
+      byQuantity: true,
+      totalPrice: 15,
+      supplier: 'مورد مباشر',
+    })
+    expect(res.ok).toBe(true)
+    expect(res.ppv).toBe(-45)
+
+    const stock = sqlite.prepare("SELECT stock_quantity FROM ingredients WHERE id = 'ing-direct'").get() as any
+    expect(stock.stock_quantity).toBe(300)
+
+    const tx = sqlite.prepare(
+      "SELECT quantity, unit_cost, supplier FROM inventory_transactions WHERE ingredient_id = 'ing-direct' AND type = 'PURCHASE'",
+    ).get() as any
+    expect(tx.quantity).toBe(300)
+    expect(tx.unit_cost).toBe(0.05)
+    expect(tx.supplier).toBe('مورد مباشر')
+  })
 })

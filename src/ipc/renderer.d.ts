@@ -330,7 +330,7 @@ export interface ApiBridge {
     deleteRecipe: (id: string) => Promise<{ ok: boolean; error?: string }>
     getAlerts: () => Promise<any[]>
     getPurchaseSavings: () => Promise<Record<string, { name: string; standard: number; lastUnitCost: number | null; totalSaved: number }>>
-    restock: (ingredientId: string, qty: number, note?: string, opts?: { unitCost?: number; supplier?: string }) => Promise<{ ok: boolean; ppv?: number }>
+    restock: (ingredientId: string, qty: number, note?: string, opts?: { unitCost?: number; packagePrice?: number; totalPrice?: number; supplier?: string; byQuantity?: boolean }) => Promise<{ ok: boolean; ppv?: number }>
     deductForOrder: (orderId: string) => Promise<{ ok: boolean }>
     listTransactions: (ingredientId: string, filters?: { type?: string; from?: string; to?: string; page?: number; pageSize?: number }) => Promise<{ ingredient: any; currentStock: number; openingBalance: number; movements: any[]; total: number; page: number; pageSize: number; totalPages: number }>
     recordWaste: (ingredientId: string, qty: number, note?: string) => Promise<{ ok: boolean }>

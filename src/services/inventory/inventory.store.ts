@@ -12,7 +12,7 @@ interface InventoryStore {
   updateIngredient: (id: string, data: UpdateIngredientInput) => Promise<void>
   removeIngredient: (id: string, opts?: { hard?: boolean }) => Promise<void>
   setIngredientActive: (id: string, active: boolean) => Promise<void>
-  restock: (ingredientId: string, qty: number, note?: string, opts?: { unitCost?: number; supplier?: string }) => Promise<{ ok: boolean; ppv?: number }>
+  restock: (ingredientId: string, qty: number, note?: string, opts?: { unitCost?: number; packagePrice?: number; totalPrice?: number; supplier?: string; byQuantity?: boolean }) => Promise<{ ok: boolean; ppv?: number }>
   recordWaste: (ingredientId: string, qty: number, note?: string) => Promise<void>
   adjust: (ingredientId: string, delta: number, note?: string) => Promise<void>
   fetchLedger: (ingredientId: string, filters?: { type?: string; from?: string; to?: string; page?: number; pageSize?: number }) => Promise<InventoryLedger & { total: number; page: number; pageSize: number; totalPages: number }>
