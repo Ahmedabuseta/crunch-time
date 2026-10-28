@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { Calendar as CalendarIcon, ChevronRight, ChevronLeft, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -29,7 +30,9 @@ export function DatePicker({ value, onChange, placeholder = 'اختر التار
   const parsed = parseValue(value)
   const [viewY, setViewY] = useState(parsed.y)
   const [viewM, setViewM] = useState(parsed.m)
+  const [pos, setPos] = useState<{ top: number; left: number; up: boolean } | null>(null)
   const ref = useRef<HTMLDivElement>(null)
+  const portalRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     if (open) {
@@ -38,13 +41,45 @@ export function DatePicker({ value, onChange, placeholder = 'اختر التار
     }
   }, [open, value])
 
+  // The calendar lives in a portal: inside a modal or a scroll area an
+  // absolutely-positioned calendar gets clipped by the container.
+  useEffect(() => {
+    if (!open) { setPos(null); return }
+    const update = () => {
+      const r = ref.current?.getBoundingClientRect()
+      if (!r) return
+      const width = 300
+      const below = window.innerHeight - r.bottom - 10
+      const above = r.top - 10
+      const up = below < 360 && above >= 8
+      const left = Math.min(Math.max(8, r.right - width), window.innerWidth - width - 8)
+      setPos({ top: up ? r.top - 6 : r.bottom + 6, left, up })
+    }
+    update()
+    window.addEventListener('resize', update)
+    window.addEventListener('scroll', update, true)
+    return () => {
+      window.removeEventListener('resize', update)
+      window.removeEventListener('scroll', update, true)
+    }
+  }, [open])
+
   useEffect(() => {
     const close = (e: PointerEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+      const target = e.target as Node
+      if (ref.current?.contains(target) || portalRef.current?.contains(target)) return
+      setOpen(false)
     }
-    if (open) document.addEventListener('pointerdown', close)
-    return () => document.removeEventListener('pointerdown', close)
-  }, [open ])
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false) }
+    if (open) {
+      document.addEventListener('pointerdown', close)
+      document.addEventListener('keydown', onKey)
+    }
+    return () => {
+      document.removeEventListener('pointerdown', close)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [open])
 
   const firstDow = new Date(viewY, viewM, 1).getDay()
   const daysInMonth = new Date(viewY, viewM + 1, 0).getDate()
@@ -93,8 +128,13 @@ export function DatePicker({ value, onChange, placeholder = 'اختر التار
         )}
       </button>
 
-      {open && (
-        <div className="absolute top-full mt-2 right-0 z-50 w-[300px] bg-card border-2 border-border rounded-2xl shadow-2xl p-4 animate-scale-in" dir="rtl">
+      {open && pos && createPortal(
+        <div
+          ref={portalRef}
+          style={{ position: 'fixed', top: pos.top, left: pos.left, zIndex: 140 }}
+          className={cn("w-[300px] bg-card border-2 border-border rounded-2xl shadow-2xl p-4", pos.up ? "-translate-y-full" : "animate-scale-in")}
+          dir="rtl"
+        >
           {/* Month nav */}
           <div className="flex items-center justify-between mb-3">
             <button type="button" onClick={prevMonth} className="w-10 h-10 flex items-center justify-center rounded-xl hover:bg-secondary cursor-pointer transition-colors">
@@ -151,7 +191,8 @@ export function DatePicker({ value, onChange, placeholder = 'اختر التار
           >
             اليوم
           </button>
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   )

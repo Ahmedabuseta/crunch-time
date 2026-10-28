@@ -70,7 +70,7 @@ export function Toaster() {
   const toasts = useToastStore((s) => s.toasts)
   const dismiss = useToastStore((s) => s.dismiss)
   return (
-    <div className="fixed top-4 inset-x-0 z-[100] flex flex-col items-center gap-2 px-4 pointer-events-none">
+    <div className="fixed top-4 inset-x-0 z-[160] flex flex-col items-center gap-2 px-4 pointer-events-none">
       {toasts.map((t) => <ToastCard key={t.id} item={t} onClose={() => dismiss(t.id)} />)}
     </div>
   )

@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { cn } from '@/lib/utils'
 
 const EMOJI_CATEGORIES: { label: string; emojis: string[] }[] = [
@@ -41,14 +42,46 @@ interface EmojiPickerProps {
 export function EmojiPicker({ value, onChange, className }: EmojiPickerProps) {
   const [open, setOpen] = useState(false)
   const [activeCategory, setActiveCategory] = useState(0)
+  const [pos, setPos] = useState<{ top: number; left: number; up: boolean } | null>(null)
   const ref = useRef<HTMLDivElement>(null)
+  const portalRef = useRef<HTMLDivElement>(null)
+
+  // Portal the grid like the other popovers: inside a modal/scroll area an
+  // absolutely-positioned picker gets clipped by the container.
+  useEffect(() => {
+    if (!open) { setPos(null); return }
+    const update = () => {
+      const r = ref.current?.getBoundingClientRect()
+      if (!r) return
+      const width = 320
+      const below = window.innerHeight - r.bottom - 10
+      const above = r.top - 10
+      const up = below < 300 && above >= 8
+      const left = Math.min(Math.max(8, r.right - width), window.innerWidth - width - 8)
+      setPos({ top: up ? r.top - 6 : r.bottom + 6, left, up })
+    }
+    update()
+    window.addEventListener('resize', update)
+    window.addEventListener('scroll', update, true)
+    return () => {
+      window.removeEventListener('resize', update)
+      window.removeEventListener('scroll', update, true)
+    }
+  }, [open])
 
   useEffect(() => {
     const handle = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+      const target = e.target as Node
+      if (ref.current?.contains(target) || portalRef.current?.contains(target)) return
+      setOpen(false)
     }
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false) }
     document.addEventListener('mousedown', handle)
-    return () => document.removeEventListener('mousedown', handle)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', handle)
+      document.removeEventListener('keydown', onKey)
+    }
   }, [])
 
   return (
@@ -61,8 +94,12 @@ export function EmojiPicker({ value, onChange, className }: EmojiPickerProps) {
         {value || 'اختر ايموجي'}
       </button>
 
-      {open && (
-        <div className="absolute z-50 top-full mt-2 right-0 w-[320px] bg-card border-2 rounded-2xl shadow-xl overflow-hidden animate-slide-up">
+      {open && pos && createPortal(
+        <div
+          ref={portalRef}
+          style={{ position: 'fixed', top: pos.top, left: pos.left, zIndex: 140 }}
+          className={cn("w-[320px] bg-card border-2 rounded-2xl shadow-xl overflow-hidden", pos.up ? "-translate-y-full" : "animate-slide-up")}
+        >
           {/* Category tabs */}
           <div className="flex overflow-x-auto border-b px-2 pt-2 gap-1">
             {EMOJI_CATEGORIES.map((cat, i) => (
@@ -96,7 +133,8 @@ export function EmojiPicker({ value, onChange, className }: EmojiPickerProps) {
               </button>
             ))}
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   )

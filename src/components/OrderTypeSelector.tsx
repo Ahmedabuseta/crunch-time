@@ -226,7 +226,7 @@ export function OrderTypeSelector() {
       {showSuggestions && suggestions.length > 0 && pos && createPortal(
         <div
           ref={portalRef}
-          style={{ position: 'fixed', top: pos.top, left: pos.left, width: pos.width, zIndex: 100 }}
+          style={{ position: 'fixed', top: pos.top, left: pos.left, width: pos.width, zIndex: 130 }}
           className={cn(
             "bg-card border-2 rounded-2xl shadow-2xl overflow-hidden",
             pos.up ? "-translate-y-full" : "animate-slide-up",
