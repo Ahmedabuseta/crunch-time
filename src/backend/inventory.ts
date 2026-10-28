@@ -459,15 +459,13 @@ export function restock(
   if (ing && !ing.supplier && supplier) {
     db.update(ingredients).set({ supplier }).where(eq(ingredients.id, ingredientId)).run()
   }
-  // Always record a price-history row so the purchase price variance report
-  // reflects every purchase. Falls back to the ingredient's current cost.
+  // Every restock is a purchase record, even before the owner knows the
+  // price (unit cost 0) — the purchase count and spend report must see it.
   const effectiveUnitCost = unitCost != null ? unitCost : (ing?.costPerUnit || 0)
-  if (effectiveUnitCost > 0) {
-    db.insert(purchasePriceHistory).values({
-      id: uuid(), ingredientId, supplier: supplier || ing?.supplier || null, unitCost: effectiveUnitCost, quantity: stockQty,
-      purchasedAt: now().slice(0, 10), createdAt: now(),
-    }).run()
-  }
+  db.insert(purchasePriceHistory).values({
+    id: uuid(), ingredientId, supplier: supplier || ing?.supplier || null, unitCost: effectiveUnitCost, quantity: stockQty,
+    purchasedAt: now().slice(0, 10), createdAt: now(),
+  }).run()
   if (unitCost != null) {
     const baseline = ing && ing.plannedCost > 0 ? ing.plannedCost : ing?.costPerUnit || 0
     const ppv = baseline > 0 ? (unitCost - baseline) * stockQty : 0
@@ -700,6 +698,7 @@ export function listTransactions(ingredientId: string, filters?: { type?: string
   const offset = (page - 1) * pageSize
   const rows = s.prepare(`
     SELECT t.id, t.ingredient_id AS ingredientId, t.type, t.quantity,
+           t.unit_cost AS unitCost, t.supplier,
            t.reference_order_id AS referenceOrderId, t.note, t.created_at AS createdAt
     FROM inventory_transactions t
     ${where}

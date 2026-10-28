@@ -61,6 +61,8 @@ export interface InventoryTransaction {
   ingredientId: string
   type: 'PURCHASE' | 'CONSUMPTION' | 'ADJUSTMENT' | 'WASTE'
   quantity: number
+  unitCost?: number | null
+  supplier?: string | null
   referenceOrderId: string | null
   note: string | null
   createdAt: string

@@ -64,6 +64,14 @@ describe('inventory package pricing', () => {
     ).get() as any
     expect(history).toBeTruthy()
     expect(Math.round((history.unit_cost as number) * 1000) / 1000).toBe(0.1)
+
+    // The ledger row must carry the purchase price and supplier so the
+    // movement reads as a purchase, not just a stock bump.
+    const ledger = await call('inventory:listTransactions', 'ing-pack', { page: 1, pageSize: 20 })
+    const purchaseMove = ledger.movements.find((m: any) => m.type === 'PURCHASE')
+    expect(purchaseMove).toBeTruthy()
+    expect(Math.round(purchaseMove.unitCost * 1000) / 1000).toBe(0.1)
+    expect(purchaseMove.supplier).toBe('مورد')
   })
 
   it('recomputes product costs immediately when an ingredient cost changes', async () => {
@@ -180,5 +188,28 @@ describe('inventory package pricing', () => {
     expect(tx.quantity).toBe(300)
     expect(tx.unit_cost).toBe(0.05)
     expect(tx.supplier).toBe('مورد مباشر')
+  })
+
+  it('records a purchase even when no price is known yet', async () => {
+    const sqlite = getSqlite()
+    sqlite.prepare(
+      `INSERT INTO ingredients (id, name, unit, stock_quantity, min_stock, cost_per_unit, purchase_qty, active)
+       VALUES ('ing-noprice', 'مادة بدون سعر', 'g', 0, 0, 0, 1, 1)`,
+    ).run()
+
+    await call('inventory:restock', 'ing-noprice', 10)
+
+    const history = sqlite.prepare(
+      "SELECT unit_cost, quantity FROM purchase_price_history WHERE ingredient_id = 'ing-noprice'",
+    ).get() as any
+    expect(history).toBeTruthy()
+    expect(history.unit_cost).toBe(0)
+    expect(history.quantity).toBe(10)
+
+    const report = await call('report:purchasePriceVariance')
+    const row = report.rows.find((r: any) => r.ingredientId === 'ing-noprice')
+    expect(row).toBeTruthy()
+    expect(row.purchases).toBe(1)
+    expect(row.qty).toBe(10)
   })
 })

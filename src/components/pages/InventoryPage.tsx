@@ -784,6 +784,13 @@ export function InventoryPage() {
                           <div className="min-w-0">
                             <span className={cn("inline-block px-2 py-0.5 rounded-full text-[10px] font-bold", meta.cls)}>{meta.label}</span>
                             {m.note && <p className="text-[10px] text-muted-foreground truncate mt-0.5">{m.note}</p>}
+                            {m.type === 'PURCHASE' && (
+                              <p className="text-[10px] text-muted-foreground truncate mt-0.5">
+                                {m.supplier ? `${m.supplier} · ` : ''}
+                                تكلفة الشراء: <b className="text-foreground">{fmtMoney((Number(m.unitCost) || 0) * Math.abs(m.quantity))} ج.م</b>
+                                {Number(m.unitCost) > 0 ? ` (${fmtMoney(Number(m.unitCost))} ج.م/${unitLabel[ledger.ingredient?.unit || ''] || ''})` : ''}
+                              </p>
+                            )}
                             {m.referenceOrderId && <p className="text-[10px] text-primary font-bold truncate mt-0.5">طلب {m.referenceOrderId}</p>}
                           </div>
                           <span className={cn("text-xs font-black text-center", pos ? "text-green-600" : m.quantity < 0 ? "text-red-600" : "text-muted-foreground")}>
