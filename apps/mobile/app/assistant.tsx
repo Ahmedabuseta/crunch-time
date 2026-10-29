@@ -8,6 +8,7 @@ import { Text } from '@/components/ui/text';
 import { View } from '@/components/ui/view';
 import { useAssistantChat } from '@/hooks/useAssistantChat';
 import { useColor } from '@/hooks/useColor';
+import { useKeyboardHeight } from '@/hooks/useKeyboardHeight';
 import { ChevronLeft, Settings, Sparkles, Square, Trash2 } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import React, { useCallback, useRef, useState } from 'react';
@@ -29,6 +30,7 @@ const INPUT_MAX_HEIGHT = 4 * 20 + 20;
 export default function AssistantScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { isKeyboardVisible } = useKeyboardHeight();
   const {
     messages,
     streaming,
@@ -162,12 +164,17 @@ export default function AssistantScreen() {
         </Text>
       ) : null}
 
-      {/* No tab bar on this screen, so the composer only has to clear the home
-          indicator. */}
+      {/* The home-indicator inset only applies while the keyboard is down — once
+          it is up, the keyboard covers that strip, so adding the inset again
+          would float the composer above the keys. */}
       <View
         style={[
           styles.composer,
-          { borderTopColor: border, backgroundColor: background, paddingBottom: insets.bottom + 10 },
+          {
+            borderTopColor: border,
+            backgroundColor: background,
+            paddingBottom: (isKeyboardVisible ? 0 : insets.bottom) + 10,
+          },
         ]}
       >
         <View style={styles.composerRow}>

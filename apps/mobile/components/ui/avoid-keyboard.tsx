@@ -1,5 +1,6 @@
 import { useKeyboardHeight } from '@/hooks/useKeyboardHeight';
 import { useEffect } from 'react';
+import { Platform } from 'react-native';
 import Animated, {
   Easing,
   useAnimatedStyle,
@@ -13,6 +14,15 @@ type Props = { offset?: number; duration?: number };
 export const AvoidKeyboard = ({ offset = 0, duration = 0 }: Props) => {
   const { keyboardHeight, isKeyboardVisible, keyboardAnimationDuration } =
     useKeyboardHeight();
+
+  /**
+   * Android resizes the window itself (`softwareKeyboardLayoutMode: "resize"`,
+   * Expo's default), so the layout is already above the keyboard. Adding the
+   * measured height on top of that moves the content twice, which is what put
+   * the composer halfway up the screen. iOS never resizes the window, so it
+   * still needs the spacer.
+   */
+  const needsSpacer = Platform.OS === 'ios';
   const reduceMotion = useReducedMotion();
 
   // Shared value for the keyboard padding animation
@@ -21,7 +31,7 @@ export const AvoidKeyboard = ({ offset = 0, duration = 0 }: Props) => {
   // Update the shared value when keyboard height changes
   useEffect(() => {
     // Only add offset when keyboard is visible
-    const targetHeight = isKeyboardVisible ? keyboardHeight + offset : 0;
+    const targetHeight = isKeyboardVisible && needsSpacer ? keyboardHeight + offset : 0;
 
     if (reduceMotion) {
       keyboardValue.value = targetHeight;
@@ -41,6 +51,7 @@ export const AvoidKeyboard = ({ offset = 0, duration = 0 }: Props) => {
     keyboardHeight,
     keyboardAnimationDuration,
     isKeyboardVisible,
+    needsSpacer,
     offset,
     duration,
     reduceMotion,
