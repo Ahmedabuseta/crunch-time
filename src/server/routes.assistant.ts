@@ -18,6 +18,7 @@ import { cancelAction, executeAction, getAction } from '../ai/actions'
 import { closeTurn, subscribe, type TurnEvent } from '../ai/streams'
 import { ensureRuntime, getClient, runtimeStatus, TASK_QUEUE } from '../ai/runtime'
 import { createRateLimiter } from './ratelimit'
+import { synthesize, transcribe } from '../ai/voice'
 
 // A single owner tapping a suggestion chip a few times is normal; a script is
 // not. 20 turns a minute is well above human speed.
@@ -95,6 +96,42 @@ export function registerAssistantRoutes(app: FastifyInstance, backend: Backend) 
       return { ok: true, model: config.model, latencyMs: Date.now() - started }
     } catch (err: any) {
       return { ok: false, error: providerMessage(err) }
+    }
+  })
+
+  // ─── Voice ──────────────────────────────────────────────────
+  // Audio travels as base64 inside JSON rather than multipart: the existing
+  // 2 MB body limit already covers a phone recording, and it keeps the server
+  // free of a multipart parser.
+  app.post('/assistant/transcribe', async (req, reply) => {
+    const body = (req.body || {}) as { audio?: string; mime?: string }
+    const encoded = String(body.audio ?? '')
+    if (!encoded) return reply.code(400).send({ ok: false, error: 'مفيش تسجيل' })
+
+    let audio: Buffer
+    try {
+      audio = Buffer.from(encoded, 'base64')
+    } catch {
+      return reply.code(400).send({ ok: false, error: 'التسجيل تالف' })
+    }
+
+    try {
+      const text = await transcribe(audio, body.mime ? String(body.mime) : undefined)
+      return { ok: true, text }
+    } catch (err: any) {
+      return reply.code(voiceStatus(err)).send({ ok: false, code: err?.code, error: err?.message })
+    }
+  })
+
+  // Returns the audio itself, so the phone can play it straight from the URL
+  // without a second decode step.
+  app.post('/assistant/speech', async (req, reply) => {
+    const text = String((req.body as Record<string, unknown>)?.text ?? '')
+    try {
+      const { audio, mime } = await synthesize(text)
+      return reply.header('content-type', mime).header('cache-control', 'no-store').send(audio)
+    } catch (err: any) {
+      return reply.code(voiceStatus(err)).send({ ok: false, code: err?.code, error: err?.message })
     }
   })
 
@@ -320,6 +357,25 @@ export function registerAssistantRoutes(app: FastifyInstance, backend: Backend) 
       searchAttributes: { ThreadId: [thread] },
     })
     return (await handle.result()) as TurnMessage
+  }
+}
+
+/**
+ * Maps a voice failure to an HTTP status.
+ *
+ * Deliberately never 401: the phone treats 401 as "your session expired" and
+ * bounces to the setup screen, so a bad provider key would log the owner out of
+ * their own app. A rejected key is a 400 with the reason on it.
+ */
+function voiceStatus(err: any): number {
+  switch (err?.code) {
+    case 'rate_limited':
+      return 429
+    case 'network':
+    case 'provider_error':
+      return 502
+    default:
+      return 400
   }
 }
 
