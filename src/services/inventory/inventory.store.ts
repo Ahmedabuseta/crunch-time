@@ -15,6 +15,7 @@ interface InventoryStore {
   restock: (ingredientId: string, qty: number, note?: string, opts?: { unitCost?: number; packagePrice?: number; totalPrice?: number; supplier?: string; byQuantity?: boolean }) => Promise<{ ok: boolean; ppv?: number }>
   recordWaste: (ingredientId: string, qty: number, note?: string) => Promise<void>
   adjust: (ingredientId: string, delta: number, note?: string) => Promise<void>
+  exchange: (input: { fromIngredientId: string; fromPackages: number; toIngredientId: string; toPackages: number; packagePrice?: number; supplier?: string; note?: string }) => Promise<{ ok: boolean; ppv?: number; error?: string }>
   fetchLedger: (ingredientId: string, filters?: { type?: string; from?: string; to?: string; page?: number; pageSize?: number }) => Promise<InventoryLedger & { total: number; page: number; pageSize: number; totalPages: number }>
   fetchConsumption: (from?: string, to?: string) => Promise<ConsumptionSummary>
   fetchRecipes: (productId: string) => Promise<Recipe[]>
@@ -90,6 +91,13 @@ restock: async (ingredientId, qty, note?, opts?) => {
     await window.api.inventory.adjust(ingredientId, delta, note)
     await get().fetchIngredients()
     await get().fetchAlerts()
+  },
+
+  exchange: async (input) => {
+    const result = await window.api.inventory.exchange(input) as { ok: boolean; ppv?: number; error?: string }
+    await get().fetchIngredients()
+    await get().fetchAlerts()
+    return result
   },
 
   fetchLedger: async (ingredientId, filters?) => {

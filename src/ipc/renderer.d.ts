@@ -339,6 +339,7 @@ export interface ApiBridge {
     listTransactions: (ingredientId: string, filters?: { type?: string; from?: string; to?: string; page?: number; pageSize?: number }) => Promise<{ ingredient: any; currentStock: number; openingBalance: number; movements: any[]; total: number; page: number; pageSize: number; totalPages: number }>
     recordWaste: (ingredientId: string, qty: number, note?: string) => Promise<{ ok: boolean }>
     adjust: (ingredientId: string, delta: number, note?: string) => Promise<{ ok: boolean }>
+    exchange: (input: { fromIngredientId: string; fromPackages: number; toIngredientId: string; toPackages: number; packagePrice?: number; supplier?: string; note?: string }) => Promise<{ ok: boolean; ppv?: number; error?: string }>
   }
   report: {
     dailySummary: (date?: string) => Promise<any>

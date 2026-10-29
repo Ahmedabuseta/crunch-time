@@ -199,7 +199,7 @@ export const recipes = sqliteTable('recipes', {
 export const inventoryTransactions = sqliteTable('inventory_transactions', {
   id: text('id').primaryKey(),
   ingredientId: text('ingredient_id').notNull().references(() => ingredients.id),
-  type: text('type').notNull(), // 'PURCHASE' | 'CONSUMPTION' | 'ADJUSTMENT' | 'WASTE'
+  type: text('type').notNull(), // 'PURCHASE' | 'CONSUMPTION' | 'ADJUSTMENT' | 'WASTE' | 'RETURN'
   quantity: real('quantity').notNull(),
   unitCost: real('unit_cost'),
   supplier: text('supplier'),

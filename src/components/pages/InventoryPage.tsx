@@ -5,7 +5,7 @@ import { useInventoryStore } from '@/services/inventory/inventory.store'
 import type { InventoryLedger } from '@/services/inventory/inventory.types'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { Plus, Package, AlertTriangle, Pencil, X, History, TrendingDown, TrendingUp, ShieldAlert, Power, PowerOff, Trash2, HelpCircle } from 'lucide-react'
+import { Plus, Package, AlertTriangle, Pencil, X, History, TrendingDown, TrendingUp, ShieldAlert, Power, PowerOff, Trash2, HelpCircle, Repeat } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { monthStart, today } from '@/lib/dates'
 import { fmtMoney } from '@/lib/format'
@@ -21,6 +21,7 @@ import { SubRecipesSection } from './SubRecipesSection'
 import { ConsumptionSection } from './ConsumptionSection'
 import { IngredientDialog } from './IngredientDialog'
 import { RestockDialog } from './RestockDialog'
+import { ExchangeDialog } from './ExchangeDialog'
 import { InventoryHelpDialog } from './InventoryHelpDialog'
 import { Emoji } from '@/components/Emoji'
 import {
@@ -62,6 +63,7 @@ const typeMeta: Record<string, { label: string; cls: string }> = {
   CONSUMPTION: { label: 'بيع', cls: 'bg-red-500/10 text-red-600' },
   WASTE: { label: 'تالف', cls: 'bg-amber-500/10 text-amber-600' },
   ADJUSTMENT: { label: 'تسوية', cls: 'bg-blue-500/10 text-blue-600' },
+  RETURN: { label: 'إرجاع', cls: 'bg-orange-500/10 text-orange-600' },
 }
 
 export function InventoryPage() {
@@ -78,6 +80,7 @@ export function InventoryPage() {
   const [invTab, setInvTab] = useState<'ingredients' | 'consumption' | 'sub-recipes'>('ingredients')
   const [ingDialog, setIngDialog] = useState<{ ingredient: any | null } | null>(null)
   const [restockTarget, setRestockTarget] = useState<any | null>(null)
+  const [exchangeTarget, setExchangeTarget] = useState<any | null>(null)
   const [helpOpen, setHelpOpen] = useState(false)
   const [view, setView] = useState<ViewMode>('table')
   const [statusFilter, setStatusFilter] = useState<'low' | 'high' | 'ok' | 'noCost' | 'unused' | 'inactive' | null>(null)
@@ -323,6 +326,15 @@ export function InventoryPage() {
           {ing.active && (
             <Button variant="outline" className="rounded-xl h-11 px-3 text-xs font-bold gap-1.5" onClick={() => setRestockTarget(ing)}>
               <Plus className="h-4 w-4" /> تعبئة
+            </Button>
+          )}
+          {ing.active && ing.unit === 'g' && (
+            <Button
+              variant="outline"
+              className="rounded-xl h-11 px-3 text-xs font-bold gap-1.5 border-orange-400/40 hover:bg-orange-500/10"
+              onClick={() => setExchangeTarget(ing)}
+            >
+              <Repeat className="h-4 w-4" /> مبادلة
             </Button>
           )}
           <Button
@@ -600,6 +612,15 @@ export function InventoryPage() {
                         <Plus className="h-4 w-4" /> تعبئة
                       </Button>
                     )}
+                    {ing.active && ing.unit === 'g' && (
+                      <Button
+                        variant="outline"
+                        className="rounded-xl h-11 px-3 text-xs font-bold gap-1.5 border-orange-400/40 hover:bg-orange-500/10"
+                        onClick={() => setExchangeTarget(ing)}
+                      >
+                        <Repeat className="h-4 w-4" /> مبادلة
+                      </Button>
+                    )}
                     <Button
                       variant="ghost"
                       size="touchIcon"
@@ -650,6 +671,14 @@ export function InventoryPage() {
           ingredient={restockTarget}
           onClose={() => setRestockTarget(null)}
           onDone={({ name, ppv }) => { if (ppv != null) setLastPpv({ name, ppv }) }}
+        />
+      )}
+
+      {exchangeTarget && (
+        <ExchangeDialog
+          ingredient={exchangeTarget}
+          onClose={() => setExchangeTarget(null)}
+          onDone={() => setExchangeTarget(null)}
         />
       )}
 
@@ -739,7 +768,7 @@ export function InventoryPage() {
               {/* Type + date filters */}
               <div className="flex flex-wrap items-center gap-2">
                 <div className="flex gap-1.5">
-                  {[{ value: null, label: 'الكل' }, { value: 'PURCHASE', label: 'شراء' }, { value: 'CONSUMPTION', label: 'بيع' }, { value: 'WASTE', label: 'تالف' }, { value: 'ADJUSTMENT', label: 'تسوية' }].map(f => (
+                  {[{ value: null, label: 'الكل' }, { value: 'PURCHASE', label: 'شراء' }, { value: 'CONSUMPTION', label: 'بيع' }, { value: 'RETURN', label: 'إرجاع' }, { value: 'WASTE', label: 'تالف' }, { value: 'ADJUSTMENT', label: 'تسوية' }].map(f => (
                     <button key={f.label} onClick={() => { setMovTypeFilter(f.value); setMovPage(1); if (movesFor) loadLedger(movesFor, 1, f.value, movFrom, movTo) }}
                       className={cn("h-9 px-3 rounded-full text-[11px] font-bold cursor-pointer transition-all border",
                         movTypeFilter === f.value ? "bg-primary text-primary-foreground border-primary" : "bg-secondary/60 text-muted-foreground border-transparent hover:text-foreground")}>
@@ -789,6 +818,11 @@ export function InventoryPage() {
                                 {m.supplier ? `${m.supplier} · ` : ''}
                                 تكلفة الشراء: <b className="text-foreground">{fmtMoney((Number(m.unitCost) || 0) * Math.abs(m.quantity))} ج.م</b>
                                 {Number(m.unitCost) > 0 ? ` (${fmtMoney(Number(m.unitCost))} ج.م/${unitLabel[ledger.ingredient?.unit || ''] || ''})` : ''}
+                              </p>
+                            )}
+                            {m.type === 'RETURN' && (
+                              <p className="text-[10px] text-muted-foreground truncate mt-0.5">
+                                قيمة المرتجع: <b className="text-foreground">{fmtMoney((Number(m.unitCost) || 0) * Math.abs(m.quantity))} ج.م</b>
                               </p>
                             )}
                             {m.referenceOrderId && <p className="text-[10px] text-primary font-bold truncate mt-0.5">طلب {m.referenceOrderId}</p>}

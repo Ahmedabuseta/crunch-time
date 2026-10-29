@@ -591,6 +591,11 @@ export function registerIpcHandlers() {
     b.inventory.adjust(ingredientId, delta, note)
   )
 
+  ipcMain.handle('inventory:exchange', (_e, input: {
+    fromIngredientId: string; fromPackages: number; toIngredientId: string; toPackages: number;
+    packagePrice?: number; supplier?: string; note?: string
+  }) => b.inventory.exchange(input))
+
   ipcMain.handle('inventory:deductForOrder', (_e, orderId: string) =>
     b.inventory.deductForOrder(orderId)
   )

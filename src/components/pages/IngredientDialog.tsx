@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select'
 import { toast } from '@/components/ui/toast'
 import { useInventoryStore } from '@/services/inventory/inventory.store'
-import { fmtMoney } from '@/lib/format'
+import { fmtMoney, roundMoney } from '@/lib/format'
 import {
   INVENTORY_CATEGORIES,
   STORAGE_OPTIONS,
@@ -72,7 +72,7 @@ export function IngredientDialog({
   const [purchaseQty, setPurchaseQty] = useState(String(Number(ingredient?.purchaseQty) || (unit === 'g' ? 1000 : 1)))
   const [packagePrice, setPackagePrice] = useState(() => {
     const pack = Number(ingredient?.purchaseQty) || 1
-    return ingredient ? String((Number(ingredient.costPerUnit) || 0) * pack) : ''
+    return ingredient ? String(roundMoney((Number(ingredient.costPerUnit) || 0) * pack)) : ''
   })
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -80,11 +80,15 @@ export function IngredientDialog({
   const qty = parseFloat(stockQuantity) || 0
   const min = parseFloat(minStock) || 0
   const pack = parseFloat(purchaseQty) || 1
-  const unitCost = (parseFloat(packagePrice) || 0) / (pack || 1)
+  const packagePriceNum = parseFloat(packagePrice) || 0
+  // Money never carries more than two decimals — the same value is stored and
+  // shown, so no 0.14333333333333334 can leak into an input or a total.
+  const unitCost = roundMoney(packagePriceNum / (pack || 1))
 
   const save = async () => {
     if (!name.trim()) { setError('اسم المادة مطلوب'); return }
     if (pack <= 0) { setError('حجم العبوة لازم يكون أكبر من صفر'); return }
+    if (packagePriceNum < 0) { setError('سعر العبوة لا يقل عن صفر'); return }
     if (!isEdit && qty < 0) { setError('الكمية الحالية لا تقل عن صفر'); return }
     if (min < 0) { setError('الحد الأدنى لا يقل عن صفر'); return }
     setError(null)
@@ -232,9 +236,11 @@ export function IngredientDialog({
           <Field label="سعر العبوة" optional hint="السعر كما هو مكتوب على الفاتورة — تُحسب منه تكلفة الوحدة">
             <input
               type="number"
+              step="0.01"
               inputMode="decimal"
               value={packagePrice}
               onChange={(e) => setPackagePrice(e.target.value)}
+              onBlur={() => setPackagePrice((v) => (v ? String(roundMoney(parseFloat(v) || 0)) : v))}
               placeholder="0.00"
               className={inputClass}
             />

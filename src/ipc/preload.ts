@@ -254,6 +254,7 @@ contextBridge.exposeInMainWorld('api', {
     listTransactions: (ingredientId: string, filters?: unknown) => invoke('inventory:listTransactions', ingredientId, filters),
     recordWaste: (ingredientId: string, qty: number, note?: string) => invoke('inventory:recordWaste', ingredientId, qty, note),
     adjust: (ingredientId: string, delta: number, note?: string) => invoke('inventory:adjust', ingredientId, delta, note),
+    exchange: (input: { fromIngredientId: string; fromPackages: number; toIngredientId: string; toPackages: number; packagePrice?: number; supplier?: string; note?: string }) => invoke('inventory:exchange', input),
   },
 
   // ─── Reports ──────────────────────────────────────────────

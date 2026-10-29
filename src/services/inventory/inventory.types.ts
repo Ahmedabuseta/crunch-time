@@ -59,7 +59,7 @@ export interface Recipe {
 export interface InventoryTransaction {
   id: string
   ingredientId: string
-  type: 'PURCHASE' | 'CONSUMPTION' | 'ADJUSTMENT' | 'WASTE'
+  type: 'PURCHASE' | 'CONSUMPTION' | 'ADJUSTMENT' | 'WASTE' | 'RETURN'
   quantity: number
   unitCost?: number | null
   supplier?: string | null

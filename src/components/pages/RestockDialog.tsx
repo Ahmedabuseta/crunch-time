@@ -4,7 +4,7 @@ import { ArrowDownToLine, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { toast } from '@/components/ui/toast'
 import { useInventoryStore } from '@/services/inventory/inventory.store'
-import { fmtMoney } from '@/lib/format'
+import { fmtMoney, roundMoney } from '@/lib/format'
 import { cn } from '@/lib/utils'
 
 const unitLabel: Record<string, string> = { g: 'جرام', kg: 'كيلو', ml: 'مليلتر', l: 'لتر', pcs: 'قطعة' }
@@ -160,9 +160,11 @@ export function RestockDialog({
                 <Field label="سعر العبوة" optional hint="اختياري — يُستخدم لمقارنة سعر الشراء بالتكلفة القياسية">
                   <input
                     type="number"
+                    step="0.01"
                     inputMode="decimal"
                     value={price}
                     onChange={(e) => setPrice(e.target.value)}
+                    onBlur={() => setPrice((v) => (v ? String(roundMoney(parseFloat(v) || 0)) : v))}
                     placeholder="0.00"
                     className={inputClass}
                   />
@@ -190,9 +192,11 @@ export function RestockDialog({
                 <Field label="إجمالي سعر الكمية" optional hint="اختياري — يُقسم على الكمية لحساب تكلفة الوحدة">
                   <input
                     type="number"
+                    step="0.01"
                     inputMode="decimal"
                     value={price}
                     onChange={(e) => setPrice(e.target.value)}
+                    onBlur={() => setPrice((v) => (v ? String(roundMoney(parseFloat(v) || 0)) : v))}
                     placeholder="0.00"
                     className={inputClass}
                   />

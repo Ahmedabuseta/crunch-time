@@ -162,7 +162,10 @@ export function createIngredient(data: any) {
   const id = uuid()
   const category = normalizeCategory(data?.category)
   const storage = normalizeStorage(data?.storage, category)
-  db.insert(ingredients).values({ ...data, id, category, storage, active: true }).run()
+  const values = { ...data, id, category, storage, active: true }
+  // Money is stored with at most two decimals.
+  if (values.costPerUnit != null) values.costPerUnit = r2(Number(values.costPerUnit) || 0)
+  db.insert(ingredients).values(values).run()
   if (Number(data?.stockQuantity) > 0) {
     db.insert(inventoryTransactions).values({
       id: uuid(), ingredientId: id, type: 'ADJUSTMENT', quantity: Number(data.stockQuantity), note: 'رصيد افتتاحي', createdAt: now(),
@@ -176,6 +179,7 @@ export function updateIngredient(id: string, data: any) {
   const db = getDb()
   const current = getIngredientById(id)
   const patch = { ...data }
+  if (patch.costPerUnit !== undefined) patch.costPerUnit = r2(Number(patch.costPerUnit) || 0)
   if (patch.category !== undefined) {
     patch.category = normalizeCategory(patch.category)
     if (patch.storage === undefined) patch.storage = defaultStorageForCategory(patch.category)
@@ -439,13 +443,15 @@ export function restock(
   const byQuantity = Boolean(opts?.byQuantity)
   const amount = Math.abs(Number(qty) || 0)
   const stockQty = byQuantity ? amount : amount * (packQty > 0 ? packQty : 1)
-  const unitCost = byQuantity
+  const rawUnitCost = byQuantity
     ? (opts?.totalPrice != null && stockQty > 0
         ? Number(opts.totalPrice) / stockQty
         : (opts?.unitCost != null ? Number(opts.unitCost) : null))
     : (opts?.packagePrice != null
         ? Number(opts.packagePrice) / (packQty > 0 ? packQty : 1)
         : (opts?.unitCost != null ? Number(opts.unitCost) : null))
+  // Prices are money: never persist more than two decimals.
+  const unitCost = rawUnitCost != null && Number.isFinite(rawUnitCost) ? r2(rawUnitCost) : null
   db.update(ingredients).set({ stockQuantity: sql`${ingredients.stockQuantity} + ${stockQty}` })
     .where(eq(ingredients.id, ingredientId)).run()
   db.insert(inventoryTransactions).values({
@@ -461,7 +467,7 @@ export function restock(
   }
   // Every restock is a purchase record, even before the owner knows the
   // price (unit cost 0) — the purchase count and spend report must see it.
-  const effectiveUnitCost = unitCost != null ? unitCost : (ing?.costPerUnit || 0)
+  const effectiveUnitCost = unitCost != null ? unitCost : r2(ing?.costPerUnit || 0)
   db.insert(purchasePriceHistory).values({
     id: uuid(), ingredientId, supplier: supplier || ing?.supplier || null, unitCost: effectiveUnitCost, quantity: stockQty,
     purchasedAt: now().slice(0, 10), createdAt: now(),
@@ -752,6 +758,84 @@ export function adjust(ingredientId: string, delta: number, note?: string) {
   }).run()
   return { ok: true }
 }
+
+// Owner swap: return what's left of the old brand and take in a new brand
+// with its own price — one dialog, stock entries go both ways and the
+// ledger records each side (RETURN on the old, PURCHASE on the new).
+export function exchange(input: {
+  fromIngredientId: string
+  fromPackages: number
+  toIngredientId: string
+  toPackages: number
+  packagePrice?: number
+  supplier?: string
+  note?: string
+}) {
+  requireAdmin()
+  const db = getDb()
+  const note = input.note?.trim() || 'مبادلة'
+  const from = db.select().from(ingredients).where(eq(ingredients.id, input.fromIngredientId)).get()
+  const to = db.select().from(ingredients).where(eq(ingredients.id, input.toIngredientId)).get()
+  if (!from || !to) return { ok: false, error: 'المادة غير موجودة' }
+
+  const fromPack = Number(from.purchaseQty) || 1
+  const toPack = Number(to.purchaseQty) || 1
+  const fromPackages = Math.abs(Number(input.fromPackages) || 0)
+  const toPackages = Math.abs(Number(input.toPackages) || 0)
+  if (fromPackages === 0 && toPackages === 0) return { ok: false, error: 'حدد الكميات أولاً' }
+
+  const stockNow = (ing: { stockQuantity: number }) => Number(ing.stockQuantity) || 0
+  const fromStockQty = fromPackages * fromPack
+  const toStockQty = toPackages * toPack
+
+  if (fromStockQty > 0 && fromStockQty > stockNow(from)) {
+    return { ok: false, error: `الكمية المرتجعة أكبر من المخزون المتاح (${fmtStock(stockNow(from))} ${from.unit})` }
+  }
+
+  // Old brand goes back: stock down, ledger documents the return.
+  if (fromStockQty > 0) {
+    db.update(ingredients).set({ stockQuantity: sql`${ingredients.stockQuantity} - ${fromStockQty}` })
+      .where(eq(ingredients.id, from.id)).run()
+    db.insert(inventoryTransactions).values({
+      id: uuid(), ingredientId: from.id, type: 'RETURN', quantity: -fromStockQty,
+      unitCost: from.costPerUnit || 0,
+      note: `${note} — ${fromPackages} ${fromPackages === 1 ? 'عبوة' : 'عبوات'} × ${fromPack} → ${to.name}`,
+      createdAt: now(),
+    }).run()
+  }
+
+  // New brand comes in: stock up, priced per the new invoice.
+  let ppv: number | null = null
+  if (toStockQty > 0) {
+    const toUnitCost = input.packagePrice != null && Number(input.packagePrice) > 0
+      ? Number(input.packagePrice) / toPack
+      : null
+    const supplier = input.supplier?.trim() || null
+    db.update(ingredients).set({ stockQuantity: sql`${ingredients.stockQuantity} + ${toStockQty}` })
+      .where(eq(ingredients.id, to.id)).run()
+    db.insert(inventoryTransactions).values({
+      id: uuid(), ingredientId: to.id, type: 'PURCHASE', quantity: toStockQty,
+      unitCost: toUnitCost || to.costPerUnit || 0, supplier,
+      note: `${note} — ${toPackages} ${toPackages === 1 ? 'عبوة' : 'عبوات'} × ${toPack} ← ${from.name}`,
+      createdAt: now(),
+    }).run()
+    if (!to.supplier && supplier) {
+      db.update(ingredients).set({ supplier }).where(eq(ingredients.id, to.id)).run()
+    }
+    if (toUnitCost != null) {
+      db.insert(purchasePriceHistory).values({
+        id: uuid(), ingredientId: to.id, supplier: supplier || to.supplier || null,
+        unitCost: toUnitCost, quantity: toStockQty, purchasedAt: now().slice(0, 10), createdAt: now(),
+      }).run()
+      const baseline = to.plannedCost > 0 ? to.plannedCost : to.costPerUnit || 0
+      if (baseline > 0) ppv = r2((toUnitCost - baseline) * toStockQty)
+    }
+  }
+
+  return { ok: true, ppv }
+}
+
+const fmtStock = (n: number) => Math.round(n * 100) / 100
 
 export function deductForOrder(orderId: string) {
   deductInventory(orderId)

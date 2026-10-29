@@ -5,7 +5,14 @@ import { getSqlite } from '../db/client'
 
 export function now() { return new Date().toISOString() }
 export function uuid() { return randomUUID() }
-export const r2 = (n: number) => Math.round(n * 100) / 100
+/** Money rounding: two decimals, half away from zero, invalid values → 0. */
+export const r2 = (n: number) => {
+  const value = Number(n)
+  if (!Number.isFinite(value)) return 0
+  const rounded = Math.round((Math.abs(value) + Number.EPSILON) * 100) / 100
+  if (rounded === 0) return 0
+  return value < 0 ? -rounded : rounded
+}
 
 // ─── Inventory helpers (raw SQL, snake_case) ─────────────────
 export function getOpenShiftId(dataShiftId?: string | null): string | null {
@@ -28,7 +35,7 @@ export function recomputeProductCost(productId: string) {
     WHERE r.product_id = ? AND r.sub_recipe_id IS NOT NULL
   `).all(productId, productId) as any[]
   const cost = rows.reduce((sum, r) => sum + (Number(r.qty) || 0) * (Number(r.unitCost) || 0), 0)
-  s.prepare('UPDATE products SET cost_price = ? WHERE id = ?').run(cost, productId)
+  s.prepare('UPDATE products SET cost_price = ? WHERE id = ?').run(r2(cost), productId)
 }
 
 // Expand recipe rows (ingredients AND sub-recipes) into flat ingredient consumptions

@@ -242,4 +242,42 @@ describe('inventory package pricing', () => {
       [-40, 960],
     ])
   })
+
+  it('stores ingredient costs with at most two decimals', async () => {
+    const sqlite = getSqlite()
+    const created = await call('inventory:createIngredient', {
+      name: 'مادة تقريب السعر',
+      unit: 'g',
+      stockQuantity: 0,
+      minStock: 0,
+      purchaseQty: 3,
+      costPerUnit: 0.14333333333333334,
+    })
+    const row = sqlite.prepare('SELECT cost_per_unit FROM ingredients WHERE id = ?').get(created.id) as any
+    expect(row.cost_per_unit).toBe(0.14)
+
+    await call('inventory:updateIngredient', created.id, { costPerUnit: 0.146 })
+    const updated = sqlite.prepare('SELECT cost_per_unit FROM ingredients WHERE id = ?').get(created.id) as any
+    expect(updated.cost_per_unit).toBe(0.15)
+  })
+
+  it('rounds the derived unit cost on restock to two decimals', async () => {
+    const sqlite = getSqlite()
+    sqlite.prepare(
+      `INSERT INTO ingredients (id, name, unit, stock_quantity, min_stock, cost_per_unit, purchase_qty, active)
+       VALUES ('ing-round', 'مادة تقريب التعبئة', 'g', 0, 0, 0, 3, 1)`,
+    ).run()
+
+    // 1 ج.م for a 3-unit package → 0.3333… → 0.33 per unit.
+    await call('inventory:restock', 'ing-round', 1, null, { packagePrice: 1 })
+
+    const tx = sqlite.prepare(
+      "SELECT unit_cost FROM inventory_transactions WHERE ingredient_id = 'ing-round' AND type = 'PURCHASE'",
+    ).get() as any
+    expect(tx.unit_cost).toBe(0.33)
+    const history = sqlite.prepare(
+      "SELECT unit_cost FROM purchase_price_history WHERE ingredient_id = 'ing-round'",
+    ).get() as any
+    expect(history.unit_cost).toBe(0.33)
+  })
 })

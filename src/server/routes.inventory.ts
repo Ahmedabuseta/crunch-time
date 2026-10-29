@@ -101,6 +101,11 @@ export function registerInventoryRoutes(app: FastifyInstance, backend: Backend) 
 
   // Deduction normally happens inside POST /orders; this is the manual replay
   // the desktop exposes as inventory:deductForOrder.
+  app.post('/ingredients/:id/exchange', async (req) => {
+    const body = (req.body || {}) as any
+    return mutate(req, { action: 'inventory.exchange', entity: 'ingredient', entityId: (req.params as any).id }, () =>
+      backend.inventory.exchange({ ...body, fromIngredientId: (req.params as any).id }))
+  })
   app.post('/orders/:id/deduct-inventory', async (req) =>
     mutate(req, { action: 'inventory.deduct', entity: 'order', entityId: (req.params as any).id }, () =>
       backend.inventory.deductForOrder((req.params as any).id)))
