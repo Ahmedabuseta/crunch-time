@@ -12,6 +12,7 @@ import { ALL_TOOLS, getTool, redact } from '../tools'
 import { resolveCards, AssistantReplySchema, ToolOutputSchema, type AssistantReply, type ChatCard } from '../schemas'
 import { appendMessage, modelHistory } from '../history'
 import { recordUsage } from '../guard/budget'
+import { getSavedReply } from '../guard/replies'
 import { publishStatus, publishText } from '../streams'
 import { getDb } from '../../db/client'
 import * as schema from '../../db/schema'
@@ -224,7 +225,15 @@ export async function modelStep(input: ModelStepInput): Promise<ModelStepOutput>
     }
     // Without `response_format` the model still answers with the JSON the
     // system prompt asks for, so use it rather than showing the owner the blob.
-    reply = parseReplyJson(text) ?? { text, cards: input.cardIds, followups: [] }
+    const parsed = parseReplyJson(text)
+    if (parsed) {
+      reply = parsed
+    } else if (looksLikeJson(text)) {
+      // Malformed JSON. Never render the payload — ask for a retry instead.
+      reply = { text: getSavedReply('needs_context'), cards: [], followups: [] }
+    } else {
+      reply = { text, cards: input.cardIds, followups: [] }
+    }
     if (attempt.plain) publishText(input.turnId, reply.text)
   }
 
@@ -269,13 +278,29 @@ function isStructuredOutputUnsupported(err: any): boolean {
 
 /** The streamed answer when structured output was unavailable, if it is JSON. */
 function parseReplyJson(text: string): AssistantReply | null {
-  const candidate = text.replace(/^```(?:json)?\s*/i, '').replace(/```$/, '').trim()
+  // Strip a fenced block and any prose around the object: models routinely add
+  // a sentence before the JSON, and the outermost braces are the payload.
+  const unfenced = text.replace(/```(?:json)?/gi, '').trim()
+  const start = unfenced.indexOf('{')
+  const end = unfenced.lastIndexOf('}')
+  if (start === -1 || end <= start) return null
   try {
-    const parsed = AssistantReplySchema.safeParse(JSON.parse(candidate))
+    const parsed = AssistantReplySchema.safeParse(JSON.parse(unfenced.slice(start, end + 1)))
     return parsed.success ? parsed.data : null
   } catch {
     return null
   }
+}
+
+/**
+ * True when the text is a JSON payload rather than prose.
+ *
+ * A truncated or malformed object is still JSON, and printing it into the chat
+ * bubble is exactly the failure this guards against — the owner saw
+ * `"cards": ["card-0"], "followlg ? ..."]}` instead of an answer.
+ */
+function looksLikeJson(text: string): boolean {
+  return /^\s*(```|\{)/.test(text)
 }
 
 function providerFailure(err: any): Error {
