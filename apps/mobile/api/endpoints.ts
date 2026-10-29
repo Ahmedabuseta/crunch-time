@@ -315,6 +315,13 @@ export const api = {
     history: (query?: { before?: string; limit?: number }) =>
       request<{ messages: ChatMessage[] }>(`/assistant/history${qs(query)}`),
     clearHistory: () => request<{ ok: true }>('/assistant/history', { method: 'DELETE' }),
+    /** Speech to text. The clip travels as base64: no multipart parser on the
+     * server, and a short recording fits well inside the body limit. */
+    transcribe: (body: { audio: string; mime?: string }) =>
+      request<{ ok: boolean; text?: string; error?: string }>('/assistant/transcribe', {
+        method: 'POST',
+        body,
+      }),
     confirmAction: (id: string) =>
       request<{ ok: boolean; status: ChatActionStatus; error?: string; message?: string }>(
         `/assistant/actions/${encodeURIComponent(id)}/confirm`,

@@ -11,8 +11,9 @@ import { useAssistantChat } from '@/hooks/useAssistantChat';
 import { useColor } from '@/hooks/useColor';
 import { useHaptics } from '@/hooks/useHaptics';
 import { useKeyboardHeight } from '@/hooks/useKeyboardHeight';
+import { useVoice } from '@/hooks/useVoice';
 import { withOpacity } from '@/theme/colors';
-import { ArrowUp, ChevronLeft, Settings, Sparkles, Square, Trash2 } from 'lucide-react-native';
+import { ArrowUp, ChevronLeft, Mic, Settings, Sparkles, Square, Trash2, Volume2 } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, FlatList, Pressable, StyleSheet, TextInput } from 'react-native';
@@ -61,7 +62,25 @@ export default function AssistantScreen() {
 
   const [sheetOpen, setSheetOpen] = useState(false);
   const [draft, setDraft] = useState('');
+  const [playingText, setPlayingText] = useState<string | null>(null);
   const listRef = useRef<FlatList<ChatMessage>>(null);
+
+  // Speaking a question sends it: the owner pressed the mic to ask, not to fill
+  // in a form. A misheard sentence is visible in their own bubble straight away.
+  const voice = useVoice(useCallback((text: string) => void send(text), [send]));
+
+  const playReply = useCallback(
+    (text: string) => {
+      setPlayingText(text);
+      voice.play(text);
+    },
+    [voice]
+  );
+
+  const stopPlayback = useCallback(() => {
+    setPlayingText(null);
+    voice.stopPlayback();
+  }, [voice]);
 
   // A chat auto-scrolls, but not on every content change: while text streams the
   // content size changes many times a second, and an animation per change fights
@@ -125,9 +144,16 @@ export default function AssistantScreen() {
 
   const renderMessage = useCallback(
     ({ item }: { item: ChatMessage }) => (
-      <MessageRow item={item} onAsk={ask} onConfirm={confirm} onCancel={cancel} />
+      <MessageRow
+        item={item}
+        onConfirm={confirm}
+        onCancel={cancel}
+        onPlay={playReply}
+        onStopPlayback={stopPlayback}
+        speaking={voice.playing && playingText === item.content}
+      />
     ),
-    [ask, cancel, confirm]
+    [cancel, confirm, playReply, playingText, stopPlayback, voice.playing]
   );
 
   return (
@@ -254,6 +280,27 @@ export default function AssistantScreen() {
           />
         </View>
 
+        {/* Push to talk. Hidden while an answer is streaming: that slot already
+            holds the stop control, and starting a recording mid-answer is not a
+            thing anyone means to do. */}
+        {!streaming ? (
+          <Pressable
+            onPress={() => (voice.recording ? void voice.stop() : void voice.start())}
+            disabled={voice.transcribing}
+            style={[styles.send, { backgroundColor: voice.recording ? red : secondary }]}
+            accessibilityRole='button'
+            accessibilityLabel={voice.recording ? 'وقف التسجيل' : 'اتكلم'}
+          >
+            {voice.transcribing ? (
+              <Spinner size='sm' color={muted} />
+            ) : voice.recording ? (
+              <Square size={14} color='#FFFFFF' />
+            ) : (
+              <Mic size={18} color={muted} />
+            )}
+          </Pressable>
+        ) : null}
+
         {streaming ? (
           <Pressable
             onPress={abort}
@@ -303,15 +350,24 @@ export default function AssistantScreen() {
  */
 const MessageRow = React.memo(function MessageRow({
   item,
-  onAsk,
   onConfirm,
   onCancel,
+  onPlay,
+  onStopPlayback,
+  speaking,
 }: {
   item: ChatMessage;
-  onAsk: (question: string) => void;
   onConfirm: (card: ActionChatCard) => Promise<void>;
   onCancel: (card: ActionChatCard) => Promise<void>;
+  onPlay: (text: string) => void;
+  onStopPlayback: () => void;
+  /** True when this row's answer is the one currently being read aloud. */
+  speaking: boolean;
 }) {
+  const muted = useColor('mutedForeground');
+  const primary = useColor('primary');
+  const canSpeak = item.role === 'assistant' && Boolean(item.content.trim());
+
   return (
     <View style={{ gap: 8 }}>
       <ChatBubble message={item} />
@@ -323,8 +379,26 @@ const MessageRow = React.memo(function MessageRow({
           onCancel={onCancel}
         />
       ))}
-      {/* The model's follow-ups are one tap from being asked. */}
-      {item.followups?.length ? <AskRail items={item.followups} onAsk={onAsk} /> : null}
+      {canSpeak ? (
+        <Pressable
+          // Left-aligned under the assistant's bubble, which is where the answer
+          // ends: the control belongs to the answer, not to the screen.
+          onPress={() => (speaking ? onStopPlayback() : onPlay(item.content))}
+          hitSlop={8}
+          style={styles.speak}
+          accessibilityRole='button'
+          accessibilityLabel={speaking ? 'وقف القراءة' : 'اسمع الرد'}
+        >
+          {speaking ? (
+            <Square size={12} color={primary} />
+          ) : (
+            <Volume2 size={14} color={muted} />
+          )}
+          <Text variant='caption' style={{ color: speaking ? primary : muted, fontSize: 12 }}>
+            {speaking ? 'وقف' : 'اسمع'}
+          </Text>
+        </Pressable>
+      ) : null}
     </View>
   );
 });
@@ -387,6 +461,15 @@ const styles = StyleSheet.create({
     paddingBottom: 12,
   },
   iconButton: { padding: 8 },
+  /** Sits under an assistant bubble, aligned with the text it reads aloud. */
+  speak: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    alignSelf: 'flex-start',
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+  },
   identity: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10 },
   avatar: {
     width: 38,
