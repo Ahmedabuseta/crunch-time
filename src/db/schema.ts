@@ -294,6 +294,7 @@ export const aiMessages = sqliteTable('ai_messages', {
   role: text('role').notNull(), // 'user' | 'assistant'
   content: text('content').notNull(),
   cards: text('cards'), // JSON ChatCard[]
+  followups: text('followups'), // JSON string[]
   createdAt: text('created_at').notNull(),
 })
 

@@ -146,6 +146,9 @@ export function runMigrations() {
   ensureColumn(db, 'settings', 'ai_key_cipher', 'TEXT')
   ensureColumn(db, 'settings', 'ai_daily_token_limit', 'INTEGER NOT NULL DEFAULT 150000')
   ensureColumn(db, 'settings', 'ai_temporal_port', 'INTEGER NOT NULL DEFAULT 7233')
+  // Follow-up questions were added after the transcript table shipped; without
+  // this an existing install loses them on the next history read.
+  ensureColumn(db, 'ai_messages', 'followups', 'TEXT')
   ensureColumn(db, 'orders', 'status_reason', 'TEXT')
   ensureColumn(db, 'orders', 'refunded_amount', 'REAL NOT NULL DEFAULT 0')
   ensureColumn(db, 'order_items', 'item_discount', 'REAL NOT NULL DEFAULT 0')

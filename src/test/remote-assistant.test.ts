@@ -194,6 +194,9 @@ suite('assistant chat over HTTP', () => {
     expect(last.role).toBe('assistant')
     expect(last.content).toBe(ANSWER)
     expect(last.cards[0].kind).toBe('report')
+    // Follow-ups are stored with the turn, so reopening the screen still
+    // offers them as one-tap questions.
+    expect(last.followups).toEqual(['وإمبارح؟'])
   })
 
   it('refuses an off-topic message without spending a token or starting a workflow', async () => {

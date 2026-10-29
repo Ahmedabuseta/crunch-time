@@ -48,6 +48,7 @@ export function appendMessage(
     role,
     content,
     cards: JSON.stringify(cards),
+    followups: JSON.stringify(followups),
     createdAt: message.createdAt,
   }).run()
   touchThread(threadId)
@@ -76,7 +77,7 @@ function toMessage(row: typeof aiMessages.$inferSelect): StoredMessage {
     role: row.role === 'user' ? 'user' : 'assistant',
     content: row.content,
     cards: parseJson<ChatCard[]>(row.cards, []),
-    followups: [],
+    followups: parseJson<string[]>(row.followups, []),
     createdAt: row.createdAt,
   }
 }

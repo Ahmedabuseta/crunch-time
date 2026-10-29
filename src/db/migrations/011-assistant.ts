@@ -50,6 +50,7 @@ export const migration: Migration = {
         role TEXT NOT NULL,
         content TEXT NOT NULL,
         cards TEXT,
+        followups TEXT,
         created_at TEXT NOT NULL
       );
       CREATE INDEX IF NOT EXISTS ai_messages_thread ON ai_messages(thread_id, created_at);
