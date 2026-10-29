@@ -94,7 +94,7 @@ describe('assistant config', () => {
     expect(updateAiConfig({ baseUrl: 'not-a-url' }).ok).toBe(false)
     expect(updateAiConfig({ baseUrl: 'https://api.groq.com/openai/v1' }).ok).toBe(true)
     expect(updateAiConfig({ model: 'bad model!' }).ok).toBe(false)
-    expect(updateAiConfig({ model: 'llama-3.3-70b-versatile' }).ok).toBe(true)
+    expect(updateAiConfig({ model: 'openai/gpt-oss-120b' }).ok).toBe(true)
   })
 
   it('offers a masked hint but never the key', () => {

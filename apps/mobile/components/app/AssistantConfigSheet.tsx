@@ -40,7 +40,7 @@ const PROVIDERS = [
     label: 'Groq',
     provider: 'groq',
     baseUrl: 'https://api.groq.com/openai/v1',
-    model: 'llama-3.3-70b-versatile',
+    model: 'openai/gpt-oss-120b',
   },
   {
     label: 'OpenAI',
@@ -273,7 +273,7 @@ export function AssistantConfigSheet({
             label='الموديل'
             value={form.model}
             onChangeText={(model) => patch({ model })}
-            placeholder='llama-3.3-70b-versatile'
+            placeholder='openai/gpt-oss-120b'
             autoCapitalize='none'
           />
           <Input

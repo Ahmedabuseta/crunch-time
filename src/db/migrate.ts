@@ -141,7 +141,7 @@ export function runMigrations() {
   ensureColumn(db, 'settings', 'ai_enabled', 'INTEGER NOT NULL DEFAULT 0')
   ensureColumn(db, 'settings', 'ai_provider', "TEXT NOT NULL DEFAULT 'groq'")
   ensureColumn(db, 'settings', 'ai_base_url', "TEXT NOT NULL DEFAULT 'https://api.groq.com/openai/v1'")
-  ensureColumn(db, 'settings', 'ai_model', "TEXT NOT NULL DEFAULT 'llama-3.3-70b-versatile'")
+  ensureColumn(db, 'settings', 'ai_model', "TEXT NOT NULL DEFAULT 'openai/gpt-oss-120b'")
   ensureColumn(db, 'settings', 'ai_api_key_enc', 'TEXT')
   ensureColumn(db, 'settings', 'ai_key_cipher', 'TEXT')
   ensureColumn(db, 'settings', 'ai_daily_token_limit', 'INTEGER NOT NULL DEFAULT 150000')

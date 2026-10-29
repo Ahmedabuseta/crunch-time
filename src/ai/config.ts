@@ -44,7 +44,7 @@ export function getAiConfig(): AiConfig {
     enabled: Boolean(row?.enabled),
     provider: row?.provider || 'groq',
     baseUrl: row?.baseUrl || 'https://api.groq.com/openai/v1',
-    model: row?.model || 'llama-3.3-70b-versatile',
+    model: row?.model || 'openai/gpt-oss-120b',
     hasKey: Boolean(row?.keyEnc),
     dailyTokenLimit: Number(row?.dailyLimit ?? 150000),
     temporalPort: Number(row?.temporalPort) || 7233,

@@ -280,7 +280,7 @@ export const settings = sqliteTable('settings', {
   aiEnabled: integer('ai_enabled', { mode: 'boolean' }).notNull().default(false),
   aiProvider: text('ai_provider').notNull().default('groq'),
   aiBaseUrl: text('ai_base_url').notNull().default('https://api.groq.com/openai/v1'),
-  aiModel: text('ai_model').notNull().default('llama-3.3-70b-versatile'),
+  aiModel: text('ai_model').notNull().default('openai/gpt-oss-120b'),
   aiApiKeyEnc: text('ai_api_key_enc'),
   aiKeyCipher: text('ai_key_cipher'),
   aiDailyTokenLimit: integer('ai_daily_token_limit').notNull().default(150000),
