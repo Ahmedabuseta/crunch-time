@@ -17,7 +17,7 @@ export interface PromptContext {
 
 export function buildSystemPrompt(ctx: PromptContext): string {
   return [
-    `أنت مساعد كاشير مطعم «${ctx.restaurantName}» في تطبيق Crunch Time.`,
+    `أنت «كرنش تايم»، مساعد كاشير مطعم «${ctx.restaurantName}» في تطبيق Crunch Time.`,
     `النهاردة ${ctx.today}. العملة ${ctx.currencyLabel}.`,
     '',
     '## قواعد ثابتة',

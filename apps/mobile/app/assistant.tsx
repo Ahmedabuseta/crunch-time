@@ -1,4 +1,5 @@
 import type { ActionChatCard, ChatMessage } from '@/api/types';
+import { AskRail } from '@/components/app/AskRail';
 import { AssistantConfigSheet } from '@/components/app/AssistantConfigSheet';
 import { ChatBubble } from '@/components/app/ChatBubble';
 import { ChatCardView } from '@/components/app/ChatCardView';
@@ -8,18 +9,30 @@ import { Text } from '@/components/ui/text';
 import { View } from '@/components/ui/view';
 import { useAssistantChat } from '@/hooks/useAssistantChat';
 import { useColor } from '@/hooks/useColor';
+import { useHaptics } from '@/hooks/useHaptics';
 import { useKeyboardHeight } from '@/hooks/useKeyboardHeight';
-import { ChevronLeft, Settings, Sparkles, Square, Trash2 } from 'lucide-react-native';
+import { withOpacity } from '@/theme/colors';
+import { ArrowUp, ChevronLeft, Settings, Sparkles, Square, Trash2 } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, FlatList, Pressable, StyleSheet, TextInput } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-/** Three questions the owner actually asks — a blank screen teaches nothing. */
-const EXAMPLES = ['بعت بكام النهاردة؟', 'إيه اللي ناقص في المخزون؟', 'أفضل صنف عندي إيه؟'];
+/**
+ * The questions an owner actually asks. The rail scrolls sideways, so this list
+ * can grow without making the composer taller.
+ */
+const SUGGESTIONS = [
+  'بعت بكام النهاردة؟',
+  'إيه اللي ناقص في المخزون؟',
+  'أفضل صنف عندي إيه؟',
+  'أرباح الشهر إيه؟',
+  'مين أحسن موظف؟',
+  'كام طلب دليفري عندي؟',
+];
 
-/** Four lines of 20pt plus the field's own padding; past that it scrolls. */
-const INPUT_MAX_HEIGHT = 4 * 20 + 20;
+/** Four lines of 22pt plus the field's own padding; past that it scrolls. */
+const INPUT_MAX_HEIGHT = 4 * 22 + 18;
 
 /**
  * The assistant lives outside the `(app)` tab navigator on purpose: this is a
@@ -30,6 +43,7 @@ const INPUT_MAX_HEIGHT = 4 * 20 + 20;
 export default function AssistantScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const feedback = useHaptics();
   const { isKeyboardVisible } = useKeyboardHeight();
   const {
     messages,
@@ -87,15 +101,19 @@ export default function AssistantScreen() {
   const submit = useCallback(() => {
     const value = draft.trim();
     if (!value || streaming) return;
+    feedback('selection');
     setDraft('');
     void send(value);
-  }, [draft, send, streaming]);
+  }, [draft, feedback, send, streaming]);
 
+  /** A suggestion or a follow-up is a real question: tapping it sends it. */
   const ask = useCallback(
     (question: string) => {
+      if (streaming) return;
+      feedback('selection');
       void send(question);
     },
-    [send]
+    [feedback, send, streaming]
   );
 
   const confirmClear = useCallback(() => {
@@ -124,9 +142,27 @@ export default function AssistantScreen() {
         >
           <ChevronLeft size={22} color={muted} />
         </Pressable>
-        <Text variant='title' style={{ flex: 1 }}>
-          المساعد
-        </Text>
+
+        {/* The bot has a name, not a tab title: it is the product's identity. */}
+        <View style={styles.identity}>
+          <View
+            style={[
+              styles.avatar,
+              { backgroundColor: withOpacity(primary, 0.14), borderColor: withOpacity(primary, 0.3) },
+            ]}
+          >
+            <Sparkles size={17} color={primary} />
+          </View>
+          <View style={styles.identityText}>
+            <Text variant='subtitle' numberOfLines={1}>
+              كرنش تايم
+            </Text>
+            <Text variant='caption' numberOfLines={1} style={{ color: muted }}>
+              مساعدك في المحل — اسأل وأنا أجاوب
+            </Text>
+          </View>
+        </View>
+
         <Pressable
           onPress={confirmClear}
           hitSlop={10}
@@ -165,9 +201,7 @@ export default function AssistantScreen() {
         windowSize={9}
         updateCellsBatchingPeriod={50}
         ListEmptyComponent={
-          messages.length === 0 && !streaming ? (
-            <EmptyState loading={loadingHistory} onPick={ask} />
-          ) : null
+          messages.length === 0 && !streaming ? <EmptyState loading={loadingHistory} /> : null
         }
         ListFooterComponent={streaming ? <PendingTurn partial={partial} status={status} /> : null}
       />
@@ -178,24 +212,32 @@ export default function AssistantScreen() {
         </Text>
       ) : null}
 
+      {/* Always on screen, even mid-conversation: the owner should never have to
+          think of a question from a blank slate. Tapping one sends it. */}
+      <View style={styles.rail}>
+        <AskRail
+          items={SUGGESTIONS}
+          onAsk={ask}
+          disabled={streaming}
+          label='اقتراحات سريعة'
+          edgePadding={16}
+        />
+      </View>
+
       {/* The home-indicator inset only applies while the keyboard is down — once
           it is up, the keyboard covers that strip, so adding the inset again
           would float the composer above the keys. */}
       <View
         style={[
           styles.composer,
-          {
-            borderTopColor: border,
-            backgroundColor: background,
-            paddingBottom: (isKeyboardVisible ? 0 : insets.bottom) + 10,
-          },
+          { paddingBottom: (isKeyboardVisible ? 0 : insets.bottom) + 10 },
         ]}
       >
-        <View style={styles.composerRow}>
+        <View style={[styles.field, { backgroundColor: card, borderColor: border }]}>
           <TextInput
             value={draft}
             onChangeText={setDraft}
-            placeholder='اسأل عن مبيعاتك…'
+            placeholder='اكتب سؤالك لكرنش تايم…'
             placeholderTextColor={muted}
             multiline
             editable={!streaming}
@@ -204,36 +246,40 @@ export default function AssistantScreen() {
             style={[
               styles.input,
               {
-                backgroundColor: card,
-                borderColor: border,
                 color: text,
                 maxHeight: INPUT_MAX_HEIGHT,
               },
             ]}
-            accessibilityLabel='رسالتك للمساعد'
+            accessibilityLabel='رسالتك لكرنش تايم'
           />
-
-          {streaming ? (
-            <Pressable
-              onPress={abort}
-              style={[styles.send, { backgroundColor: red }]}
-              accessibilityRole='button'
-              accessibilityLabel='وقف'
-            >
-              <Square size={16} color='#FFFFFF' />
-            </Pressable>
-          ) : (
-            <Pressable
-              onPress={submit}
-              disabled={!draft.trim()}
-              style={[styles.send, { backgroundColor: draft.trim() ? primary : secondary }]}
-              accessibilityRole='button'
-              accessibilityLabel='إرسال'
-            >
-              <Sparkles size={17} color={draft.trim() ? primaryForeground : muted} />
-            </Pressable>
-          )}
         </View>
+
+        {streaming ? (
+          <Pressable
+            onPress={abort}
+            style={[styles.send, { backgroundColor: red }]}
+            accessibilityRole='button'
+            accessibilityLabel='وقف'
+          >
+            <Square size={15} color='#FFFFFF' />
+          </Pressable>
+        ) : (
+          <Pressable
+            onPress={submit}
+            disabled={!draft.trim()}
+            style={({ pressed }) => [
+              styles.send,
+              {
+                backgroundColor: draft.trim() ? primary : secondary,
+                opacity: pressed && draft.trim() ? 0.85 : 1,
+              },
+            ]}
+            accessibilityRole='button'
+            accessibilityLabel='إرسال'
+          >
+            <ArrowUp size={20} color={draft.trim() ? primaryForeground : muted} />
+          </Pressable>
+        )}
       </View>
 
       {/* Zero height until the keyboard is up, then exactly its height, which
@@ -277,13 +323,8 @@ const MessageRow = React.memo(function MessageRow({
           onCancel={onCancel}
         />
       ))}
-      {item.followups?.length ? (
-        <View style={styles.chips}>
-          {item.followups.map((followup) => (
-            <Chip key={followup} label={followup} onPress={() => onAsk(followup)} />
-          ))}
-        </View>
-      ) : null}
+      {/* The model's follow-ups are one tap from being asked. */}
+      {item.followups?.length ? <AskRail items={item.followups} onAsk={onAsk} /> : null}
     </View>
   );
 });
@@ -304,7 +345,7 @@ function PendingTurn({ partial, status }: { partial: string; status: string | nu
   );
 }
 
-function EmptyState({ loading, onPick }: { loading: boolean; onPick: (question: string) => void }) {
+function EmptyState({ loading }: { loading: boolean }) {
   const primary = useColor('primary');
   const muted = useColor('mutedForeground');
 
@@ -318,45 +359,22 @@ function EmptyState({ loading, onPick }: { loading: boolean; onPick: (question: 
 
   return (
     <View style={styles.empty}>
-      <Sparkles size={26} color={primary} />
+      <View
+        style={[
+          styles.heroAvatar,
+          { backgroundColor: withOpacity(primary, 0.12), borderColor: withOpacity(primary, 0.26) },
+        ]}
+      >
+        <Sparkles size={28} color={primary} />
+      </View>
       <Text variant='subtitle' style={styles.centred}>
-        اسألني عن شغلك
+        أهلاً، أنا كرنش تايم
       </Text>
       <Text variant='caption' style={[styles.centred, { color: muted }]}>
-        مبيعات، أرباح، مخزون، موظفين — ولو محتاج تعديل، هجهزلك كارت تأكيد قبل ما ينفّذ.
+        مساعدك في المحل. مبيعات، أرباح، مخزون، موظفين — ولو محتاج تعديل، هجهزلك كارت
+        تأكيد قبل ما ينفّذ.
       </Text>
-      <View style={styles.chips}>
-        {EXAMPLES.map((question) => (
-          <Chip key={question} label={question} onPress={() => onPick(question)} primary={primary} />
-        ))}
-      </View>
     </View>
-  );
-}
-
-function Chip({
-  label,
-  onPress,
-  primary,
-}: {
-  label: string;
-  onPress: () => void;
-  primary?: string;
-}) {
-  const muted = useColor('mutedForeground');
-  const border = useColor('border');
-
-  return (
-    <Pressable
-      onPress={onPress}
-      style={[styles.chip, { borderColor: primary ?? border }]}
-      accessibilityRole='button'
-      accessibilityLabel={label}
-    >
-      <Text variant='caption' style={{ color: primary ?? muted, fontSize: 13 }}>
-        {label}
-      </Text>
-    </Pressable>
   );
 }
 
@@ -364,32 +382,67 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    gap: 6,
     paddingHorizontal: 12,
-    paddingBottom: 10,
+    paddingBottom: 12,
   },
   iconButton: { padding: 8 },
+  identity: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10 },
+  avatar: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  identityText: { flex: 1, gap: 1 },
   list: { paddingHorizontal: 16, paddingTop: 4, paddingBottom: 16, gap: 14 },
-  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  chip: { borderWidth: 1, borderRadius: 999, paddingHorizontal: 14, paddingVertical: 8 },
   pending: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 8 },
-  composer: { borderTopWidth: 1, paddingHorizontal: 16, paddingTop: 10 },
-  composerRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 8 },
+  rail: { paddingTop: 10 },
+  composer: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: 10,
+    paddingHorizontal: 16,
+    paddingTop: 8,
+  },
+  field: {
+    flex: 1,
+    borderWidth: 1,
+    borderRadius: 24,
+    paddingHorizontal: 6,
+    paddingVertical: 4,
+    minHeight: 48,
+  },
   input: {
     flex: 1,
-    minHeight: 44,
-    borderWidth: 1,
-    borderRadius: 18,
-    paddingHorizontal: 14,
-    paddingTop: 11,
-    paddingBottom: 11,
+    minHeight: 40,
+    paddingHorizontal: 10,
+    paddingTop: 9,
+    paddingBottom: 9,
     fontSize: 16,
-    lineHeight: 20,
+    lineHeight: 22,
     textAlignVertical: 'top',
     textAlign: 'right',
     writingDirection: 'rtl',
   },
-  send: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
-  empty: { alignItems: 'center', gap: 10, paddingTop: 60, paddingHorizontal: 8 },
+  send: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  empty: { alignItems: 'center', gap: 10, paddingTop: 56, paddingHorizontal: 12 },
+  heroAvatar: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 4,
+  },
   centred: { textAlign: 'center' },
 });
