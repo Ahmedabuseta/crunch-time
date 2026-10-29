@@ -1375,7 +1375,7 @@ export function SettingsPage() {
               onSortChange={(s) => { setDiscountSort(s); setDiscountPage(1) }}
               columns={[
                 { key: 'code', label: 'الكود', render: d => <span className="font-mono font-bold">{d.code}</span> },
-                { key: 'value', label: 'القيمة', render: d => d.type === 'percentage' ? `${d.value}%` : `${d.value} ج.م` },
+                { key: 'value', label: 'القيمة', render: d => d.type === 'percentage' ? `${d.value}%` : `${fmtMoney(Number(d.value) || 0)} ج.م` },
                 {
                   key: 'mode',
                   label: 'النوع',
@@ -1441,7 +1441,7 @@ export function SettingsPage() {
                 <div className="flex-1 cursor-pointer" onClick={() => { setEditingDiscount({ ...d }); setShowDiscountForm(false) }}>
                   <p className="text-sm font-bold font-mono">{d.code}</p>
                   <p className="text-[10px] text-muted-foreground">
-                    {d.type === 'percentage' ? `${d.value}%` : `${d.value} ج.م`}
+                    {d.type === 'percentage' ? `${d.value}%` : `${fmtMoney(Number(d.value) || 0)} ج.م`}
                     {(d.mode || 'order') === 'daily'
                       ? ` — يومي${discountDayLabel(d) ? `: ${discountDayLabel(d)}` : ''}${d.dailyUses > 0 ? ` (${d.dailyUses}/يوم)` : ''}`
                       : d.maxUses > 0 ? ` — متبقي ${d.maxUses - d.usedCount} استخدام` : ' — بلا حد'}

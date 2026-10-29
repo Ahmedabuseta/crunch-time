@@ -16,6 +16,7 @@ import {
   RefreshCw, ChevronLeft, ChevronRight, ChevronDown, Lock, Unlock,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { fmtMoney } from '@/lib/format'
 import { DataTable, sortRows, type SortState } from '@/components/ui/data-table'
 import { Emoji } from '@/components/Emoji'
 import { daysAgo, monthStart, today, weekStart } from '@/lib/dates'
@@ -1400,7 +1401,7 @@ export function Reports() {
                             <span className={cn("text-[9px] font-bold px-2 py-0.5 rounded-full",
                               c.type === 'percentage' ? "bg-sky-500/10 text-sky-400" : "bg-amber-500/10 text-amber-400"
                             )}>
-                              {c.type === 'percentage' ? `${c.value}%` : `${c.value} ج.م`}
+                              {c.type === 'percentage' ? `${c.value}%` : `${fmtMoney(Number(c.value) || 0)} ج.م`}
                             </span>
                           </div>
                           <p className="text-[10px] text-muted-foreground mt-0.5">

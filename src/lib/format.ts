@@ -1,4 +1,12 @@
+/** Round a money value to at most two decimals (half away from zero). */
+export function roundMoney(n: number): number {
+  const value = Number(n)
+  if (!Number.isFinite(value)) return 0
+  const rounded = Math.round((Math.abs(value) + Number.EPSILON) * 100) / 100
+  if (rounded === 0) return 0
+  return value < 0 ? -rounded : rounded
+}
+
 export function fmtMoney(n: number): string {
-  const v = Math.round((n + Number.EPSILON) * 100) / 100
-  return v.toLocaleString('en-US', { maximumFractionDigits: 2 })
+  return roundMoney(n).toLocaleString('en-US', { maximumFractionDigits: 2 })
 }

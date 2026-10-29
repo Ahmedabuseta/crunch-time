@@ -5,6 +5,7 @@ import { useUserStore } from '@/services/user/user.store'
 import { Button } from '@/components/ui/button'
 import { Lock, Unlock, Wallet, TrendingDown, TrendingUp } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { fmtMoney } from '@/lib/format'
 
 export function MyShiftPage() {
   const currentShift = useShiftStore((s) => s.currentShift)
@@ -90,7 +91,7 @@ export function MyShiftPage() {
             </div>
             <div className="text-center">
               <p className="text-xs text-muted-foreground">رصيد الافتتاح</p>
-              <p className="text-3xl font-black text-primary">{currentShift.openingCash} <span className="text-sm">ج.م</span></p>
+              <p className="text-3xl font-black text-primary">{fmtMoney(currentShift.openingCash)} <span className="text-sm">ج.م</span></p>
             </div>
 
             {/* Expected cash display */}

@@ -465,8 +465,8 @@ const handleCheckout = async () => {
                 <div className={cn("text-xs font-bold px-2 py-1 rounded-lg", discountResult.valid ? "bg-green-500/10 text-green-400" : "bg-red-500/10 text-red-400")}>
                   {discountResult.valid
                     ? discountResult.discount.mode === 'daily'
-                      ? `✓ خصم ${discountResult.discount.type === 'percentage' ? discountResult.discount.value + '%' : discountResult.discount.value + ' ج.م'} على صنف اليوم: ${discountResult.discount.productName}${discountResult.discount.remaining != null ? ` — متبقي اليوم: ${discountResult.discount.remaining}` : ''}`
-                      : `✓ خصم ${discountResult.discount.type === 'percentage' ? discountResult.discount.value + '%' : discountResult.discount.value + ' ج.م'}`
+                      ? `✓ خصم ${discountResult.discount.type === 'percentage' ? discountResult.discount.value + '%' : fmtMoney(Number(discountResult.discount.value) || 0) + ' ج.م'} على صنف اليوم: ${discountResult.discount.productName}${discountResult.discount.remaining != null ? ` — متبقي اليوم: ${discountResult.discount.remaining}` : ''}`
+                      : `✓ خصم ${discountResult.discount.type === 'percentage' ? discountResult.discount.value + '%' : fmtMoney(Number(discountResult.discount.value) || 0) + ' ج.م'}`
                     : `✗ ${discountResult.error}`}
                 </div>
                 {discountResult.valid && discountResult.discount.mode === 'daily' && !items.some((i) => i.product.id === discountResult.discount.productId) && (
@@ -491,7 +491,7 @@ const handleCheckout = async () => {
                 <div className="flex justify-between"><span className="text-amber-400 font-bold">اختار المنطقة</span></div>
               )}
               {discountAmount > 0 && (
-                <div className="flex justify-between text-green-400"><span>خصم</span><span className="font-bold">-{discountAmount} ج.م</span></div>
+                <div className="flex justify-between text-green-400"><span>خصم</span><span className="font-bold">-{fmtMoney(discountAmount)} ج.م</span></div>
               )}
               <div className="h-px bg-border my-1" />
               <div className="flex justify-between items-baseline">

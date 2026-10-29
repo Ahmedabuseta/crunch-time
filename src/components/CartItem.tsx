@@ -33,7 +33,7 @@ export function CartItem({ item }: CartItemProps) {
               <span className="text-primary"> ({item.modifiers.map((m) => m.modifierName).join('، ')})</span>
             )}
           </p>
-          <p className="text-sm font-black text-primary leading-tight">{lineTotal} <span className="text-[10px] font-medium text-muted-foreground">ج.م</span></p>
+          <p className="text-sm font-black text-primary leading-tight">{fmtMoney(lineTotal)} <span className="text-[10px] font-medium text-muted-foreground">ج.م</span></p>
         </div>
         <div className="flex items-center bg-secondary rounded-full p-0.5 shrink-0">
           <button onClick={() => updateQuantity(item.lineId, item.quantity - 1)} className="flex items-center justify-center h-9 w-9 rounded-full hover:bg-accent cursor-pointer transition-colors">

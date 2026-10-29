@@ -5,6 +5,7 @@ import { useCartStore } from '@/services/cart/cart.store'
 import { useCustomerStore } from '@/services/customer/customer.store'
 import { useDeliveryStore, useProfileStore } from '@/services/delivery/delivery.store'
 import { cn } from '@/lib/utils'
+import { fmtMoney } from '@/lib/format'
 import { Truck, UtensilsCrossed, ShoppingBag, MapPin, Phone, User, Clock, StickyNote, Hash } from 'lucide-react'
 import type { Customer } from '../ipc/renderer'
 
@@ -165,7 +166,7 @@ export function OrderTypeSelector() {
                 </SelectTrigger>
                 <SelectContent>
                   {activeZones.map(z => (
-                    <SelectItem key={z.id} value={z.id}>{z.name} — {z.fee} ج.م</SelectItem>
+                    <SelectItem key={z.id} value={z.id}>{z.name} — {fmtMoney(z.fee)} ج.م</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -174,7 +175,7 @@ export function OrderTypeSelector() {
           {selectedZone && (
             <div className="flex items-center gap-2 text-[11px] font-bold text-blue-400 bg-blue-500/10 rounded-lg px-3 py-1.5">
               <Truck className="h-3.5 w-3.5 shrink-0" />
-              <span>التوصيل لـ {selectedZone.name}: {selectedZone.fee} ج.م</span>
+              <span>التوصيل لـ {selectedZone.name}: {fmtMoney(selectedZone.fee)} ج.م</span>
             </div>
           )}
           {/* Delivery boy selector */}

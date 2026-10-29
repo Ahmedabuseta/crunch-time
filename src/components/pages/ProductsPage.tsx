@@ -361,7 +361,7 @@ export function ProductsPage() {
                               <button key={a.id} onClick={() => setSelectedAddons(s => selected ? s.filter(id => id !== a.id) : [...s, a.id])}
                                 className={cn("px-2.5 py-1 rounded-full text-[10px] font-bold border transition-all cursor-pointer",
                                   selected ? "bg-primary text-primary-foreground border-primary" : "bg-secondary text-muted-foreground border-transparent hover:border-border")}>
-                                <Emoji>{a.emoji}</Emoji> {a.name} {a.price > 0 && <span>{a.price}ج</span>}
+                                <Emoji>{a.emoji}</Emoji> {a.name} {a.price > 0 && <span>{fmtMoney(a.price)}ج</span>}
                               </button>
                             )
                           })}
