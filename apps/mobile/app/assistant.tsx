@@ -1,4 +1,4 @@
-import type { ChatMessage } from '@/api/types';
+import type { ActionChatCard, ChatMessage } from '@/api/types';
 import { AssistantConfigSheet } from '@/components/app/AssistantConfigSheet';
 import { ChatBubble } from '@/components/app/ChatBubble';
 import { ChatCardView } from '@/components/app/ChatCardView';
@@ -11,7 +11,7 @@ import { useColor } from '@/hooks/useColor';
 import { useKeyboardHeight } from '@/hooks/useKeyboardHeight';
 import { ChevronLeft, Settings, Sparkles, Square, Trash2 } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
-import React, { useCallback, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, FlatList, Pressable, StyleSheet, TextInput } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -49,6 +49,31 @@ export default function AssistantScreen() {
   const [draft, setDraft] = useState('');
   const listRef = useRef<FlatList<ChatMessage>>(null);
 
+  // A chat auto-scrolls, but not on every content change: while text streams the
+  // content size changes many times a second, and an animation per change fights
+  // the previous one — expensive on an old device and jarring to read.
+  const scrollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const streamingRef = useRef(streaming);
+  streamingRef.current = streaming;
+
+  const scheduleScroll = useCallback(() => {
+    if (scrollTimer.current) return;
+    scrollTimer.current = setTimeout(() => {
+      scrollTimer.current = null;
+      // Jump while text is arriving; animate only when a finished line lands.
+      listRef.current?.scrollToEnd({ animated: !streamingRef.current });
+    }, 120);
+  }, []);
+
+  useEffect(
+    () => () => {
+      if (scrollTimer.current) clearTimeout(scrollTimer.current);
+    },
+    []
+  );
+
+  const closeSheet = useCallback(() => setSheetOpen(false), []);
+
   const primary = useColor('primary');
   const primaryForeground = useColor('primaryForeground');
   const card = useColor('card');
@@ -82,24 +107,7 @@ export default function AssistantScreen() {
 
   const renderMessage = useCallback(
     ({ item }: { item: ChatMessage }) => (
-      <View style={{ gap: 8 }}>
-        <ChatBubble message={item} />
-        {item.cards?.map((messageCard, index) => (
-          <ChatCardView
-            key={`card-${index}`}
-            card={messageCard}
-            onConfirm={confirm}
-            onCancel={cancel}
-          />
-        ))}
-        {item.followups?.length ? (
-          <View style={styles.chips}>
-            {item.followups.map((followup) => (
-              <Chip key={followup} label={followup} onPress={() => ask(followup)} />
-            ))}
-          </View>
-        ) : null}
-      </View>
+      <MessageRow item={item} onAsk={ask} onConfirm={confirm} onCancel={cancel} />
     ),
     [ask, cancel, confirm]
   );
@@ -147,9 +155,15 @@ export default function AssistantScreen() {
         style={{ flex: 1 }}
         contentContainerStyle={styles.list}
         keyboardShouldPersistTaps='handled'
-        // A chat reads from its newest line: on open (the history arrives after
-        // the first layout) and on every answer.
-        onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: true })}
+        // A chat reads from its newest line, but re-scrolling on every content
+        // change is what stutters during streaming — this coalesces it.
+        onContentSizeChange={scheduleScroll}
+        // Sized for an old handset: keep the mounted window small and mount
+        // rows in small batches rather than all at once on first paint.
+        initialNumToRender={12}
+        maxToRenderPerBatch={8}
+        windowSize={9}
+        updateCellsBatchingPeriod={50}
         ListEmptyComponent={
           messages.length === 0 && !streaming ? (
             <EmptyState loading={loadingHistory} onPick={ask} />
@@ -228,12 +242,51 @@ export default function AssistantScreen() {
 
       <AssistantConfigSheet
         isVisible={sheetOpen}
-        onClose={() => setSheetOpen(false)}
+        onClose={closeSheet}
         onClearHistory={clear}
       />
     </View>
   );
 }
+
+/**
+ * One transcript line with its cards and follow-ups.
+ *
+ * Memoised because the screen re-renders whenever the streaming partial
+ * changes: without this, every flush re-lays-out the whole visible transcript.
+ */
+const MessageRow = React.memo(function MessageRow({
+  item,
+  onAsk,
+  onConfirm,
+  onCancel,
+}: {
+  item: ChatMessage;
+  onAsk: (question: string) => void;
+  onConfirm: (card: ActionChatCard) => Promise<void>;
+  onCancel: (card: ActionChatCard) => Promise<void>;
+}) {
+  return (
+    <View style={{ gap: 8 }}>
+      <ChatBubble message={item} />
+      {item.cards?.map((messageCard, index) => (
+        <ChatCardView
+          key={`card-${index}`}
+          card={messageCard}
+          onConfirm={onConfirm}
+          onCancel={onCancel}
+        />
+      ))}
+      {item.followups?.length ? (
+        <View style={styles.chips}>
+          {item.followups.map((followup) => (
+            <Chip key={followup} label={followup} onPress={() => onAsk(followup)} />
+          ))}
+        </View>
+      ) : null}
+    </View>
+  );
+});
 
 /** The line shown while the assistant works and has not written anything yet. */
 function PendingTurn({ partial, status }: { partial: string; status: string | null }) {

@@ -14,6 +14,16 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 const HISTORY_LIMIT = 50;
 
 /**
+ * Streaming text is published at most this often.
+ *
+ * A fast provider emits dozens of deltas a second, and each one would re-render
+ * the whole screen — which is what makes an old Android handset stutter. Ten
+ * updates a second is indistinguishable from token-by-token to the eye and an
+ * order of magnitude cheaper.
+ */
+const STREAM_FLUSH_MS = 90;
+
+/**
  * Tool name → the line shown while it runs. The server sends the tool id, never
  * prose, so the wording stays the phone's.
  */
@@ -95,6 +105,7 @@ export function useAssistantChat() {
     // need the final text in the same tick it arrives.
     let content = '';
     let settled = false;
+    let flushTimer: ReturnType<typeof setTimeout> | null = null;
 
     try {
       await streamChat(
@@ -108,7 +119,13 @@ export function useAssistantChat() {
           onStatus: (tool) => setStatus(statusForTool(tool)),
           onText: (delta) => {
             content += delta;
-            setPartial(content);
+            // Coalesce: the first delta of a window schedules the flush, the
+            // rest just extend the buffer.
+            if (flushTimer) return;
+            flushTimer = setTimeout(() => {
+              flushTimer = null;
+              setPartial(content);
+            }, STREAM_FLUSH_MS);
           },
           onDone: (payload) => {
             settled = true;
@@ -132,6 +149,12 @@ export function useAssistantChat() {
       // An abort is the owner pressing stop, not a failure worth shouting about.
       if (!isAbort(err)) setError(messageOf(err));
     } finally {
+      // Drop a pending flush: the final text is either in a message already or
+      // about to be, so publishing a last partial would only cause a flash.
+      if (flushTimer) {
+        clearTimeout(flushTimer);
+        flushTimer = null;
+      }
       // A turn that ended without `done` — a dropped socket, the server's own
       // error event — still holds text worth keeping, so it lands as a message
       // instead of vanishing. An aborted turn is deliberately dropped.

@@ -19,7 +19,7 @@ const BLOCKED_LABELS: Record<string, string> = {
  * assistant's sit on a card, which is also what the report and table cards are
  * drawn on, so an answer and its evidence read as one block.
  */
-export function ChatBubble({
+function ChatBubbleBase({
   message,
 }: {
   /** The in-flight partial has no id yet, so only what is drawn is required. */
@@ -57,6 +57,12 @@ export function ChatBubble({
     </Card>
   );
 }
+
+/**
+ * Memoised: the assistant screen re-renders on every streamed flush, and a
+ * settled bubble never changes — so it should not be laid out again.
+ */
+export const ChatBubble = React.memo(ChatBubbleBase);
 
 const styles = StyleSheet.create({
   /**

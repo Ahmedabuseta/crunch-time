@@ -14,7 +14,7 @@ import { ScrollView, StyleSheet } from 'react-native';
  * does not know renders nothing at all — a newer server must never be able to
  * crash the screen.
  */
-export function ChatCardView({
+function ChatCardViewBase({
   card,
   onConfirm,
   onCancel,
@@ -52,6 +52,12 @@ export function ChatCardView({
       return null;
   }
 }
+
+/**
+ * Memoised: the assistant screen re-renders on every streamed flush, and a
+ * card that is already on screen does not change with the prose around it.
+ */
+export const ChatCardView = React.memo(ChatCardViewBase);
 
 const METRIC_TONE = { good: 'green', warn: 'orange', bad: 'red' } as const;
 
