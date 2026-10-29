@@ -123,17 +123,23 @@ export function registerAssistantRoutes(app: FastifyInstance, backend: Backend) 
     }
   })
 
-  // Returns the audio itself, so the phone can play it straight from the URL
-  // without a second decode step.
-  app.post('/assistant/speech', async (req, reply) => {
-    const text = String((req.body as Record<string, unknown>)?.text ?? '')
+  // The audio itself, so the phone can hand the URL to its player rather than
+  // buffering a blob. GET is what a media player can fetch; the bearer token
+  // rides in `?token=`, which the auth hook already accepts.
+  const speak = async (text: string, reply: FastifyReply) => {
     try {
       const { audio, mime } = await synthesize(text)
       return reply.header('content-type', mime).header('cache-control', 'no-store').send(audio)
     } catch (err: any) {
       return reply.code(voiceStatus(err)).send({ ok: false, code: err?.code, error: err?.message })
     }
-  })
+  }
+
+  app.post('/assistant/speech', async (req, reply) =>
+    speak(String((req.body as Record<string, unknown>)?.text ?? ''), reply))
+
+  app.get('/assistant/speech', async (req, reply) =>
+    speak(String((req.query as Record<string, unknown>)?.text ?? ''), reply))
 
   // ─── History ────────────────────────────────────────────────
   app.get('/assistant/history', async (req) => {
