@@ -42,9 +42,9 @@ export function getAiConfig(): AiConfig {
 
   return {
     enabled: Boolean(row?.enabled),
-    provider: row?.provider || 'openai',
-    baseUrl: row?.baseUrl || 'https://api.openai.com/v1',
-    model: row?.model || 'gpt-4o-mini',
+    provider: row?.provider || 'groq',
+    baseUrl: row?.baseUrl || 'https://api.groq.com/openai/v1',
+    model: row?.model || 'llama-3.3-70b-versatile',
     hasKey: Boolean(row?.keyEnc),
     dailyTokenLimit: Number(row?.dailyLimit ?? 150000),
     temporalPort: Number(row?.temporalPort) || 7233,

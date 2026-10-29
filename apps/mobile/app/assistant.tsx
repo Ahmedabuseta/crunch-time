@@ -8,9 +8,8 @@ import { Text } from '@/components/ui/text';
 import { View } from '@/components/ui/view';
 import { useAssistantChat } from '@/hooks/useAssistantChat';
 import { useColor } from '@/hooks/useColor';
-import { useKeyboardHeight } from '@/hooks/useKeyboardHeight';
-import { TAB_BAR_GAP, TAB_BAR_HEIGHT, TAB_BAR_SPACE } from '@/theme/globals';
-import { ArrowUp, Settings, Sparkles, Square, Trash2 } from 'lucide-react-native';
+import { ChevronLeft, Settings, Sparkles, Square, Trash2 } from 'lucide-react-native';
+import { useRouter } from 'expo-router';
 import React, { useCallback, useRef, useState } from 'react';
 import { Alert, FlatList, Pressable, StyleSheet, TextInput } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -21,9 +20,15 @@ const EXAMPLES = ['بعت بكام النهاردة؟', 'إيه اللي ناق�
 /** Four lines of 20pt plus the field's own padding; past that it scrolls. */
 const INPUT_MAX_HEIGHT = 4 * 20 + 20;
 
+/**
+ * The assistant lives outside the `(app)` tab navigator on purpose: this is a
+ * focused conversation, so the floating tab bar and the quick-action dial both
+ * disappear while it is open. It is a root route, reached from the icon on the
+ * board and from المزيد.
+ */
 export default function AssistantScreen() {
+  const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { isKeyboardVisible } = useKeyboardHeight();
   const {
     messages,
     streaming,
@@ -51,12 +56,6 @@ export default function AssistantScreen() {
   const secondary = useColor('secondary');
   const red = useColor('red');
   const background = useColor('background');
-
-  // The tab bar floats over the content rather than sitting in the layout, so
-  // the composer has to reserve its room itself — including the safe-area inset
-  // the bar is raised by. TAB_BAR_SPACE is the floor, in case the device has no
-  // inset at all.
-  const barClearance = Math.max(TAB_BAR_SPACE, insets.bottom + TAB_BAR_GAP + TAB_BAR_HEIGHT + 8);
 
   const submit = useCallback(() => {
     const value = draft.trim();
@@ -106,6 +105,15 @@ export default function AssistantScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: background }}>
       <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
+        <Pressable
+          onPress={() => router.back()}
+          hitSlop={10}
+          style={styles.iconButton}
+          accessibilityRole='button'
+          accessibilityLabel='رجوع'
+        >
+          <ChevronLeft size={22} color={muted} />
+        </Pressable>
         <Text variant='title' style={{ flex: 1 }}>
           المساعد
         </Text>
@@ -154,11 +162,14 @@ export default function AssistantScreen() {
         </Text>
       ) : null}
 
-      {/* Keeps the composer clear of the floating bar while the keyboard is
-          down; once it is up the bar is covered and the room is wasted. */}
-      {isKeyboardVisible ? null : <View style={{ height: barClearance }} />}
-
-      <View style={[styles.composer, { borderTopColor: border, backgroundColor: background }]}>
+      {/* No tab bar on this screen, so the composer only has to clear the home
+          indicator. */}
+      <View
+        style={[
+          styles.composer,
+          { borderTopColor: border, backgroundColor: background, paddingBottom: insets.bottom + 10 },
+        ]}
+      >
         <View style={styles.composerRow}>
           <TextInput
             value={draft}
@@ -198,7 +209,7 @@ export default function AssistantScreen() {
               accessibilityRole='button'
               accessibilityLabel='إرسال'
             >
-              <ArrowUp size={18} color={draft.trim() ? primaryForeground : muted} />
+              <Sparkles size={17} color={draft.trim() ? primaryForeground : muted} />
             </Pressable>
           )}
         </View>
@@ -294,7 +305,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    paddingHorizontal: 16,
+    paddingHorizontal: 12,
     paddingBottom: 10,
   },
   iconButton: { padding: 8 },
@@ -302,7 +313,7 @@ const styles = StyleSheet.create({
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   chip: { borderWidth: 1, borderRadius: 999, paddingHorizontal: 14, paddingVertical: 8 },
   pending: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 8 },
-  composer: { borderTopWidth: 1, paddingHorizontal: 16, paddingTop: 10, paddingBottom: 12 },
+  composer: { borderTopWidth: 1, paddingHorizontal: 16, paddingTop: 10 },
   composerRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 8 },
   input: {
     flex: 1,

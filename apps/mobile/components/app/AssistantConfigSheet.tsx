@@ -10,7 +10,7 @@ import { Text } from '@/components/ui/text';
 import { View } from '@/components/ui/view';
 import { useColor } from '@/hooks/useColor';
 import React, { useEffect, useState } from 'react';
-import { Alert, StyleSheet } from 'react-native';
+import { Alert, Pressable, StyleSheet } from 'react-native';
 
 interface FormState {
   enabled: boolean;
@@ -29,6 +29,32 @@ const EMPTY_FORM: FormState = {
   apiKey: '',
   dailyTokenLimit: '',
 };
+
+/**
+ * The three providers worth a single tap. Typing a base URL by hand is the most
+ * error-prone part of this sheet, and in practice the answer is always one of
+ * these — the fields stay editable for anything else.
+ */
+const PROVIDERS = [
+  {
+    label: 'Groq',
+    provider: 'groq',
+    baseUrl: 'https://api.groq.com/openai/v1',
+    model: 'llama-3.3-70b-versatile',
+  },
+  {
+    label: 'OpenAI',
+    provider: 'openai',
+    baseUrl: 'https://api.openai.com/v1',
+    model: 'gpt-4o-mini',
+  },
+  {
+    label: 'OpenRouter',
+    provider: 'openrouter',
+    baseUrl: 'https://openrouter.ai/api/v1',
+    model: 'openai/gpt-4o-mini',
+  },
+] as const;
 
 function toForm(config: AssistantConfig): FormState {
   return {
@@ -83,6 +109,8 @@ export function AssistantConfigSheet({
   const green = useColor('green');
   const red = useColor('red');
   const muted = useColor('mutedForeground');
+  const primary = useColor('primary');
+  const border = useColor('border');
 
   // Read on open rather than on mount: the sheet is always mounted, and this is
   // the one moment the values can have changed underneath it.
@@ -199,18 +227,45 @@ export function AssistantConfigSheet({
 
           <Separator />
 
+          <View style={styles.presets}>
+            {PROVIDERS.map((preset) => {
+              const active = form.baseUrl.trim().replace(/\/+$/, '') === preset.baseUrl;
+              return (
+                <Pressable
+                  key={preset.label}
+                  onPress={() =>
+                    patch({ provider: preset.provider, baseUrl: preset.baseUrl, model: preset.model })
+                  }
+                  style={[
+                    styles.preset,
+                    {
+                      borderColor: active ? primary : border,
+                      backgroundColor: active ? `${primary}1F` : 'transparent',
+                    },
+                  ]}
+                  accessibilityRole='button'
+                  accessibilityLabel={preset.label}
+                >
+                  <Text variant='caption' style={{ color: active ? primary : muted, fontSize: 13 }}>
+                    {preset.label}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+
           <Input
             label='المزود'
             value={form.provider}
             onChangeText={(provider) => patch({ provider })}
-            placeholder='openai'
+            placeholder='groq'
             autoCapitalize='none'
           />
           <Input
             label='العنوان'
             value={form.baseUrl}
             onChangeText={(baseUrl) => patch({ baseUrl })}
-            placeholder='https://api.openai.com/v1'
+            placeholder='https://api.groq.com/openai/v1'
             autoCapitalize='none'
             keyboardType='url'
           />
@@ -218,7 +273,7 @@ export function AssistantConfigSheet({
             label='الموديل'
             value={form.model}
             onChangeText={(model) => patch({ model })}
-            placeholder='gpt-4o-mini'
+            placeholder='llama-3.3-70b-versatile'
             autoCapitalize='none'
           />
           <Input
@@ -303,4 +358,6 @@ export function AssistantConfigSheet({
 
 const styles = StyleSheet.create({
   footnote: { textAlign: 'center', marginTop: 4, fontSize: 12 },
+  presets: { flexDirection: 'row', gap: 8 },
+  preset: { flex: 1, borderWidth: 1, borderRadius: 999, paddingVertical: 8, alignItems: 'center' },
 });

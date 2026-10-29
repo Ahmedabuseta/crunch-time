@@ -23,7 +23,7 @@ import { qk } from '@/lib/queryKeys';
 import { useOrderSocket } from '@/lib/useOrderSocket';
 import { TAB_BAR_SPACE } from '@/theme/globals';
 import { useRouter } from 'expo-router';
-import { ChefHat, Radio, ShoppingBag, Truck, UtensilsCrossed } from 'lucide-react-native';
+import { ChefHat, Radio, ShoppingBag, Sparkles, Truck, UtensilsCrossed } from 'lucide-react-native';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -170,6 +170,15 @@ export default function BoardScreen() {
             {rangeLabel(paged.items.length, paged.total)}
           </Text>
         </View>
+        <Pressable
+          onPress={() => router.push('/assistant')}
+          hitSlop={10}
+          accessibilityRole='button'
+          accessibilityLabel='المساعد'
+          style={[styles.assistantButton, { backgroundColor: `${primary}1F`, borderColor: `${primary}59` }]}
+        >
+          <Sparkles size={18} color={primary} />
+        </Pressable>
         <View style={[styles.livePill, { backgroundColor: connected ? `${green}22` : secondary }]}>
           <Radio size={13} color={connected ? green : muted} />
           <Text variant='caption' style={{ color: connected ? green : muted, fontSize: 12 }}>
@@ -404,6 +413,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 999,
+  },
+  /** The assistant's door on the home screen — the way most owners will find it. */
+  assistantButton: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   stats: { flexDirection: 'row', gap: 8, paddingHorizontal: 16, paddingBottom: 12 },
   stat: {

@@ -7,9 +7,9 @@ import type { Migration } from './types'
 // that never enables the assistant simply keeps the defaults.
 const COLUMNS: [string, string][] = [
   ['ai_enabled', 'INTEGER NOT NULL DEFAULT 0'],
-  ['ai_provider', "TEXT NOT NULL DEFAULT 'openai'"],
-  ['ai_base_url', "TEXT NOT NULL DEFAULT 'https://api.openai.com/v1'"],
-  ['ai_model', "TEXT NOT NULL DEFAULT 'gpt-4o-mini'"],
+  ['ai_provider', "TEXT NOT NULL DEFAULT 'groq'"],
+  ['ai_base_url', "TEXT NOT NULL DEFAULT 'https://api.groq.com/openai/v1'"],
+  ['ai_model', "TEXT NOT NULL DEFAULT 'llama-3.3-70b-versatile'"],
   ['ai_api_key_enc', 'TEXT'],
   // Per-install AES key for ai_api_key_enc. Rotating it orphans the stored key,
   // which is the intended failure mode: the owner re-enters it once.

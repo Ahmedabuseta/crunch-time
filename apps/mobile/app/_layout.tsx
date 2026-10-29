@@ -148,6 +148,9 @@ function RootNavigator() {
 
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name='(app)' options={{ headerShown: false }} />
+        {/* A root route, not a tab: the assistant is a focused conversation, so
+            the tab bar and the quick-action dial are absent while it is open. */}
+        <Stack.Screen name='assistant' options={{ headerShown: false, animation: 'slide_from_left' }} />
         <Stack.Screen name='+not-found' />
       </Stack>
     </View>
