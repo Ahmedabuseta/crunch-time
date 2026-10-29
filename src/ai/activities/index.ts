@@ -144,15 +144,17 @@ export async function modelStep(input: ModelStepInput): Promise<ModelStepOutput>
       } catch {
         // A malformed partial must not kill the step; the final output decides.
       }
-      return { result, shown, streamError: () => streamError }
+      return { result, shown, plain: false, streamError: () => streamError }
     }
 
     let shown = ''
     for await (const delta of result.textStream) {
       shown += delta
-      publishText(input.turnId, delta)
+      // Buffered on purpose: this path serves providers that cannot take a
+      // structured output, so the stream is the model's raw JSON. It is
+      // published below once parsed, never word by word into the bubble.
     }
-    return { result, shown, streamError: () => streamError }
+    return { result, shown, plain: true, streamError: () => streamError }
   }
 
   let attempt: Awaited<ReturnType<typeof run>>
@@ -220,7 +222,10 @@ export async function modelStep(input: ModelStepInput): Promise<ModelStepOutput>
     if (!text) {
       throw ApplicationFailure.nonRetryable('الموديل رجّع رد فاضي', 'EmptyReply')
     }
-    reply = { text, cards: input.cardIds, followups: [] }
+    // Without `response_format` the model still answers with the JSON the
+    // system prompt asks for, so use it rather than showing the owner the blob.
+    reply = parseReplyJson(text) ?? { text, cards: input.cardIds, followups: [] }
+    if (attempt.plain) publishText(input.turnId, reply.text)
   }
 
   return { kind: 'answer', reply, promptTokens, completionTokens, degraded }
@@ -260,6 +265,17 @@ function isStructuredOutputUnsupported(err: any): boolean {
     /response_format|json_schema|structured|json mode/i.test(message) &&
     /400|unsupported|not support|cannot be combined/i.test(message)
   )
+}
+
+/** The streamed answer when structured output was unavailable, if it is JSON. */
+function parseReplyJson(text: string): AssistantReply | null {
+  const candidate = text.replace(/^```(?:json)?\s*/i, '').replace(/```$/, '').trim()
+  try {
+    const parsed = AssistantReplySchema.safeParse(JSON.parse(candidate))
+    return parsed.success ? parsed.data : null
+  } catch {
+    return null
+  }
 }
 
 function providerFailure(err: any): Error {

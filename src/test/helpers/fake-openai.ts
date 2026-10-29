@@ -54,7 +54,15 @@ function pieces(text: string): string[] {
   return out.length > 0 ? out : ['']
 }
 
-export async function startFakeOpenAI(turns: FakeTurn[]): Promise<FakeOpenAI> {
+export interface FakeOpenAIOptions {
+  /** Mimic Groq, which refuses `response_format` on a request that carries tools. */
+  rejectJsonWithTools?: boolean
+}
+
+export async function startFakeOpenAI(
+  turns: FakeTurn[],
+  options: FakeOpenAIOptions = {},
+): Promise<FakeOpenAI> {
   const requests: { body: any; at: number }[] = []
   let turnIndex = 0
 
@@ -82,6 +90,19 @@ export async function startFakeOpenAI(turns: FakeTurn[]): Promise<FakeOpenAI> {
         return
       }
 
+      // Groq's real refusal. It must not consume a scripted turn: the client
+      // retries the step without structured output and only then gets one.
+      if (options.rejectJsonWithTools && body.response_format) {
+        respondError(res, 400, {
+          error: {
+            message: 'json mode cannot be combined with tool/function calling',
+            type: 'invalid_request_error',
+            param: 'response_format',
+          },
+        })
+        return
+      }
+
       const turn = turns[Math.min(turnIndex, turns.length - 1)]
       turnIndex += 1
 
@@ -104,6 +125,12 @@ export async function startFakeOpenAI(turns: FakeTurn[]): Promise<FakeOpenAI> {
 function respondJson(res: import('node:http').ServerResponse, payload: unknown): void {
   const text = JSON.stringify(payload)
   res.writeHead(200, { 'content-type': 'application/json', 'content-length': Buffer.byteLength(text) })
+  res.end(text)
+}
+
+function respondError(res: import('node:http').ServerResponse, status: number, payload: unknown): void {
+  const text = JSON.stringify(payload)
+  res.writeHead(status, { 'content-type': 'application/json', 'content-length': Buffer.byteLength(text) })
   res.end(text)
 }
 

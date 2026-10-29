@@ -243,4 +243,44 @@ suite('assistant chat over HTTP', () => {
     })
     expect(res.status).toBe(401)
   })
+
+  it('still answers when the provider refuses JSON mode alongside tools', async () => {
+    // Groq answers 400 to response_format + tools, and the SDK hides that
+    // behind NoOutputGeneratedError. The step must retry without the
+    // structured output and parse the JSON the model still sends.
+    const groqLike = await startFakeOpenAI(
+      [
+        { kind: 'tool', name: 'sales_summary', args: {} },
+        { kind: 'text', text: REPLY_JSON },
+      ],
+      { rejectJsonWithTools: true },
+    )
+    try {
+      expect(updateAiConfig({ baseUrl: groqLike.url }).ok).toBe(true)
+
+      const events = await chat('بعت بكام النهاردة؟')
+      const done = events.find((event) => event.event === 'done')
+      expect(done).toBeDefined()
+      const payload = JSON.parse(done!.data)
+
+      expect(payload.followups).toEqual(['وإمبارح؟'])
+      expect(payload.cards).toHaveLength(1)
+
+      // The raw JSON never reaches the bubble, not even as deltas: the step
+      // buffers it and publishes only the parsed text.
+      const streamed = events
+        .filter((event) => event.event === 'text')
+        .map((event) => JSON.parse(event.data).d as string)
+        .join('')
+      expect(streamed).toBe(ANSWER)
+
+      const history = await fetch(`${base}/assistant/history`, {
+        headers: { authorization: `Bearer ${token}` },
+      })
+      const { messages } = await history.json()
+      expect(messages[messages.length - 1].content).toBe(ANSWER)
+    } finally {
+      await groqLike.close()
+    }
+  }, 60_000)
 })
