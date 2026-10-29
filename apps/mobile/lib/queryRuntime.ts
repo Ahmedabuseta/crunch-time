@@ -11,6 +11,11 @@ let installed = false;
 /** Idempotent: safe to call from a module top level. */
 export function installQueryRuntime(): void {
   if (installed) return;
+  // Expo Router prerenders the web build once in Node (`web.output: "static"`),
+  // where there is no `window`; expo-network's web listener dereferences it the
+  // moment it is registered. The browser bundle is a separate module instance
+  // and installs for real there.
+  if (typeof window === 'undefined') return;
   installed = true;
 
   onlineManager.setEventListener((setOnline) => {
