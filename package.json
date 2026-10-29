@@ -20,15 +20,24 @@
     "build:electron:watch": "node scripts/build-electron.mjs --watch",
     "icons": "node scripts/generate-icon.mjs",
     "preview": "vite preview",
+    "fetch:temporal": "node scripts/fetch-temporal.mjs",
+    "check:assistant": "node scripts/check-assistant-runtime.mjs",
     "electron:dev": "concurrently -k \"vite --port 5173 --strictPort\" \"node scripts/build-electron.mjs --watch\" \"npx wait-on http://localhost:5173 dist-electron/main.cjs && NODE_ENV=development electron .\"",
     "electron:start": "NODE_ENV=production electron .",
-    "dist": "npm run build && electron-builder --publish never",
-    "release": "npm run build && electron-builder --publish always",
+    "dist": "npm run fetch:temporal && npm run build && electron-builder --publish never",
+    "release": "npm run fetch:temporal && npm run build && electron-builder --publish always",
     "test": "vitest run",
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@ai-sdk/openai-compatible": "^3.0.81",
     "@radix-ui/react-select": "^2.3.7",
+    "@temporalio/activity": "^1.25.0",
+    "@temporalio/client": "^1.25.0",
+    "@temporalio/common": "^1.25.0",
+    "@temporalio/worker": "^1.25.0",
+    "@temporalio/workflow": "^1.25.0",
+    "ai": "^7.0.157",
     "argon2": "^0.45.1",
     "better-sqlite3": "^13.0.3",
     "class-variance-authority": "^0.7.1",
@@ -46,6 +55,7 @@
     "sql.js": "^1.14.2",
     "tailwind-merge": "^3.3.0",
     "ws": "^8.22.0",
+    "zod": "^4.6.7",
     "zustand": "^5.0.0"
   },
   "devDependencies": {
@@ -89,6 +99,15 @@
       "electron.cjs",
       "build/icon.png",
       "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "build/temporal",
+        "to": "temporal"
+      }
+    ],
+    "asarUnpack": [
+      "node_modules/@temporalio/core-bridge/**"
     ],
     "icon": "build/icon",
     "publish": {

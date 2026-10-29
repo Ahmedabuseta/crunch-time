@@ -17,10 +17,15 @@ export function getSettings() {
   const db = getDb()
   const row = db.select().from(settings).where(eq(settings.id, 'settings')).get()
     || { id: 'settings', deliveryFee: 25, taxRate: 0.14, restaurantName: 'Crunch Time', currency: 'EGP' }
-  // Never leak the signing secret or PIN hash to the renderer — they are only
-  // needed by the server inside the main process. The UI gets a boolean instead.
-  const { remoteSecret, remotePinHash, ...safe } = row as Record<string, any>
-  return { ...safe, remoteHasPin: Boolean(remotePinHash) }
+  // Never leak the signing secret, the PIN hash or the provider key to the
+  // renderer — they are only needed inside the main process. The UI gets
+  // booleans instead.
+  const { remoteSecret, remotePinHash, aiApiKeyEnc, aiKeyCipher, ...safe } = row as Record<string, any>
+  return {
+    ...safe,
+    remoteHasPin: Boolean(remotePinHash),
+    aiHasKey: Boolean(aiApiKeyEnc),
+  }
 }
 
 // ─── Remote POS server (owner's phone app) ──────────────────

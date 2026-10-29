@@ -12,3 +12,10 @@ backups/
 *.tsbuildinfo
 squashfs-root/
 .tmp-cdp.mjs
+
+# Temporal CLI, fetched per platform by scripts/fetch-temporal.mjs (~45 MB).
+# build/ itself is tracked: it holds icon.png and the icon.ico used by the
+# installers.
+build/temporal
+build/.temporal-tmp/
+temporal.db

@@ -299,3 +299,27 @@ export interface HealthResponse {
   ok: boolean;
   name: string;
 }
+
+// ─── Assistant ────────────────────────────────────────────────
+//
+// The chat card union mirrors the server's zod schema (src/ai/schemas.ts)
+// exactly: the phone renders what it is given and never infers a shape. A card
+// kind this build has never heard of is dropped rather than guessed at.
+export type ChatCard =
+  | { kind: 'report'; title: string; report: unknown }
+  | { kind: 'metrics'; title?: string; items: { label: string; value: string; tone?: 'good'|'warn'|'bad' }[] }
+  | { kind: 'table'; title: string; columns: string[]; rows: string[][] }
+  | { kind: 'action'; actionId: string; title: string; subject: string;
+      status: 'proposed'|'executed'|'failed'|'cancelled'|'expired';
+      rows: { label: string; before?: string; after?: string; value?: string; tone?: 'up'|'down'|'warn'|'good' }[];
+      result: string; warning?: string }
+
+/** The confirm/cancel card, narrowed out of the union where it is rendered. */
+export type ActionChatCard = Extract<ChatCard, { kind: 'action' }>;
+
+/** Derived from the card so a new server status can never drift from it. */
+export type ChatActionStatus = ActionChatCard['status'];
+
+export interface ChatMessage { id: string; role: 'user'|'assistant'; content: string; cards?: ChatCard[]; followups?: string[]; createdAt: string; blocked?: string }
+export interface AssistantConfig { enabled: boolean; provider: string; baseUrl: string; model: string; hasKey: boolean; keyHint?: string|null; dailyTokenLimit: number; temporalPort: number; today?: { promptTokens: number; completionTokens: number; total: number; requests: number }; temporalRunning?: boolean }
+export interface AssistantConfigUpdate { enabled?: boolean; provider?: string; baseUrl?: string; model?: string; apiKey?: string; dailyTokenLimit?: number }

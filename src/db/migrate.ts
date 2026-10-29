@@ -9,6 +9,7 @@ import { migration as idempotencyKeysMigration } from './migrations/007-idempote
 import { migration as auditLogMigration } from './migrations/008-audit-log'
 import { migration as welcome20Migration } from './migrations/009-welcome20'
 import { migration as inventoryCategoriesMigration } from './migrations/010-inventory-categories'
+import { migration as assistantMigration } from './migrations/011-assistant'
 import type { Migration } from './migrations/types'
 
 function ensureColumn(db: import('better-sqlite3').Database, table: string, column: string, definition: string) {
@@ -69,6 +70,7 @@ export function runMigrations() {
     auditLogMigration,
     welcome20Migration,
     inventoryCategoriesMigration,
+    assistantMigration,
   ]
   const applied = db.prepare('SELECT id FROM schema_migrations').all() as { id: string }[]
   const appliedIds = new Set(applied.map(({ id }) => id))
@@ -134,6 +136,16 @@ export function runMigrations() {
   ensureColumn(db, 'settings', 'remote_secret', 'TEXT')
   ensureColumn(db, 'settings', 'remote_pair_code', 'TEXT')
   ensureColumn(db, 'settings', 'remote_pair_expires', 'TEXT')
+  // Assistant settings outside migration 011's reach (old databases that ran
+  // before the migration existed still get the columns here).
+  ensureColumn(db, 'settings', 'ai_enabled', 'INTEGER NOT NULL DEFAULT 0')
+  ensureColumn(db, 'settings', 'ai_provider', "TEXT NOT NULL DEFAULT 'openai'")
+  ensureColumn(db, 'settings', 'ai_base_url', "TEXT NOT NULL DEFAULT 'https://api.openai.com/v1'")
+  ensureColumn(db, 'settings', 'ai_model', "TEXT NOT NULL DEFAULT 'gpt-4o-mini'")
+  ensureColumn(db, 'settings', 'ai_api_key_enc', 'TEXT')
+  ensureColumn(db, 'settings', 'ai_key_cipher', 'TEXT')
+  ensureColumn(db, 'settings', 'ai_daily_token_limit', 'INTEGER NOT NULL DEFAULT 150000')
+  ensureColumn(db, 'settings', 'ai_temporal_port', 'INTEGER NOT NULL DEFAULT 7233')
   ensureColumn(db, 'orders', 'status_reason', 'TEXT')
   ensureColumn(db, 'orders', 'refunded_amount', 'REAL NOT NULL DEFAULT 0')
   ensureColumn(db, 'order_items', 'item_discount', 'REAL NOT NULL DEFAULT 0')

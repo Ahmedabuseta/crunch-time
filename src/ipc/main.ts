@@ -1,11 +1,13 @@
 // IPC adapters. All business logic lives in src/backend/* (plain Node,
 // unit-testable, shared with the HTTP server); this file only wires each
 // ipcMain channel to the equivalent backend function.
-import { ipcMain, app, BrowserWindow, dialog } from 'electron'
+import { ipcMain, app, BrowserWindow, dialog, powerSaveBlocker } from 'electron'
 import { runMigrations } from '../db/migrate'
 import { seedDatabase } from '../db/seed'
 import { createBackend, Backend } from '../backend'
 import { applyRemoteServer, getRemoteStatus, setDesktopNotifier } from '../server'
+import { ensureRuntime, stopRuntime } from '../ai/runtime'
+import { expireStaleActions } from '../ai/config'
 import {
   disableFunnel,
   enableFunnel,
@@ -17,6 +19,30 @@ import {
 import { silentPrint } from './print'
 
 let backend: Backend | null = null
+
+// The phone talks to this machine; if it suspends, a chat dies mid-stream and a
+// confirm card stops answering. `prevent-app-suspension` keeps the machine and
+// its network alive while still letting the display sleep.
+let powerBlockerId: number | null = null
+
+function syncPowerBlocker(running: boolean): void {
+  if (running && powerBlockerId === null) {
+    powerBlockerId = powerSaveBlocker.start('prevent-app-suspension')
+    return
+  }
+  if (!running && powerBlockerId !== null) {
+    try {
+      powerSaveBlocker.stop(powerBlockerId)
+    } catch {
+      // already released
+    }
+    powerBlockerId = null
+  }
+}
+
+function syncPowerBlockerToServer(): void {
+  syncPowerBlocker(getRemoteStatus().running)
+}
 
 function getBackend(): Backend {
   if (!backend) {
@@ -60,6 +86,20 @@ export async function initBackend() {
   })
   // Bring the remote POS server up if the owner has it enabled (off by default).
   await applyRemoteServer(getBackend())
+  syncPowerBlockerToServer()
+  // Housekeeping + the assistant runtime, if the owner turned it on.
+  try {
+    expireStaleActions()
+  } catch {
+    // a database without the assistant tables is fine
+  }
+  await ensureRuntime().catch(() => ({ ok: false }))
+  // Nothing must outlive the app: the worker and the Temporal server both keep
+  // ports open, and a stale worker would fight the next launch for the queue.
+  app.on('will-quit', () => {
+    void stopRuntime()
+    syncPowerBlocker(false)
+  })
 }
 
 export function registerIpcHandlers() {
@@ -744,6 +784,7 @@ export function registerIpcHandlers() {
     const res = b.settings.setRemoteConfig(data)
     if (!res.ok) return { ...res, status: getRemoteStatus() }
     const started = await applyRemoteServer(b)
+    syncPowerBlockerToServer()
     return { ok: started.ok, error: started.error, status: getRemoteStatus() }
   })
 

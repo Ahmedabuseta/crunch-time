@@ -273,6 +273,63 @@ export const settings = sqliteTable('settings', {
   // without typing the address and PIN). Short-lived and cleared on use.
   remotePairCode: text('remote_pair_code'),
   remotePairExpires: text('remote_pair_expires'),
+
+  // ─── Assistant (AI chat on the phone) ───────────────────
+  // Off by default. The provider key is stored encrypted and is never sent to
+  // the renderer or into a workflow payload; getSettings() strips it.
+  aiEnabled: integer('ai_enabled', { mode: 'boolean' }).notNull().default(false),
+  aiProvider: text('ai_provider').notNull().default('openai'),
+  aiBaseUrl: text('ai_base_url').notNull().default('https://api.openai.com/v1'),
+  aiModel: text('ai_model').notNull().default('gpt-4o-mini'),
+  aiApiKeyEnc: text('ai_api_key_enc'),
+  aiKeyCipher: text('ai_key_cipher'),
+  aiDailyTokenLimit: integer('ai_daily_token_limit').notNull().default(150000),
+  aiTemporalPort: integer('ai_temporal_port').notNull().default(7233),
+})
+
+// ─── Assistant: transcript, pending actions, usage ───────────
+export const aiMessages = sqliteTable('ai_messages', {
+  id: text('id').primaryKey(),
+  threadId: text('thread_id').notNull(),
+  role: text('role').notNull(), // 'user' | 'assistant'
+  content: text('content').notNull(),
+  cards: text('cards'), // JSON ChatCard[]
+  createdAt: text('created_at').notNull(),
+})
+
+export const aiThreads = sqliteTable('ai_threads', {
+  id: text('id').primaryKey(),
+  summary: text('summary'),
+  summaryUpto: text('summary_upto'),
+  updatedAt: text('updated_at').notNull(),
+})
+
+// One row per proposed write. `workflowId` links it to its confirmAction run so
+// a stuck or expired proposal can be inspected in the Temporal UI by id.
+export const aiActions = sqliteTable('ai_actions', {
+  id: text('id').primaryKey(),
+  kind: text('kind').notNull(),
+  payload: text('payload').notNull(),
+  preview: text('preview').notNull(),
+  workflowId: text('workflow_id'),
+  status: text('status').notNull().default('proposed'),
+  createdAt: text('created_at').notNull(),
+  expiresAt: text('expires_at').notNull(),
+  executedAt: text('executed_at'),
+  error: text('error'),
+})
+
+export const aiUsage = sqliteTable('ai_usage', {
+  day: text('day').primaryKey(),
+  promptTokens: integer('prompt_tokens').notNull().default(0),
+  completionTokens: integer('completion_tokens').notNull().default(0),
+  requests: integer('requests').notNull().default(0),
+})
+
+export const aiReplies = sqliteTable('ai_replies', {
+  key: text('key').primaryKey(),
+  text: text('text').notNull(),
+  updatedAt: text('updated_at').notNull(),
 })
 
 // ─── Kitchen Stations (print routing: categories → printer) ────

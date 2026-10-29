@@ -4,8 +4,12 @@ import type { DiscountRule } from '@/lib/discount';
 import type {
   Addon,
   AppUser,
+  AssistantConfig,
+  AssistantConfigUpdate,
   CashMovement,
   Category,
+  ChatActionStatus,
+  ChatMessage,
   DeliveryProfile,
   DeliveryZone,
   HealthResponse,
@@ -290,4 +294,36 @@ export const api = {
   saveSettings: (body: Record<string, unknown>) =>
     request<{ ok: boolean }>('/settings', { method: 'PUT', body }),
   printers: () => request<{ printers: PrinterInfo[] }>('/printers'),
+
+  // ─── Assistant ──────────────────────────────────────────────
+  //
+  // The chat turn itself is not here: `request()` buffers the whole body, and
+  // the answer has to be read as it arrives — see lib/assistantStream.ts.
+  // Everything below is one ordinary JSON round trip.
+  assistant: {
+    config: () => request<{ config: AssistantConfig }>('/assistant/config'),
+    /** A partial update: an omitted field is left as it is on the server, and
+     * an omitted `apiKey` means "keep the stored key". */
+    saveConfig: (body: AssistantConfigUpdate) =>
+      request<{ config: AssistantConfig }>('/assistant/config', { method: 'PUT', body }),
+    /** Pings the provider with the stored key — the only way to prove it works. */
+    test: () =>
+      request<{ ok: boolean; model?: string; latencyMs?: number; error?: string }>('/assistant/test', {
+        method: 'POST',
+        body: {},
+      }),
+    history: (query?: { before?: string; limit?: number }) =>
+      request<{ messages: ChatMessage[] }>(`/assistant/history${qs(query)}`),
+    clearHistory: () => request<{ ok: true }>('/assistant/history', { method: 'DELETE' }),
+    confirmAction: (id: string) =>
+      request<{ ok: boolean; status: ChatActionStatus; error?: string; message?: string }>(
+        `/assistant/actions/${encodeURIComponent(id)}/confirm`,
+        { method: 'POST', body: {} }
+      ),
+    cancelAction: (id: string) =>
+      request<{ ok: boolean; status: ChatActionStatus }>(
+        `/assistant/actions/${encodeURIComponent(id)}/cancel`,
+        { method: 'POST', body: {} }
+      ),
+  },
 };

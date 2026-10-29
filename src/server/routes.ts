@@ -16,6 +16,7 @@ import { registerAdminRoutes } from './routes.admin'
 import { registerDeliveryRoutes } from './routes.delivery'
 import { registerBackupRoutes } from './routes.backup'
 import { registerReportRoutes } from './routes.reports'
+import { registerAssistantRoutes } from './routes.assistant'
 import {
   TOKEN_REFRESH_AFTER_MS,
   TOKEN_TTL_MS,
@@ -172,4 +173,7 @@ export function registerRoutes(app: FastifyInstance, backend: Backend) {
 
   // ─── Reports ────────────────────────────────────────────────
   registerReportRoutes(app, backend)
+
+  // ─── Assistant: chat, config, pending actions ───────────────
+  registerAssistantRoutes(app, backend)
 }

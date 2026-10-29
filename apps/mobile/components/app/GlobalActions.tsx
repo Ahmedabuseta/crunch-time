@@ -1,5 +1,5 @@
 import { useRouter } from 'expo-router';
-import { BarChart3, Boxes, Package, PlusCircle, Users, Wallet } from 'lucide-react-native';
+import { BarChart3, Boxes, Package, PlusCircle, Sparkles, Users, Wallet } from 'lucide-react-native';
 import React from 'react';
 import { View } from 'react-native';
 import { ArcActionFab } from './ActionFab';
@@ -22,6 +22,7 @@ export function GlobalActions({ blurTarget }: { blurTarget?: { current: View | n
         { key: 'products', label: 'المنتجات', icon: Package, onPress: () => router.push('/manage/products') },
         { key: 'inventory', label: 'المخزون', icon: Boxes, onPress: () => router.push('/manage/inventory') },
         { key: 'users', label: 'الموظفين', icon: Users, onPress: () => router.push('/manage/users') },
+        { key: 'assistant', label: 'المساعد', icon: Sparkles, onPress: () => router.push('/assistant') },
       ]}
     />
   );

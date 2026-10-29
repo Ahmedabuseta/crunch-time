@@ -3,6 +3,13 @@ declare module 'electron' {
     getPath(name: string): string
     relaunch(options?: any): void
     exit(exitCode?: number): void
+    on(event: string, listener: (...args: any[]) => void): void
+  }
+  // Keeps the POS machine awake while the phone depends on its server.
+  export const powerSaveBlocker: {
+    start(type: 'prevent-app-suspension' | 'prevent-display-sleep'): number
+    stop(id: number): boolean
+    isStarted(id: number): boolean
   }
   export const ipcMain: {
     handle(channel: string, handler: (event: any, ...args: any[]) => any): void

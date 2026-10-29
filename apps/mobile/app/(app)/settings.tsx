@@ -120,6 +120,23 @@ export default function MoreScreen() {
         </Card>
 
         <Card style={{ gap: 10 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <Sparkles size={18} color={primary} />
+            <Text variant='subtitle' style={{ flex: 1 }}>
+              المساعد
+            </Text>
+          </View>
+          <Button
+            variant='secondary'
+            icon={Sparkles}
+            style={{ alignSelf: 'stretch' }}
+            onPress={() => router.push('/assistant')}
+          >
+            اسأل المساعد
+          </Button>
+        </Card>
+
+        <Card style={{ gap: 10 }}>
           <Text variant='subtitle'>مساعدة</Text>
           <Button
             variant='secondary'

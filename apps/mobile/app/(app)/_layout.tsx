@@ -63,6 +63,7 @@ export default function AppTabsLayout() {
       <Tabs.Screen name='order/[id]' options={{ href: null }} />
       <Tabs.Screen name='shift' options={{ href: null }} />
       <Tabs.Screen name='manage' options={{ href: null }} />
+      <Tabs.Screen name='assistant' options={{ href: null }} />
     </Tabs>
 
       {/* One quick-action dial for the whole app, docked in the bar's middle
