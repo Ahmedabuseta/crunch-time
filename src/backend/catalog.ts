@@ -75,13 +75,13 @@ export function reorderCategories(ids: string[]) {
   return { ok: true }
 }
 
-export function listProducts(categoryId?: string) {
+export function listProducts(categoryId?: string, includeInactive?: boolean) {
   const db = getDb()
-  if (categoryId) {
-    return db.select().from(products)
-      .where(and(eq(products.active, true), eq(products.categoryId, categoryId)))
-  }
-  return db.select().from(products).where(eq(products.active, true))
+  const where = includeInactive
+    ? (categoryId ? eq(products.categoryId, categoryId) : undefined)
+    : (categoryId ? and(eq(products.active, true), eq(products.categoryId, categoryId)) : eq(products.active, true))
+  const query = db.select().from(products)
+  return where ? query.where(where).all() : query.all()
 }
 
 /** Sortable product fields. A client sends one of these names and the route maps

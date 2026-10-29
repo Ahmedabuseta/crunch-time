@@ -237,8 +237,8 @@ export function registerIpcHandlers() {
   // ═══════════════════════════════════════════════════════════
   // PRODUCTS
   // ═══════════════════════════════════════════════════════════
-  ipcMain.handle('product:list', (_e, categoryId?: string) =>
-    b.catalog.listProducts(categoryId)
+  ipcMain.handle('product:list', (_e, categoryId?: string, includeInactive?: boolean) =>
+    b.catalog.listProducts(categoryId, includeInactive)
   )
 
   ipcMain.handle('product:getById', (_e, id: string) =>

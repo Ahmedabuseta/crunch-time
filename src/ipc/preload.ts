@@ -135,7 +135,7 @@ contextBridge.exposeInMainWorld('api', {
 
   // ─── Products ─────────────────────────────────────────────
   product: {
-    list: (categoryId?: string) => invoke('product:list', categoryId),
+    list: (categoryId?: string, includeInactive?: boolean) => invoke('product:list', categoryId, includeInactive),
     getById: (id: string) => invoke('product:getById', id),
     create: (data: unknown) => invoke('product:create', data),
     update: (id: string, data: unknown) => invoke('product:update', id, data),

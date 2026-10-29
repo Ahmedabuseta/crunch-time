@@ -9,14 +9,14 @@ import { useInventoryStore } from '@/services/inventory/inventory.store'
 import { RecipePanel } from './RecipePanel'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { Plus, Pencil, Trash2, X, Link, ChevronDown, UtensilsCrossed, ClipboardList, PlugZap, SlidersHorizontal, TrendingUp, CheckCircle, AlertTriangle } from 'lucide-react'
+import { Plus, Pencil, Trash2, X, Link, ChevronDown, UtensilsCrossed, ClipboardList, PlugZap, SlidersHorizontal, TrendingUp, CheckCircle, AlertTriangle, Eye, EyeOff, ArrowUp, ArrowDown } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { fmtMoney } from '@/lib/format'
 import { EmojiPicker } from '@/components/ui/emoji-picker'
 import { toast } from '@/components/ui/toast'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { ListToolbar } from '@/components/ui/list-toolbar'
-import { DataTable, type DataColumn } from '@/components/ui/data-table'
+import { DataTable, type DataColumn, type SortValue } from '@/components/ui/data-table'
 import { Pagination } from '@/components/ui/pagination'
 import { useListControls } from '@/components/ui/list-controls'
 import type { ViewMode } from '@/components/ui/view-toggle'
@@ -51,11 +51,12 @@ export function ProductsPage() {
   const [view, setView] = useState<ViewMode>('table')
   const [pendingDelete, setPendingDelete] = useState<any>(null)
   const [catFilter, setCatFilter] = useState<string | null>(null)
+  const [visibilityFilter, setVisibilityFilter] = useState<string | null>(null)
   const [tab, setTab] = useState<TabId>('data')
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({})
   const [groupModifiers, setGroupModifiers] = useState<Record<string, any[]>>({})
 
-  useEffect(() => { fetchProducts(); fetchCategories(); fetchAddons(); fetchModifierGroups(); fetchIngredients() }, [])
+  useEffect(() => { fetchProducts(undefined, true); fetchCategories(); fetchAddons(); fetchModifierGroups(); fetchIngredients() }, [])
 
   const catMap = new Map(categories.map(c => [c.id, c]))
   const editingProduct = editId ? products.find(p => p.id === editId) : undefined
@@ -65,8 +66,33 @@ export function ProductsPage() {
   const list = useListControls({
     items: products,
     searchText: (p) => `${p.name} ${p.description} ${catMap.get(p.categoryId)?.name || ''}`,
-    filter: (p) => !catFilter || p.categoryId === catFilter,
+    filter: (p) =>
+      (!catFilter || p.categoryId === catFilter)
+      && (visibilityFilter === 'active' ? p.active : visibilityFilter === 'hidden' ? !p.active : true),
   })
+
+  const visibleCount = products.filter(p => p.active).length
+  const hiddenCount = products.length - visibleCount
+
+  const SORT_FIELDS: Record<string, ((p: any) => SortValue) | undefined> = {
+    name: (p) => p.name,
+    cat: (p) => catMap.get(p.categoryId)?.name || '',
+    price: (p) => p.price,
+    cost: (p) => (p.costPrice > 0 ? p.costPrice : null),
+    profit: (p) => (p.costPrice > 0 ? p.price - p.costPrice : null),
+    status: (p) => (p.active ? 1 : 0),
+  }
+
+  const applySortField = (key: string) => {
+    if (key === 'default') return list.setSort(null)
+    const value = SORT_FIELDS[key]
+    if (value) list.setSort({ key, dir: list.sort?.dir ?? 'asc', value })
+  }
+
+  const toggleSortDir = () => {
+    if (!list.sort) return
+    list.setSort({ ...list.sort, dir: list.sort.dir === 'asc' ? 'desc' : 'asc' })
+  }
 
   const resetForm = () => {
     setForm(emptyForm)
@@ -119,6 +145,15 @@ export function ProductsPage() {
     toast({ title: opts?.hard ? 'تم الحذف النهائي للمنتج' : 'تم حذف المنتج', description: p.name, variant: 'success' })
   }
 
+  const toggleVisibility = async (p: any) => {
+    await updateProduct(p.id, { active: !p.active })
+    toast({
+      title: p.active ? 'تم إخفاء المنتج من القائمة' : 'تم إظهار المنتج في القائمة',
+      description: p.name,
+      variant: 'success',
+    })
+  }
+
   const startEdit = async (p: any) => {
     setEditId(p.id); setShowForm(false)
     setForm({ name: p.name, emoji: p.emoji, price: String(p.price), categoryId: p.categoryId, description: p.description })
@@ -133,7 +168,7 @@ export function ProductsPage() {
 
   const columns: DataColumn<any>[] = [
     {
-      key: 'name', label: 'المنتج', render: (p) => (
+      key: 'name', label: 'المنتج', sortValue: (p) => p.name, render: (p) => (
         <div className="flex items-center gap-2">
           <Emoji className="text-2xl shrink-0">{p.emoji}</Emoji>
           <div className="min-w-0">
@@ -144,11 +179,44 @@ export function ProductsPage() {
       ),
     },
     { key: 'cat', label: 'القسم', sortValue: (p: any) => catMap.get(p.categoryId)?.name || '', render: (p) => <span className="text-xs bg-secondary rounded-full px-2 py-0.5">{catMap.get(p.categoryId)?.name || '—'}</span> },
-    { key: 'price', label: 'السعر', render: (p) => <span className="font-black text-primary">{fmtMoney(p.price)} ج.م</span> },
+    { key: 'price', label: 'السعر', sortValue: (p) => p.price, render: (p) => <span className="font-black text-primary">{fmtMoney(p.price)} ج.م</span> },
     { key: 'cost', label: 'التكلفة', sortValue: (p: any) => p.costPrice > 0 ? p.costPrice : null, render: (p) => <span>{p.costPrice > 0 ? `${fmtMoney(p.costPrice)} ج.م` : '—'}</span> },
+    {
+      key: 'profit', label: 'الربح', sortValue: (p: any) => p.costPrice > 0 ? p.price - p.costPrice : null, render: (p) => {
+        if (!(p.costPrice > 0)) return <span className="text-muted-foreground">—</span>
+        const profit = p.price - p.costPrice
+        const margin = p.price > 0 ? (profit / p.price) * 100 : 0
+        return (
+          <div>
+            <span className={cn("font-black", profit >= 0 ? "text-green-400" : "text-red-400")}>{fmtMoney(profit)} ج.م</span>
+            <span className="block text-[10px] text-muted-foreground">هامش {margin.toFixed(0)}%</span>
+          </div>
+        )
+      },
+    },
+    {
+      key: 'status', label: 'الظهور', sortValue: (p) => (p.active ? 1 : 0), render: (p) => (
+        <span className={cn(
+          "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-black",
+          p.active ? "bg-green-500/10 text-green-400" : "bg-secondary text-muted-foreground",
+        )}>
+          {p.active ? <Eye className="h-3 w-3" /> : <EyeOff className="h-3 w-3" />}
+          {p.active ? 'ظاهر' : 'مخفي'}
+        </span>
+      ),
+    },
     {
       key: 'actions', label: 'إجراءات', className: 'text-left', render: (p) => (
         <div className="flex items-center gap-1">
+          <Button
+            variant="ghost"
+            size="icon"
+            className={cn("h-7 w-7 rounded-lg", p.active ? "text-muted-foreground" : "text-primary")}
+            title={p.active ? 'إخفاء من القائمة' : 'إظهار في القائمة'}
+            onClick={() => toggleVisibility(p)}
+          >
+            {p.active ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+          </Button>
           <Button variant="ghost" size="icon" className="h-7 w-7 rounded-lg" onClick={() => setRecipeFor(recipeFor === p.id ? null : p.id)}><Link className="h-3.5 w-3.5" /></Button>
           <Button variant="ghost" size="icon" className="h-7 w-7 rounded-lg" onClick={() => startEdit(p)}><Pencil className="h-3.5 w-3.5" /></Button>
           <Button variant="ghost" size="icon" className="h-7 w-7 rounded-lg text-destructive" onClick={() => setPendingDelete(p)}><Trash2 className="h-3.5 w-3.5" /></Button>
@@ -232,12 +300,12 @@ export function ProductsPage() {
                         {editingProduct.costPrice > 0 && (
                           <div className="rounded-xl bg-primary/5 border border-primary/20 p-3 text-[11px] space-y-1">
                             <p className="font-black text-primary flex items-center gap-1"><TrendingUp className="h-3.5 w-3.5" /> سعر مقترح (يُحدَّث تلقائياً مع تغيّر تكلفة الأصناف)</p>
-                            {[{ m: 0.4, label: 'هامش منخفض 40%' }, { m: 0.5, label: 'هامش وسط 50%' }, { m: 0.7, label: 'هامش عالٍ 70%' }].map(({ m, label }) => {
-                              const suggested = editingProduct.costPrice / (1 - m)
+                            {(() => {
+                              const suggested = editingProduct.costPrice / (1 - 0.65)
                               const current = parseFloat(form.price)
                               return (
-                                <div key={m} className="flex justify-between items-center">
-                                  <span className="text-muted-foreground font-bold">{label}</span>
+                                <div className="flex justify-between items-center">
+                                  <span className="text-muted-foreground font-bold">أفضل قيمة — هامش 65%</span>
                                   <span className="flex items-center gap-1.5">
                                     <span className="font-black text-primary">{fmtMoney(suggested)} ج.م</span>
                                     {current > 0 && (
@@ -248,7 +316,8 @@ export function ProductsPage() {
                                   </span>
                                 </div>
                               )
-                            })}
+                            })()}
+                            <p className="text-[10px] text-muted-foreground">وفق معيار تكلفة الطعام 35% من سعر البيع</p>
                           </div>
                         )}
                       </>
@@ -266,7 +335,7 @@ export function ProductsPage() {
                       fetchRecipes={(id) => window.api.inventory.listRecipes(id)}
                       upsertRecipe={async (data) => (await window.api.inventory.upsertRecipe(data) as { id: string }).id}
                       deleteRecipe={(id) => window.api.inventory.deleteRecipe(id)}
-                      onChanged={fetchProducts}
+                      onChanged={() => fetchProducts(undefined, true)}
                       sellingPrice={editingProduct?.price}
                     />
                   ) : (
@@ -402,6 +471,34 @@ export function ProductsPage() {
         search={list.search}
         onSearchChange={(v) => { list.setSearch(v); list.setPage(1) }}
         searchPlaceholder="بحث عن منتج..."
+        sort={
+          <div className="flex items-center gap-1 shrink-0">
+            <Select value={list.sort?.key ?? 'default'} onValueChange={applySortField}>
+              <SelectTrigger className="h-9 w-32 rounded-lg bg-secondary text-xs font-bold">
+                <SelectValue placeholder="الترتيب" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="default">بدون ترتيب</SelectItem>
+                <SelectItem value="name">الاسم</SelectItem>
+                <SelectItem value="cat">القسم</SelectItem>
+                <SelectItem value="price">السعر</SelectItem>
+                <SelectItem value="cost">التكلفة</SelectItem>
+                <SelectItem value="profit">الربح</SelectItem>
+                <SelectItem value="status">الظهور</SelectItem>
+              </SelectContent>
+            </Select>
+            <Button
+              variant="outline"
+              size="icon"
+              className="h-9 w-9 shrink-0 rounded-lg"
+              disabled={!list.sort}
+              onClick={toggleSortDir}
+              title={list.sort?.dir === 'desc' ? 'ترتيب تنازلي' : 'ترتيب تصاعدي'}
+            >
+              {list.sort?.dir === 'desc' ? <ArrowDown className="h-3.5 w-3.5" /> : <ArrowUp className="h-3.5 w-3.5" />}
+            </Button>
+          </div>
+        }
         view={view}
         onViewChange={setView}
         filters={[
@@ -410,12 +507,27 @@ export function ProductsPage() {
         ]}
         filterValue={catFilter}
         onFilterChange={(v) => { setCatFilter(v); list.setPage(1) }}
+        extraFilters={[
+          { value: null, label: 'كل المنتجات', count: products.length },
+          { value: 'active', label: 'ظاهر في القائمة', count: visibleCount },
+          { value: 'hidden', label: 'مخفي', count: hiddenCount },
+        ]}
+        extraFilterValue={visibilityFilter}
+        onExtraFilterChange={(v) => { setVisibilityFilter(v); list.setPage(1) }}
       />
 
       <div className="flex-1 min-h-0 overflow-y-auto">
         {view === 'table' ? (
           <div className="p-5">
-            <DataTable columns={columns} data={list.items} keyExtractor={(p) => p.id} className="mb-4" sort={list.sort} onSortChange={list.setSort} />
+            <DataTable
+              columns={columns}
+              data={list.items}
+              keyExtractor={(p) => p.id}
+              className="mb-4"
+              sort={list.sort}
+              onSortChange={list.setSort}
+              rowClassName={(p) => p.active ? '' : 'opacity-60'}
+            />
             {recipeFor && createPortal(
               <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={() => setRecipeFor(null)}>
                 <div dir="rtl" className="w-[620px] max-w-[94vw] max-h-[85vh] overflow-y-auto animate-slide-up" onClick={(e) => e.stopPropagation()}>
@@ -427,7 +539,7 @@ export function ProductsPage() {
                     fetchRecipes={(id) => window.api.inventory.listRecipes(id)}
                     upsertRecipe={async (data) => (await window.api.inventory.upsertRecipe(data) as { id: string }).id}
                     deleteRecipe={(id) => window.api.inventory.deleteRecipe(id)}
-                    onChanged={fetchProducts}
+                    onChanged={() => fetchProducts(undefined, true)}
                     onClose={() => setRecipeFor(null)}
                     sellingPrice={products.find(p => p.id === recipeFor)?.price}
                   />
@@ -439,10 +551,28 @@ export function ProductsPage() {
           <div className="p-5">
             <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
               {list.items.map(p => (
-                <div key={p.id} className="border-2 rounded-2xl bg-card p-4 space-y-2">
+                <div key={p.id} className={cn("border-2 rounded-2xl bg-card p-4 space-y-2", !p.active && "opacity-60")}>
                   <div className="flex items-center justify-between">
-                    <Emoji className="text-3xl">{p.emoji}</Emoji>
+                    <div className="flex items-center gap-2">
+                      <Emoji className="text-3xl">{p.emoji}</Emoji>
+                      <span className={cn(
+                        "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-black",
+                        p.active ? "bg-green-500/10 text-green-400" : "bg-secondary text-muted-foreground",
+                      )}>
+                        {p.active ? <Eye className="h-3 w-3" /> : <EyeOff className="h-3 w-3" />}
+                        {p.active ? 'ظاهر' : 'مخفي'}
+                      </span>
+                    </div>
                     <div className="flex items-center gap-1">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className={cn("h-7 w-7 rounded-lg", p.active ? "text-muted-foreground" : "text-primary")}
+                        title={p.active ? 'إخفاء من القائمة' : 'إظهار في القائمة'}
+                        onClick={() => toggleVisibility(p)}
+                      >
+                        {p.active ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                      </Button>
                       <Button variant="ghost" size="icon" className="h-7 w-7 rounded-lg" onClick={() => setRecipeFor(recipeFor === p.id ? null : p.id)}><Link className="h-3.5 w-3.5" /></Button>
                       <Button variant="ghost" size="icon" className="h-7 w-7 rounded-lg" onClick={() => startEdit(p)}><Pencil className="h-3.5 w-3.5" /></Button>
                       <Button variant="ghost" size="icon" className="h-7 w-7 rounded-lg text-destructive" onClick={() => setPendingDelete(p)}><Trash2 className="h-3.5 w-3.5" /></Button>
@@ -467,7 +597,7 @@ export function ProductsPage() {
                         fetchRecipes={(id) => window.api.inventory.listRecipes(id)}
                         upsertRecipe={async (data) => (await window.api.inventory.upsertRecipe(data) as { id: string }).id}
                         deleteRecipe={(id) => window.api.inventory.deleteRecipe(id)}
-                        onChanged={fetchProducts}
+                        onChanged={() => fetchProducts(undefined, true)}
                         sellingPrice={p.price}
                       />
                     </div>

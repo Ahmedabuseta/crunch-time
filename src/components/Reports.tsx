@@ -701,7 +701,18 @@ export function Reports() {
         {tab === 'profit' && (
           <>
             {profitSummary ? (
-              <Section icon={<Wallet className="h-4 w-4 text-primary" />} title="تحليل الأرباح">
+              <Section
+                icon={<Wallet className="h-4 w-4 text-primary" />}
+                title="تحليل الأرباح"
+                action={
+                  <span className="text-[10px] font-bold text-muted-foreground flex items-center gap-1">
+                    <CalendarDays className="h-3 w-3" />
+                    {profitSummary.from
+                      ? `من بداية الشهر · ${profitSummary.from} ← ${profitSummary.to}`
+                      : 'من بداية الشهر'}
+                  </span>
+                }
+              >
                 {profitData.length > 0 && (
                   <div className="h-48 mb-4">
                     <ChartContainer className="h-full">

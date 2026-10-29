@@ -32,10 +32,13 @@ export function ProductGrid({ category }: ProductGridProps) {
   }, [categories])
 
   const filtered = useMemo(() => {
+    // The admin screen may keep hidden products in the shared store so they can
+    // be re-enabled; the sale menu only ever shows what is visible.
+    const active = products.filter((p) => p.active)
     if (category) {
-      return products.filter((p) => p.categoryId === category)
+      return active.filter((p) => p.categoryId === category)
     }
-    return [...products].sort((a, b) => {
+    return active.sort((a, b) => {
       const ordA = categoryOrderMap.get(a.categoryId) ?? 9999
       const ordB = categoryOrderMap.get(b.categoryId) ?? 9999
       return ordA - ordB

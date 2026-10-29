@@ -80,13 +80,18 @@ export function periodSummary(from?: string, to?: string) {
   }
 }
 
-export function profitSummary(from?: string, to?: string) {
+export function profitSummary(_from?: string, to?: string) {
   requireAdmin()
   const s = getSqlite()
+  // Fixed expenses are monthly and are charged from the 1st, so the profit
+  // window always opens there — picking "today" or a rolling week must not
+  // charge a whole month's rent against a few days of revenue.
+  const toDate = (to || new Date().toISOString().slice(0, 10)).slice(0, 10)
+  const fromDate = `${toDate.slice(0, 7)}-01`
   const all = (s.prepare('SELECT * FROM orders').all() as any[]).filter(o => {
     if (o.status === 'CANCELLED') return false
-    if (from && o.created_at < from) return false
-    if (to && o.created_at > to + '￿') return false
+    if (o.created_at < fromDate) return false
+    if (o.created_at > toDate + '￿') return false
     return true
   })
   const refunded = all.filter(o => o.status === 'REFUNDED')
@@ -108,6 +113,8 @@ export function profitSummary(from?: string, to?: string) {
   const taxCollected = all.reduce((sum, o) => sum + o.tax, 0)
 
   return {
+    from: fromDate,
+    to: toDate,
     revenue,
     costOfGoods,
     grossProfit: revenue - costOfGoods,

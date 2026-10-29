@@ -571,7 +571,10 @@ export const rendererApi = {
     reorder: (ids: string[]) => { ids.forEach((id, i) => T.categories.update(r => r.id === id, { sortOrder: i + 1 })); return { ok: true } },
   },
   product: {
-    list: (categoryId?: string) => categoryId ? T.products.select(r => r.active && r.categoryId === categoryId) : T.products.select(r => r.active),
+    list: (categoryId?: string, includeInactive?: boolean) => {
+      const rows = includeInactive ? T.products.select() : T.products.select(r => r.active)
+      return categoryId ? rows.filter(r => r.categoryId === categoryId) : rows
+    },
     getById: (id: string) => T.products.get(r => r.id === id) || null,
     create: (data: any) => { const id = uuid(); T.products.insert({ id, ...data, active: true }); return { id } },
     update: (id: string, data: any) => { T.products.update(r => r.id === id, data); return { ok: true } },
@@ -1135,8 +1138,10 @@ if (to && o.createdAt > to + '\uffff') return false
         costOfGoods, grossProfit: totalRevenue - costOfGoods,
       }
     },
-    profitSummary: (from?: string, to?: string) => {
-      const all = T.orders.select().filter(o => { if (o.status === 'CANCELLED') return false; if (from && o.createdAt < from) return false; if (to && o.createdAt > to) return false; return true })
+    profitSummary: (_from?: string, to?: string) => {
+      const toDate = (to || new Date().toISOString().slice(0, 10)).slice(0, 10)
+      const fromDate = `${toDate.slice(0, 7)}-01`
+      const all = T.orders.select().filter(o => { if (o.status === 'CANCELLED') return false; if (o.createdAt < fromDate) return false; if (o.createdAt > toDate + '￿') return false; return true })
       const refunded = all.filter(o => o.status === 'REFUNDED')
       const totalRefunded = refunded.reduce((s, o) => s + (o.refundedAmount || 0), 0)
       const revenue = all.reduce((s, o) => s + o.total, 0) - totalRefunded
@@ -1145,7 +1150,7 @@ if (to && o.createdAt > to + '\uffff') return false
       const deliveryFees = all.filter(o => o.orderType === 'delivery').reduce((s, o) => s + (o.deliveryFee || 0), 0)
       const discounts = all.reduce((s, o) => s + (o.discountAmount || 0), 0)
       const taxCollected = all.reduce((s, o) => s + o.tax, 0)
-      return { revenue, costOfGoods, grossProfit: revenue - costOfGoods, totalExpenses, deliveryFees, discounts, taxCollected, totalRefunded, netProfit: revenue - costOfGoods - totalExpenses }
+      return { from: fromDate, to: toDate, revenue, costOfGoods, grossProfit: revenue - costOfGoods, totalExpenses, deliveryFees, discounts, taxCollected, totalRefunded, netProfit: revenue - costOfGoods - totalExpenses }
     },
     hourlyBreakdown: () => [],
     topItems: (limit = 10) => {

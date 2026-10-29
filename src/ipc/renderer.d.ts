@@ -214,7 +214,7 @@ export interface ApiBridge {
     reorder: (ids: string[]) => Promise<{ ok: boolean }>
   }
   product: {
-    list: (categoryId?: string) => Promise<any[]>
+    list: (categoryId?: string, includeInactive?: boolean) => Promise<any[]>
     getById: (id: string) => Promise<any>
     create: (data: any) => Promise<{ id: string }>
     update: (id: string, data: any) => Promise<{ ok: boolean }>
