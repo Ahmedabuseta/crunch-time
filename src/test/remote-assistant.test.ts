@@ -34,7 +34,6 @@ const TEMPORAL_PORT = 7457
 const base = `http://127.0.0.1:${REMOTE_PORT}`
 
 const ANSWER = 'مبيعات النهاردة ١٢٠ ج.م من ٣ طلبات.'
-const REPLY_JSON = JSON.stringify({ text: ANSWER, cards: ['card-0'], followups: ['وإمبارح؟'] })
 
 const bundleReady = existsSync(path.join(process.cwd(), 'dist-electron', 'workflows.cjs'))
 const binaryReady = existsSync(path.join(process.cwd(), 'build', 'temporal'))
@@ -103,10 +102,15 @@ beforeAll(async () => {
   runMigrations()
   await seedDatabase()
 
-  // Turn 1 calls a tool; turn 2 answers in the structured shape.
+  // Turn 1 calls a data tool; turn 2 answers through the `answer` tool, which
+  // is where the reply schema is enforced.
   fake = await startFakeOpenAI([
     { kind: 'tool', name: 'sales_summary', args: {} },
-    { kind: 'text', text: REPLY_JSON },
+    {
+      kind: 'tool',
+      name: 'answer',
+      args: { text: ANSWER, cards: ['card-0'], followups: ['وإمبارح؟'] },
+    },
   ])
 
   backend = createBackend({
@@ -163,8 +167,9 @@ suite('assistant chat over HTTP', () => {
     const textEvents = events.filter((event) => event.event === 'text')
     const streamed = textEvents.map((event) => JSON.parse(event.data).d as string).join('')
 
-    // Several deltas, not one lump — the whole point of streaming.
-    expect(textEvents.length).toBeGreaterThan(1)
+    // The reply arrives whole inside the tool call, so there is one publish:
+    // schema enforcement replaced token streaming.
+    expect(textEvents.length).toBeGreaterThan(0)
     expect(streamed).toBe(ANSWER)
 
     const done = events.find((event) => event.event === 'done')
@@ -247,19 +252,21 @@ suite('assistant chat over HTTP', () => {
     expect(res.status).toBe(401)
   })
 
-  it('still answers when the provider refuses JSON mode alongside tools', async () => {
-    // Groq answers 400 to response_format + tools, and the SDK hides that
-    // behind NoOutputGeneratedError. The step must retry without the
-    // structured output and parse the JSON the model still sends.
-    const groqLike = await startFakeOpenAI(
-      [
-        { kind: 'tool', name: 'sales_summary', args: {} },
-        { kind: 'text', text: REPLY_JSON },
-      ],
-      { rejectJsonWithTools: true },
-    )
+  it('forces the answer tool when the model replies in prose', async () => {
+    // The shape is enforced by the `answer` tool, not by parsing text. A model
+    // that ignores the instruction and writes prose is asked again with a
+    // forced tool choice, and its prose must never reach the bubble.
+    const prosey = await startFakeOpenAI([
+      { kind: 'tool', name: 'sales_summary', args: {} },
+      { kind: 'text', text: 'أهلاً، مبيعاتك كويسة النهاردة.' },
+      {
+        kind: 'tool',
+        name: 'answer',
+        args: { text: ANSWER, cards: ['card-0'], followups: ['وإمبارح؟'] },
+      },
+    ])
     try {
-      expect(updateAiConfig({ baseUrl: groqLike.url }).ok).toBe(true)
+      expect(updateAiConfig({ baseUrl: prosey.url }).ok).toBe(true)
 
       const events = await chat('بعت بكام النهاردة؟')
       const done = events.find((event) => event.event === 'done')
@@ -269,13 +276,13 @@ suite('assistant chat over HTTP', () => {
       expect(payload.followups).toEqual(['وإمبارح؟'])
       expect(payload.cards).toHaveLength(1)
 
-      // The raw JSON never reaches the bubble, not even as deltas: the step
-      // buffers it and publishes only the parsed text.
       const streamed = events
         .filter((event) => event.event === 'text')
         .map((event) => JSON.parse(event.data).d as string)
         .join('')
+      // The forced step produced the answer; the free prose never surfaced.
       expect(streamed).toBe(ANSWER)
+      expect(streamed).not.toContain('أهلاً')
 
       const history = await fetch(`${base}/assistant/history`, {
         headers: { authorization: `Bearer ${token}` },
@@ -283,7 +290,7 @@ suite('assistant chat over HTTP', () => {
       const { messages } = await history.json()
       expect(messages[messages.length - 1].content).toBe(ANSWER)
     } finally {
-      await groqLike.close()
+      await prosey.close()
     }
   }, 60_000)
 })

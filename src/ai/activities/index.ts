@@ -12,7 +12,6 @@ import { ALL_TOOLS, getTool, redact } from '../tools'
 import { resolveCards, AssistantReplySchema, ToolOutputSchema, type AssistantReply, type ChatCard } from '../schemas'
 import { appendMessage, modelHistory } from '../history'
 import { recordUsage } from '../guard/budget'
-import { getSavedReply } from '../guard/replies'
 import { publishStatus, publishText } from '../streams'
 import { getDb } from '../../db/client'
 import * as schema from '../../db/schema'
@@ -95,12 +94,15 @@ export async function modelStep(input: ModelStepInput): Promise<ModelStepOutput>
     ? `${input.system}\n\nكروت متاحة في الرد ده: ${input.cardIds.join(', ')}`
     : `${input.system}\n\nمفيش كروت متاحة في الرد ده.`
 
-  const sdkTools = Object.fromEntries(
-    ALL_TOOLS.map((def) => [
-      def.name,
-      tool({ description: def.description, inputSchema: def.schema }),
-    ]),
-  )
+  const sdkTools = {
+    ...Object.fromEntries(
+      ALL_TOOLS.map((def) => [
+        def.name,
+        tool({ description: def.description, inputSchema: def.schema }),
+      ]),
+    ),
+    [ANSWER_TOOL]: answerTool(),
+  }
 
   // Tool calls and their results are reassembled here rather than in the
   // workflow: the workflow stores plain JSON, and only this module knows the
@@ -160,16 +162,11 @@ export async function modelStep(input: ModelStepInput): Promise<ModelStepOutput>
 
   let attempt: Awaited<ReturnType<typeof run>>
   try {
-    attempt = await run(true)
+    // No `response_format`: the answer is a tool call now, so asking a provider
+    // to also constrain the *text* buys nothing and Groq rejects the pair.
+    attempt = await run(false)
   } catch (err: any) {
-    // Some OpenAI-compatible endpoints reject response_format alongside tools.
-    // Retrying once without the structured output keeps the assistant usable on
-    // them; validation still happens in validateReply.
-    if (isStructuredOutputUnsupported(err)) {
-      attempt = await run(false)
-    } else {
-      throw providerFailure(err)
-    }
+    throw providerFailure(err)
   }
 
   /**
@@ -190,12 +187,39 @@ export async function modelStep(input: ModelStepInput): Promise<ModelStepOutput>
   }
 
   const calls = await readToolCalls()
-  if (calls.length > 0) {
+  const answerCall = calls.find((call) => call.toolName === ANSWER_TOOL)
+
+  if (!answerCall && calls.length > 0) {
     return {
       kind: 'tool-calls',
       calls: calls.map((call) => ({ id: call.toolCallId, name: call.toolName, args: call.input })),
     }
   }
+
+  /**
+   * No `answer` call and no data tool: the model replied in prose, which no
+   * schema can enforce. Ask once more with a tool choice it cannot ignore.
+   * That is the enforcement — one extra round trip, only for a provider or a
+   * model that ignores the instruction.
+   */
+  const forceAnswer = async () => {
+    const forced = streamText({
+      model: provider(config.model),
+      system: `${system}\n\nقدّم ردك الآن باستخدام أداة «${ANSWER_TOOL}» فقط، ومتكتبش نص حر.`,
+      messages,
+      tools: { [ANSWER_TOOL]: answerTool() },
+      toolChoice: { type: 'tool', toolName: ANSWER_TOOL },
+      maxRetries: 1,
+    })
+    const forcedCalls = (await forced.toolCalls) ?? []
+    const call = forcedCalls.find((entry) => entry.toolName === ANSWER_TOOL)
+    if (!call) {
+      throw ApplicationFailure.nonRetryable('الموديل مارجّعش رد', 'EmptyReply')
+    }
+    return call
+  }
+
+  const finalCall = answerCall ?? (await forceAnswer())
 
   let usage: { inputTokens?: number; outputTokens?: number } = { inputTokens: 0, outputTokens: 0 }
   try {
@@ -206,38 +230,17 @@ export async function modelStep(input: ModelStepInput): Promise<ModelStepOutput>
   const promptTokens = Number((usage as any)?.inputTokens ?? 0) || 0
   const completionTokens = Number((usage as any)?.outputTokens ?? 0) || 0
 
-  let reply: AssistantReply | null = null
-  let degraded = false
-  try {
-    const output = await attempt.result.output
-    reply = output ? AssistantReplySchema.parse(output) : null
-  } catch {
-    reply = null
-  }
+  // The reply is whatever the `answer` tool was called with. The provider has
+  // already validated it against `AssistantReplySchema`, and it is checked once
+  // more here so a non-compliant endpoint cannot slip a wrong shape through.
+  const reply = readAnswer(finalCall.input)
 
-  if (!reply) {
-    // The structured call produced nothing usable — fall back to the prose that
-    // was streamed, which is still a valid reply shape with every tool card.
-    degraded = true
-    const text = attempt.shown.trim()
-    if (!text) {
-      throw ApplicationFailure.nonRetryable('الموديل رجّع رد فاضي', 'EmptyReply')
-    }
-    // Without `response_format` the model still answers with the JSON the
-    // system prompt asks for, so use it rather than showing the owner the blob.
-    const parsed = parseReplyJson(text)
-    if (parsed) {
-      reply = parsed
-    } else if (looksLikeJson(text)) {
-      // Malformed JSON. Never render the payload — ask for a retry instead.
-      reply = { text: getSavedReply('needs_context'), cards: [], followups: [] }
-    } else {
-      reply = { text, cards: input.cardIds, followups: [] }
-    }
-    if (attempt.plain) publishText(input.turnId, reply.text)
-  }
+  // The whole reply arrives inside the tool call, so the bubble is filled once
+  // instead of token by token. That is the cost of enforcement, and it is what
+  // stops a JSON payload ever reaching the chat.
+  publishText(input.turnId, reply.text)
 
-  return { kind: 'answer', reply, promptTokens, completionTokens, degraded }
+  return { kind: 'answer', reply, promptTokens, completionTokens, degraded: false }
 }
 
 /**
@@ -276,31 +279,32 @@ function isStructuredOutputUnsupported(err: any): boolean {
   )
 }
 
-/** The streamed answer when structured output was unavailable, if it is JSON. */
-function parseReplyJson(text: string): AssistantReply | null {
-  // Strip a fenced block and any prose around the object: models routinely add
-  // a sentence before the JSON, and the outermost braces are the payload.
-  const unfenced = text.replace(/```(?:json)?/gi, '').trim()
-  const start = unfenced.indexOf('{')
-  const end = unfenced.lastIndexOf('}')
-  if (start === -1 || end <= start) return null
-  try {
-    const parsed = AssistantReplySchema.safeParse(JSON.parse(unfenced.slice(start, end + 1)))
-    return parsed.success ? parsed.data : null
-  } catch {
-    return null
-  }
+/**
+ * The reply schema, exposed as a tool.
+ *
+ * This is the enforcement. The shape is not a convention the model is asked to
+ * follow in prose and not something recovered by parsing text afterwards — it
+ * is the argument schema of a function call, so a provider that supports tool
+ * calling validates it before the call is returned. There is no JSON to strip,
+ * no fence to unwrap, and no blob that can reach the chat bubble.
+ */
+const ANSWER_TOOL = 'answer'
+
+function answerTool() {
+  return tool({
+    description: 'قدّم الرد النهائي لصاحب المطعم. استخدمها دايماً بدل الكتابة كنص حر.',
+    inputSchema: AssistantReplySchema,
+  })
 }
 
-/**
- * True when the text is a JSON payload rather than prose.
- *
- * A truncated or malformed object is still JSON, and printing it into the chat
- * bubble is exactly the failure this guards against — the owner saw
- * `"cards": ["card-0"], "followlg ? ..."]}` instead of an answer.
- */
-function looksLikeJson(text: string): boolean {
-  return /^\s*(```|\{)/.test(text)
+function readAnswer(input: unknown): AssistantReply {
+  const parsed = AssistantReplySchema.safeParse(input)
+  if (!parsed.success) {
+    throw ApplicationFailure.nonRetryable('رد المساعد غير مطابق للمخطط', 'ValidationError', {
+      issues: parsed.error.flatten(),
+    })
+  }
+  return parsed.data
 }
 
 function providerFailure(err: any): Error {
