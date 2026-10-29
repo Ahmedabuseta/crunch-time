@@ -107,6 +107,10 @@ export async function modelStep(input: ModelStepInput): Promise<ModelStepOutput>
   const messages = buildMessages(input.history, input.exchanges)
 
   const run = async (withOutput: boolean) => {
+    // The SDK replaces a provider failure that happens before the first step
+    // with a bare NoOutputGeneratedError, so the real one is kept here for the
+    // fallback in `readToolCalls`.
+    let streamError: unknown
     const result = streamText({
       model: provider(config.model),
       system,
@@ -114,6 +118,9 @@ export async function modelStep(input: ModelStepInput): Promise<ModelStepOutput>
       tools: sdkTools,
       // One step per activity: the workflow decides when to go round again.
       maxRetries: 1,
+      onError: ({ error }) => {
+        streamError = error
+      },
       ...(withOutput ? { output: Output.object({ schema: AssistantReplySchema }) } : {}),
     })
 
@@ -137,7 +144,7 @@ export async function modelStep(input: ModelStepInput): Promise<ModelStepOutput>
       } catch {
         // A malformed partial must not kill the step; the final output decides.
       }
-      return { result, shown }
+      return { result, shown, streamError: () => streamError }
     }
 
     let shown = ''
@@ -145,10 +152,10 @@ export async function modelStep(input: ModelStepInput): Promise<ModelStepOutput>
       shown += delta
       publishText(input.turnId, delta)
     }
-    return { result, shown }
+    return { result, shown, streamError: () => streamError }
   }
 
-  let attempt: { result: Awaited<ReturnType<typeof run>>['result']; shown: string }
+  let attempt: Awaited<ReturnType<typeof run>>
   try {
     attempt = await run(true)
   } catch (err: any) {
@@ -162,7 +169,24 @@ export async function modelStep(input: ModelStepInput): Promise<ModelStepOutput>
     }
   }
 
-  const calls = (await attempt.result.toolCalls) ?? []
+  /**
+   * Reads the step's tool calls. Groq refuses a JSON `response_format` on a
+   * request that also carries tools, and the SDK surfaces that 400 as a bare
+   * NoOutputGeneratedError. Retrying once without the structured output keeps
+   * the tool loop alive; the answer then falls back to the streamed prose.
+   */
+  const readToolCalls = async () => {
+    try {
+      return (await attempt.result.toolCalls) ?? []
+    } catch (err: any) {
+      const cause = attempt.streamError() ?? err
+      if (!isStructuredOutputUnsupported(cause)) throw providerFailure(cause)
+      attempt = await run(false)
+      return (await attempt.result.toolCalls) ?? []
+    }
+  }
+
+  const calls = await readToolCalls()
   if (calls.length > 0) {
     return {
       kind: 'tool-calls',
@@ -231,8 +255,11 @@ function buildMessages(
 }
 
 function isStructuredOutputUnsupported(err: any): boolean {
-  const message = String(err?.message ?? '')
-  return /response_format|json_schema|structured/i.test(message) && /400|unsupported|not support/i.test(message)
+  const message = `${err?.message ?? ''} ${err?.responseBody ?? ''}`
+  return (
+    /response_format|json_schema|structured|json mode/i.test(message) &&
+    /400|unsupported|not support|cannot be combined/i.test(message)
+  )
 }
 
 function providerFailure(err: any): Error {
