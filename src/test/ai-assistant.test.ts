@@ -55,7 +55,7 @@ describe('migration 011', () => {
   })
 
   it('seeds the saved replies', () => {
-    for (const key of ['off_topic', 'disabled', 'no_key', 'budget', 'greeting'] as const) {
+    for (const key of ['disabled', 'no_key', 'budget', 'greeting'] as const) {
       expect(getSavedReply(key).length).toBeGreaterThan(10)
     }
   })

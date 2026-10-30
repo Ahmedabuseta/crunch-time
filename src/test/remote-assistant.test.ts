@@ -204,31 +204,22 @@ suite('assistant chat over HTTP', () => {
     expect(last.followups).toEqual(['وإمبارح؟'])
   })
 
-  it('refuses an off-topic message without spending a token or starting a workflow', async () => {
+  it('sends an off-topic question to the model instead of refusing it', async () => {
     const requestsBefore = fake.turnRequests()
     const workflowsBefore = await turnCount()
 
     const events = await chat('اكتبلي قصيدة عن البحر')
 
     const done = events.find((event) => event.event === 'done')
+    expect(done).toBeDefined()
     const payload = JSON.parse(done!.data)
-    expect(payload.blocked).toBe('off_topic')
-    // A refused turn has no persisted assistant id of its own.
-    expect(payload.messageId).toBeNull()
+    // No canned refusal: the turn is a normal assistant message, and the
+    // system prompt is what asks the model to decline politely.
+    expect(payload.blocked).toBeUndefined()
+    expect(payload.messageId).toBeTruthy()
 
-    // The saved reply is still streamed, so the screen has something to show.
-    const streamed = events
-      .filter((event) => event.event === 'text')
-      .map((event) => JSON.parse(event.data).d as string)
-      .join('')
-    expect(streamed.length).toBeGreaterThan(10)
-
-    expect(fake.turnRequests()).toBe(requestsBefore)
-    // Corroborates the counter: no assistantTurn was started. Visibility can
-    // lag behind a start, never ahead, so a lag here cannot create a false pass
-    // on its own — and the provider counter above is the primary guard.
-    await sleep(600)
-    expect(await turnCount()).toBe(workflowsBefore)
+    expect(fake.turnRequests()).toBeGreaterThan(requestsBefore)
+    expect(await waitFor(async () => (await turnCount()) > workflowsBefore)).toBe(true)
   }, 60_000)
 
   it('serves config without ever returning the key', async () => {
