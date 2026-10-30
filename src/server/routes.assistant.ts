@@ -43,8 +43,6 @@ type Blocked = { blocked: ReplyKey; message: string }
 type Ready = { ok: true }
 
 export function registerAssistantRoutes(app: FastifyInstance, backend: Backend) {
-  void backend
-
   // ─── Config ─────────────────────────────────────────────────
   app.get('/assistant/config', async () => {
     const config = getAiConfig()
@@ -276,7 +274,10 @@ export function registerAssistantRoutes(app: FastifyInstance, backend: Backend) 
     if (!withinBudget(config.dailyTokenLimit)) return block(thread, message, 'budget')
     if (message.length < 2) return block(thread, message, 'empty')
 
-    const decision = verdict(message, { previousTurnWasTool: lastAssistantHadCards(thread) })
+    const decision = verdict(message, {
+      previousTurnWasTool: lastAssistantHadCards(thread),
+      appTerms: menuTerms(),
+    })
     if (decision.decision === 'block') {
       const key: ReplyKey = decision.reason === 'empty'
         ? 'empty'
@@ -294,6 +295,21 @@ export function registerAssistantRoutes(app: FastifyInstance, backend: Backend) 
     if (!runtime.ok) return block(thread, message, 'temporal_down')
 
     return { ok: true }
+  }
+
+  /**
+   * The shop's own vocabulary for the guard. A price question may name nothing
+   * but a product — «بكام الكرنش بومب» — and the dictionary cannot know the
+   * menu, so the menu itself is offered as evidence.
+   */
+  function menuTerms(): string[] {
+    try {
+      const rows = backend.catalog.listProducts(undefined, true) as { name?: unknown }[]
+      return rows.map((row) => String(row.name ?? '')).filter((name) => name.length > 0)
+    } catch {
+      // A guard without the menu is still a guard.
+      return []
+    }
   }
 
   /** Records a refused turn so the transcript explains why nothing happened. */

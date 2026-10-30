@@ -69,6 +69,30 @@ describe('topic guard', () => {
     expect(isFollowUp('ليه', false)).toBe(false)
   })
 
+  it('treats a price question as ours even when it names only a product', () => {
+    // "how much is the crunch?" — the noun is not in the dictionary.
+    expect(appTermScore('بكام الكرنش')).toBeGreaterThan(0)
+    expect(appTermScore('بكم كرانشي')).toBeGreaterThan(0)
+    expect(appTermScore('how much is the crunch')).toBeGreaterThan(0)
+    expect(verdict('بكام الكرنش', { previousTurnWasTool: false }).reason).toBe('app-term')
+  })
+
+  it('recognises names from the shop’s own menu', () => {
+    // Nothing here is dictionary vocabulary; only the menu knows the name.
+    expect(appTermScore('الكرنش بومب')).toBe(0)
+    expect(appTermScore('الكرنش بومب', ['الكرنش بومب'])).toBeGreaterThan(0)
+    expect(
+      verdict('بكام الكرنش بومب', {
+        previousTurnWasTool: false,
+        appTerms: ['الكرنش بومب'],
+      }).decision
+    ).toBe('allow')
+  })
+
+  it('still refuses an unrelated request that is not about a product', () => {
+    expect(verdict('اكتبلي قصيدة', { previousTurnWasTool: false }).reason).toBe('off-topic')
+  })
+
   it('decides in the documented order', () => {
     const allow = (message: string) => verdict(message, { previousTurnWasTool: false })
     expect(allow('؟').decision).toBe('block')

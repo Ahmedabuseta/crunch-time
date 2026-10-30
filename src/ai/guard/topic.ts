@@ -23,7 +23,8 @@ export const APP_TERMS: string[] = [
 
   // ─── Products and menu ────────────────────────────────────
   'صنف', 'أصناف', 'منيو', 'قائمة', 'منتج', 'منتجات', 'برجر',
-  'سعر', 'أسعار', 'سعره', 'سعر البيع', 'تكلفة', 'ربح', 'أرباح',
+  'سعر', 'أسعار', 'سعره', 'سعر البيع', 'بكام', 'بكم', 'كام',
+  'تكلفة', 'ربح', 'أرباح',
   'هامش', 'هامش الربح', 'مارجن', 'إضافة', 'إضافات', 'مكونات', 'مكون',
   'وجبة', 'وجبات', 'ساندوتش', 'مشروب', 'مشروبات', 'حجم', 'أحجام', 'كومبو',
   'عروض', 'برومو',
@@ -52,6 +53,7 @@ export const APP_TERMS: string[] = [
   'delivery', 'deliveries', 'table', 'tables', 'takeaway', 'takeout',
   'product', 'products', 'menu', 'item', 'items', 'burger',
   'price', 'prices', 'cost', 'costs', 'profit', 'profits', 'margin', 'margins',
+  'how much',
   'addon', 'addons', 'topping', 'toppings', 'ingredient', 'ingredients',
   'recipe', 'recipes', 'stock', 'inventory', 'warehouse',
   'supplier', 'suppliers', 'purchase', 'purchases', 'waste', 'spoilage',
@@ -123,7 +125,7 @@ function containsRun(tokens: string[], phrase: string[]): boolean {
   return false
 }
 
-function buildIndex(terms: string[]): TermIndex {
+function buildIndex(terms: readonly string[]): TermIndex {
   const single = new Set<string>()
   const phrases: string[][] = []
   const seen = new Set<string>()
@@ -151,9 +153,18 @@ function matchCount(index: TermIndex, tokens: string[]): number {
 const APP_INDEX = buildIndex(APP_TERMS)
 const OFF_TOPIC_INDEX = buildIndex(OFF_TOPIC_TERMS)
 
-/** How many distinct app terms the message names. Zero means "no evidence". */
-export function appTermScore(input: string): number {
-  return matchCount(APP_INDEX, canonical(input))
+/**
+ * How many distinct app terms the message names. Zero means "no evidence".
+ *
+ * `extraTerms` carries vocabulary this module cannot know — the shop's own menu
+ * — so "بكام الكرنش بومب" is recognised even when neither word is in the
+ * dictionary. It is only consulted when the built-in list found nothing.
+ */
+export function appTermScore(input: string, extraTerms: readonly string[] = []): number {
+  const tokens = canonical(input)
+  const hits = matchCount(APP_INDEX, tokens)
+  if (hits > 0 || extraTerms.length === 0) return hits
+  return matchCount(buildIndex(extraTerms), tokens)
 }
 
 /** An unrelated domain is named and the app is not: definitely not our data. */
@@ -196,7 +207,10 @@ export function isFollowUp(input: string, previousTurnWasTool: boolean): boolean
  * The ordered rules. The first match wins, and only "uncertain" leaves the
  * decision to spend a model call to the caller.
  */
-export function verdict(input: string, opts: { previousTurnWasTool: boolean }): TopicVerdict {
+export function verdict(
+  input: string,
+  opts: { previousTurnWasTool: boolean; appTerms?: readonly string[] },
+): TopicVerdict {
   // 1 — nothing to answer. Punctuation only ("؟؟") counts as empty: a model
   // could only guess at it.
   if (normalizeArabic(input).length < 2 || words(input).length === 0) {
@@ -205,7 +219,7 @@ export function verdict(input: string, opts: { previousTurnWasTool: boolean }): 
   // 2 — a greeting is answered from the saved replies.
   if (isGreeting(input)) return { decision: 'block', reason: 'greeting' }
   // 3 — the message names something the app owns.
-  if (appTermScore(input) > 0) return { decision: 'allow', reason: 'app-term' }
+  if (appTermScore(input, opts?.appTerms) > 0) return { decision: 'allow', reason: 'app-term' }
   // 4 — a short "and how much?" about the answer that just came back.
   if (isFollowUp(input, Boolean(opts?.previousTurnWasTool))) {
     return { decision: 'allow', reason: 'follow-up' }
