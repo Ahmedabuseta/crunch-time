@@ -69,18 +69,24 @@ export default function AssistantScreen() {
   // in a form. A misheard sentence is visible in their own bubble straight away.
   const voice = useVoice(useCallback((text: string) => void send(text), [send]));
 
+  // Destructured so these two stay stable across renders. `voice` is a fresh
+  // object every render, so a callback keyed on it would be re-created each
+  // time — which re-creates `renderItem`, and the FlatList then re-renders every
+  // row on every streaming flush instead of just the line that changed.
+  const { play: playSpeech, stopPlayback: stopSpeech } = voice;
+
   const playReply = useCallback(
     (text: string) => {
       setPlayingText(text);
-      voice.play(text);
+      playSpeech(text);
     },
-    [voice]
+    [playSpeech]
   );
 
   const stopPlayback = useCallback(() => {
     setPlayingText(null);
-    voice.stopPlayback();
-  }, [voice]);
+    stopSpeech();
+  }, [stopSpeech]);
 
   // A chat auto-scrolls, but not on every content change: while text streams the
   // content size changes many times a second, and an animation per change fights
