@@ -33,6 +33,18 @@ type BottomSheetContentProps = {
   cardColor: string;
   mutedColor: string;
   screenHeight: number;
+  /**
+   * How much of the sheet is actually on screen.
+   *
+   * The sheet used to be a full screen tall and merely translated up, so the
+   * ScrollView's viewport was taller than the visible area: the last row could
+   * sit below the screen edge and the scroll range never matched what the owner
+   * could see.
+   *
+   * Assumes a single snap point. A sheet with several would need this to follow
+   * the *current* one, which means an animated height rather than a constant.
+   */
+  sheetHeight: number;
   onHandlePress?: () => void;
 };
 
@@ -46,6 +58,7 @@ const BottomSheetContent = ({
   cardColor,
   mutedColor,
   screenHeight,
+  sheetHeight,
   onHandlePress,
 }: BottomSheetContentProps) => {
   const insets = useSafeAreaInsets();
@@ -54,7 +67,7 @@ const BottomSheetContent = ({
     <Animated.View
       style={[
         {
-          height: screenHeight,
+          height: sheetHeight,
           width: '100%',
           position: 'absolute',
           top: screenHeight,
@@ -109,6 +122,9 @@ const BottomSheetContent = ({
           paddingBottom: Math.max(insets.bottom, 16),
         }}
         keyboardShouldPersistTaps='handled'
+        // Android needs this when a scroll view sits inside a transformed
+        // container, or flings are dropped.
+        nestedScrollEnabled
         showsVerticalScrollIndicator={false}
       >
         {children}
@@ -315,6 +331,7 @@ export function BottomSheet({
               cardColor={cardColor}
               mutedColor={mutedColor}
               screenHeight={screenHeight}
+              sheetHeight={-defaultHeight}
               onHandlePress={() => runOnJS(handlePress)()}
             />
           ) : (
@@ -327,6 +344,7 @@ export function BottomSheet({
                 cardColor={cardColor}
                 mutedColor={mutedColor}
                 screenHeight={screenHeight}
+              sheetHeight={-defaultHeight}
                 onHandlePress={() => runOnJS(handlePress)()}
               />
             </GestureDetector>

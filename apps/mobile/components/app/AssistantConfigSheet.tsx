@@ -209,7 +209,16 @@ export function AssistantConfigSheet({
   const usage = config?.today;
 
   return (
-    <BottomSheet isVisible={isVisible} onClose={onClose} title='إعدادات المساعد' snapPoints={[0.9]}>
+    <BottomSheet
+      isVisible={isVisible}
+      onClose={onClose}
+      title='إعدادات المساعد'
+      snapPoints={[0.9]}
+      // This sheet is a long form, so the drag-to-dismiss pan would take the
+      // gesture from the ScrollView and make scrolling fight the sheet. The
+      // backdrop still closes it.
+      disablePanGesture
+    >
       {loading ? (
         <View style={{ paddingVertical: 40 }}>
           <Spinner />
