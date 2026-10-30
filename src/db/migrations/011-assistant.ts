@@ -22,7 +22,6 @@ const COLUMNS: [string, string][] = [
 // without a release. Every key is read with a literal fallback in
 // guard/replies.ts, so a missing row can never mute the assistant.
 const REPLIES: [string, string][] = [
-  ['off_topic', 'أنا مساعد الكاشير، بساعدك في حاجات المحل بس.\nتقدر تسألني عن: المبيعات والأرباح، المخزون واللي ناقص، أسعار الأصناف وتكلفتها، الموظفين والورديات، أو آخر الطلبات.'],
   ['empty', 'اكتب سؤالك وأنا أرد.'],
   ['greeting', 'أهلاً بيك. اسألني مثلاً: بعت بكام النهاردة؟ إيه اللي ناقص أطلبه؟ إيه أقل صنف بربح؟'],
   ['budget', 'وصلت لحد الاستخدام اليومي للمساعد. تقدر تزوّد الحد من إعدادات المساعد، أو نكمل بكرة.'],

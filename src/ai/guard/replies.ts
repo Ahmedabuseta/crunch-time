@@ -7,7 +7,6 @@
 import { getSqlite } from '../../db/client'
 
 export type ReplyKey =
-  | 'off_topic'
   | 'empty'
   | 'greeting'
   | 'budget'
@@ -20,7 +19,6 @@ export type ReplyKey =
 
 /** Same wording as the seeded rows in `src/db/migrations/011-assistant.ts`. */
 const FALLBACKS: Record<ReplyKey, string> = {
-  off_topic: 'أنا مساعد الكاشير، بساعدك في حاجات المحل بس.\nتقدر تسألني عن: المبيعات والأرباح، المخزون واللي ناقص، أسعار الأصناف وتكلفتها، الموظفين والورديات، أو آخر الطلبات.',
   empty: 'اكتب سؤالك وأنا أرد.',
   greeting: 'أهلاً بيك. اسألني مثلاً: بعت بكام النهاردة؟ إيه اللي ناقص أطلبه؟ إيه أقل صنف بربح؟',
   budget: 'وصلت لحد الاستخدام اليومي للمساعد. تقدر تزوّد الحد من إعدادات المساعد، أو نكمل بكرة.',

@@ -1,8 +1,7 @@
-// The pure half of the assistant: Arabic normalisation, the topic guard, the
-// reply schemas and card resolution. No database, no Electron, no network.
+// The pure half of the assistant: Arabic normalisation, greetings, the reply
+// schemas and card resolution. No database, no Electron, no network.
 import { describe, it, expect } from 'vitest'
 import { normalizeArabic, words, isGreeting } from '../ai/guard/arabic'
-import { appTermScore, looksOffTopic, isFollowUp, verdict, needsClassifier } from '../ai/guard/topic'
 import {
   AssistantReplySchema,
   ChatCardSchema,
@@ -43,70 +42,6 @@ describe('greetings', () => {
 
   it('does not swallow a real question', () => {
     expect(isGreeting('ازيك يا كابتن عايز أعرف مبيعات النهاردة')).toBe(false)
-  })
-})
-
-describe('topic guard', () => {
-  it('scores app vocabulary in both languages', () => {
-    expect(appTermScore('مبيعات النهاردة كام')).toBeGreaterThan(0)
-    expect(appTermScore('what was my revenue today')).toBeGreaterThan(0)
-    expect(appTermScore('المخزون ناقص')).toBeGreaterThan(0)
-  })
-
-  it('does not match a term inside another word', () => {
-    // «هاي» is a greeting term; it must not fire on «هايبر».
-    expect(appTermScore('هايبر ماركت')).toBe(0)
-  })
-
-  it('flags unrelated requests only when no app term is present', () => {
-    expect(looksOffTopic('اكتبلي قصيدة')).toBe(true)
-    expect(looksOffTopic('اكتبلي قصيدة عن المخزون')).toBe(false)
-  })
-
-  it('keeps a short follow-up after a tool answer', () => {
-    expect(isFollowUp('وطب ليه؟', true)).toBe(true)
-    expect(isFollowUp('ليه', true)).toBe(true)
-    expect(isFollowUp('ليه', false)).toBe(false)
-  })
-
-  it('treats a price question as ours even when it names only a product', () => {
-    // "how much is the crunch?" — the noun is not in the dictionary.
-    expect(appTermScore('بكام الكرنش')).toBeGreaterThan(0)
-    expect(appTermScore('بكم كرانشي')).toBeGreaterThan(0)
-    expect(appTermScore('how much is the crunch')).toBeGreaterThan(0)
-    expect(verdict('بكام الكرنش', { previousTurnWasTool: false }).reason).toBe('app-term')
-  })
-
-  it('recognises names from the shop’s own menu', () => {
-    // Nothing here is dictionary vocabulary; only the menu knows the name.
-    expect(appTermScore('الكرنش بومب')).toBe(0)
-    expect(appTermScore('الكرنش بومب', ['الكرنش بومب'])).toBeGreaterThan(0)
-    expect(
-      verdict('بكام الكرنش بومب', {
-        previousTurnWasTool: false,
-        appTerms: ['الكرنش بومب'],
-      }).decision
-    ).toBe('allow')
-  })
-
-  it('still refuses an unrelated request that is not about a product', () => {
-    expect(verdict('اكتبلي قصيدة', { previousTurnWasTool: false }).reason).toBe('off-topic')
-  })
-
-  it('decides in the documented order', () => {
-    const allow = (message: string) => verdict(message, { previousTurnWasTool: false })
-    expect(allow('؟').decision).toBe('block')
-    expect(allow('؟').reason).toBe('empty')
-    expect(verdict('السلام عليكم', { previousTurnWasTool: false }).reason).toBe('greeting')
-    expect(allow('بعت بكام النهاردة').decision).toBe('allow')
-    expect(allow('اكتبلي قصيدة').reason).toBe('off-topic')
-    expect(allow('حاجة غريبة خالص').reason).toBe('uncertain')
-  })
-
-  it('asks for the classifier only when uncertain', () => {
-    expect(needsClassifier({ decision: 'allow', reason: 'uncertain' })).toBe(true)
-    expect(needsClassifier({ decision: 'allow', reason: 'app-term' })).toBe(false)
-    expect(needsClassifier({ decision: 'block', reason: 'off-topic' })).toBe(false)
   })
 })
 

@@ -27,6 +27,7 @@ export function buildSystemPrompt(ctx: PromptContext): string {
     '4. الرد بالعربي المصري، مختصر: جملة أو جملتين. الأرقام والجداول موجودة في الكروت، متكررهاش في النص.',
     '5. لو السؤال ناقص أو مش واضح، اسأل سؤال توضيحي واحد قصير.',
     '6. متتكلمش عن أي حاجة برا المطعم: مبيعات، مخزون، أصناف، موظفين، ورديات، دليفري، طلبات.',
+    '7. لو السؤال برا المحل، اعتذر في سطر واحد بلطف («أنا كرنش تايم، بساعدك في شغل المحل بس») واقترح سؤال عن المحل. متكتبش قصص أو كود أو ترجمة.',
     '',
     '## الأدوات',
     ...toolGuide(),
@@ -69,20 +70,6 @@ function toolGuide(): string[] {
     '• record_waste — تسجيل تالف.',
     '• exchange_brand — مبادلة ماركة قديمة بجديدة.',
   ]
-}
-
-/** One Arabic line answering "why wasn't my message sent?". */
-export function blockedNotice(reason: string): string {
-  switch (reason) {
-    case 'off_topic':
-      return 'ده مش سؤال عن المطعم، فمبعتوش للمساعد.'
-    case 'budget':
-      return 'وصلت لحد الاستخدام اليومي.'
-    case 'rate_limited':
-      return 'طلبات كتير في وقت قصير.'
-    default:
-      return reason
-  }
 }
 
 export const money = fmtMoney
