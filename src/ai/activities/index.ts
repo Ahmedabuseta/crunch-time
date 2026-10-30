@@ -12,6 +12,7 @@ import { ALL_TOOLS, getTool, redact } from '../tools'
 import { resolveCards, AssistantReplySchema, ToolOutputSchema, type AssistantReply, type ChatCard } from '../schemas'
 import { appendMessage, modelHistory } from '../history'
 import { recordUsage } from '../guard/budget'
+import { getSavedReply } from '../guard/replies'
 import { publishStatus, publishText } from '../streams'
 import { getDb } from '../../db/client'
 import * as schema from '../../db/schema'
@@ -208,15 +209,24 @@ export async function modelStep(input: ModelStepInput): Promise<ModelStepOutput>
       system: `${system}\n\nقدّم ردك الآن باستخدام أداة «${ANSWER_TOOL}» فقط، ومتكتبش نص حر.`,
       messages,
       tools: { [ANSWER_TOOL]: answerTool() },
-      toolChoice: { type: 'tool', toolName: ANSWER_TOOL },
+      // `required` rather than naming the tool: several OpenAI-compatible
+      // providers accept "must call some tool" but reject a pinned function,
+      // and with a single tool available they mean the same thing.
+      toolChoice: 'required',
       maxRetries: 1,
     })
-    const forcedCalls = (await forced.toolCalls) ?? []
-    const call = forcedCalls.find((entry) => entry.toolName === ANSWER_TOOL)
-    if (!call) {
-      throw ApplicationFailure.nonRetryable('الموديل مارجّعش رد', 'EmptyReply')
+    // `toolCalls` rejects with ToolChoiceViolationError when the model ignores
+    // `required`; that is a provider limitation, not a failed turn.
+    let forcedCalls: Awaited<typeof forced.toolCalls> = []
+    try {
+      forcedCalls = await forced.toolCalls
+    } catch {
+      return null
     }
-    return call
+    const call = (forcedCalls ?? []).find((entry) => entry.toolName === ANSWER_TOOL)
+    // Not an error: a provider that cannot be forced to call a tool is a
+    // limitation to answer around, not a broken turn.
+    return call ?? null
   }
 
   const finalCall = answerCall ?? (await forceAnswer())
@@ -233,14 +243,19 @@ export async function modelStep(input: ModelStepInput): Promise<ModelStepOutput>
   // The reply is whatever the `answer` tool was called with. The provider has
   // already validated it against `AssistantReplySchema`, and it is checked once
   // more here so a non-compliant endpoint cannot slip a wrong shape through.
-  const reply = readAnswer(finalCall.input)
+  //
+  // No call at all means the provider could not be made to use tools. Answer
+  // honestly rather than showing whatever prose — or JSON — it produced.
+  const reply = finalCall
+    ? readAnswer(finalCall.input)
+    : { text: getSavedReply('needs_context'), cards: [], followups: [] }
 
   // The whole reply arrives inside the tool call, so the bubble is filled once
   // instead of token by token. That is the cost of enforcement, and it is what
   // stops a JSON payload ever reaching the chat.
   publishText(input.turnId, reply.text)
 
-  return { kind: 'answer', reply, promptTokens, completionTokens, degraded: false }
+  return { kind: 'answer', reply, promptTokens, completionTokens, degraded: finalCall === null }
 }
 
 /**

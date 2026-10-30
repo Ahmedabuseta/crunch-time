@@ -9,9 +9,7 @@ import type { Backend } from '../backend'
 import { uuid } from '../backend/shared'
 import { getAiConfig, getProviderKey, keyHint, threadId, updateAiConfig, type AiConfigPatch } from '../ai/config'
 import { getSavedReply, type ReplyKey } from '../ai/guard/replies'
-import { needsClassifier, verdict } from '../ai/guard/topic'
-import { normalizeArabic } from '../ai/guard/arabic'
-import { isAboutTheApp } from '../ai/guard/classify'
+import { isGreeting, words } from '../ai/guard/arabic'
 import { recordUsage, todaySnapshot, withinBudget } from '../ai/guard/budget'
 import { appendMessage, clearHistory, listMessages } from '../ai/history'
 import { cancelAction, executeAction, getAction } from '../ai/actions'
@@ -43,6 +41,8 @@ type Blocked = { blocked: ReplyKey; message: string }
 type Ready = { ok: true }
 
 export function registerAssistantRoutes(app: FastifyInstance, backend: Backend) {
+  void backend
+
   // ─── Config ─────────────────────────────────────────────────
   app.get('/assistant/config', async () => {
     const config = getAiConfig()
@@ -263,7 +263,9 @@ export function registerAssistantRoutes(app: FastifyInstance, backend: Backend) 
 
   /**
    * Everything that can reject a message before it costs anything: disabled,
-   * no key, rate limit, budget, then the topic guard, and only then the runtime.
+   * no key, rate limit, budget, and a message with nothing in it. Topic is not
+   * a gate — the system prompt asks the model to decline politely, which keeps
+   * the assistant reachable for any phrasing of a real question.
    */
   async function prepareTurn(message: string, thread: string): Promise<Blocked | Ready> {
     const config = getAiConfig()
@@ -272,44 +274,13 @@ export function registerAssistantRoutes(app: FastifyInstance, backend: Backend) 
 
     if (chatLimiter.retryAfter(RATE_KEY) !== null) return block(thread, message, 'rate_limited')
     if (!withinBudget(config.dailyTokenLimit)) return block(thread, message, 'budget')
-    if (message.length < 2) return block(thread, message, 'empty')
-
-    const decision = verdict(message, {
-      previousTurnWasTool: lastAssistantHadCards(thread),
-      appTerms: menuTerms(),
-    })
-    if (decision.decision === 'block') {
-      const key: ReplyKey = decision.reason === 'empty'
-        ? 'empty'
-        : decision.reason === 'greeting'
-          ? 'greeting'
-          : 'off_topic'
-      return block(thread, message, key)
-    }
-
-    if (needsClassifier(decision) && !(await isAboutTheApp(normalizeArabic(message)))) {
-      return block(thread, message, 'off_topic')
-    }
+    if (message.length < 2 || words(message).length === 0) return block(thread, message, 'empty')
+    if (isGreeting(message)) return block(thread, message, 'greeting')
 
     const runtime = await ensureRuntime()
     if (!runtime.ok) return block(thread, message, 'temporal_down')
 
     return { ok: true }
-  }
-
-  /**
-   * The shop's own vocabulary for the guard. A price question may name nothing
-   * but a product — «بكام الكرنش بومب» — and the dictionary cannot know the
-   * menu, so the menu itself is offered as evidence.
-   */
-  function menuTerms(): string[] {
-    try {
-      const rows = backend.catalog.listProducts(undefined, true) as { name?: unknown }[]
-      return rows.map((row) => String(row.name ?? '')).filter((name) => name.length > 0)
-    } catch {
-      // A guard without the menu is still a guard.
-      return []
-    }
   }
 
   /** Records a refused turn so the transcript explains why nothing happened. */
@@ -323,16 +294,6 @@ export function registerAssistantRoutes(app: FastifyInstance, backend: Backend) 
       // The transcript is best-effort; the reply still reaches the phone.
     }
     return { blocked: key, message: text }
-  }
-
-  function lastAssistantHadCards(thread: string): boolean {
-    try {
-      const rows = listMessages(thread, 2)
-      const last = rows[rows.length - 1]
-      return Boolean(last && last.role === 'assistant' && last.cards.length > 0)
-    } catch {
-      return false
-    }
   }
 
   async function decideAction(id: string, approve: boolean, reply: FastifyReply) {
