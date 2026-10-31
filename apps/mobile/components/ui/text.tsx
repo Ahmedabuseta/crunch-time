@@ -3,6 +3,7 @@ import { FONT_SIZE } from '@/theme/globals';
 import { tajawalForWeight } from '@/lib/fonts';
 import React, { forwardRef } from 'react';
 import {
+  I18nManager,
   StyleSheet,
   Text as RNText,
   TextProps as RNTextProps,
@@ -85,11 +86,12 @@ export const Text = React.memo(
 
       const resolved = StyleSheet.flatten([getTextStyle(), style]) as TextStyle;
       const fontFamily = tajawalForWeight(resolved?.fontWeight);
+      const resolvedStyle = physicalTextAlign(resolved);
 
       return (
         <RNText
           ref={ref}
-          style={[getTextStyle(), { fontFamily }, style]}
+          style={[resolvedStyle, { fontFamily }]}
           accessibilityRole={defaultAccessibilityRole}
           {...props}
         >
@@ -101,3 +103,15 @@ export const Text = React.memo(
 );
 
 Text.displayName = 'Text';
+
+/**
+ * React Native mirrors `textAlign` under RTL: `right` becomes the physical
+ * left. Every screen in this app is written in Arabic and means the physical
+ * edge, so the flip is undone once here instead of in a hundred style sheets.
+ */
+function physicalTextAlign(style: TextStyle): TextStyle {
+  if (!I18nManager.isRTL) return style;
+  if (style.textAlign === 'right') return { ...style, textAlign: 'left' };
+  if (style.textAlign === 'left') return { ...style, textAlign: 'right' };
+  return style;
+}

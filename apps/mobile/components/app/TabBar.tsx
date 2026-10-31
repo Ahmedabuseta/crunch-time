@@ -171,7 +171,7 @@ const styles = StyleSheet.create({
     height: TAB_BAR_HEIGHT,
     justifyContent: 'center',
   },
-  groups: { flexDirection: 'row', alignItems: 'center' },
+  groups: { flexDirection: 'row', direction: 'rtl', alignItems: 'center' },
   pill: {
     flex: 1,
     height: PILL_HEIGHT,

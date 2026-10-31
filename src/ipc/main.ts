@@ -5,6 +5,7 @@ import { ipcMain, app, BrowserWindow, dialog, powerSaveBlocker } from 'electron'
 import { runMigrations } from '../db/migrate'
 import { seedDatabase } from '../db/seed'
 import { createBackend, Backend } from '../backend'
+import type { MenuExportOptions } from '../backend/menu-export'
 import { applyRemoteServer, getRemoteStatus, setDesktopNotifier } from '../server'
 import { ensureRuntime, stopRuntime } from '../ai/runtime'
 import { expireStaleActions } from '../ai/config'
@@ -295,6 +296,11 @@ export function registerIpcHandlers() {
 
   ipcMain.handle('product:delete', (_e, id: string, opts?: { hard?: boolean }) =>
     b.catalog.deleteProduct(id, opts)
+  )
+
+  // Menu → Word (.docx), optionally with each product's recipe.
+  ipcMain.handle('menu:exportWord', (_e, opts?: MenuExportOptions) =>
+    b.menuExport.exportMenuWord(opts)
   )
 
   // ═══════════════════════════════════════════════════════════

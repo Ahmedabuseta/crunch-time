@@ -11,6 +11,17 @@ export const fmtMoney = (value: number | null | undefined): string =>
 export const fmtMoneyInt = (value: number | null | undefined): string =>
   Number(value || 0).toLocaleString('en-US', { maximumFractionDigits: 0 });
 
+export const fmtQty = (value: number | null | undefined): string =>
+  Number(value || 0).toLocaleString('en-US', { maximumFractionDigits: 1 });
+
+export const UNIT_LABELS: Record<string, string> = {
+  g: 'جم',
+  kg: 'كجم',
+  ml: 'مل',
+  l: 'لتر',
+  pcs: 'قطعة',
+};
+
 export function fmtTime(iso: string | Date): string {
   const d = iso instanceof Date ? iso : new Date(iso);
   if (Number.isNaN(d.getTime())) return '';

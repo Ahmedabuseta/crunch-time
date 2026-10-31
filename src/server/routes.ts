@@ -17,6 +17,8 @@ import { registerDeliveryRoutes } from './routes.delivery'
 import { registerBackupRoutes } from './routes.backup'
 import { registerReportRoutes } from './routes.reports'
 import { registerAssistantRoutes } from './routes.assistant'
+import { MENU_PAGE_HTML } from './menu-page'
+import { runAsOwner } from './privileges'
 import {
   TOKEN_REFRESH_AFTER_MS,
   TOKEN_TTL_MS,
@@ -26,7 +28,7 @@ import {
 } from './tokens'
 
 // Paths reachable without a token.
-const PUBLIC_PATHS = new Set(['/health', '/auth/login', '/auth/pair'])
+const PUBLIC_PATHS = new Set(['/health', '/auth/login', '/auth/pair', '/m', '/public/menu'])
 
 // 8 wrong PINs from one IP inside 5 minutes locks that IP out for 10 minutes.
 const loginLimiter = createRateLimiter({ max: 8, windowMs: 5 * 60_000, lockMs: 10 * 60_000 })
@@ -66,6 +68,13 @@ export function registerRoutes(app: FastifyInstance, backend: Backend) {
   // Raw uploads (database restore).
   app.addContentTypeParser('application/octet-stream', { parseAs: 'buffer' }, (_req, body, done) => done(null, body))
 
+  // Every phone request runs as an owner for its whole async lifetime. The
+  // scope is request-local, so a cashier logged in on the desktop is never
+  // affected and concurrent phone requests cannot clobber each other.
+  app.addHook('onRequest', (_req, _reply, done) => {
+    runAsOwner(() => done())
+  })
+
   app.addHook('onRequest', async (req, reply) => {
     const path = req.routeOptions?.url || req.url.split('?')[0]
     if (PUBLIC_PATHS.has(path)) return
@@ -83,6 +92,44 @@ export function registerRoutes(app: FastifyInstance, backend: Backend) {
   })
 
   app.get('/health', async () => ({ ok: true, name: 'crunch-time-pos' }))
+
+  // ─── Public digital menu (QR) ───────────────────────────────
+  // No token: a customer scanning the QR sees the live menu. Only active
+  // categories/products are exposed, and cost fields never leave the till.
+  app.get('/m', async (_req, reply) => {
+    reply.header('cache-control', 'no-store')
+    return reply.type('text/html; charset=utf-8').send(MENU_PAGE_HTML)
+  })
+
+  app.get('/public/menu', async (_req, reply) => {
+    reply.header('cache-control', 'no-store')
+    // The Vercel menu reads this from another origin.
+    reply.header('access-control-allow-origin', '*')
+    const settings = await backend.settings.getSettings()
+    const categories = await backend.catalog.listCategories()
+    const products = await backend.catalog.listProducts()
+    const currency = (settings as any).currencyLabel || (settings as any).currency || 'ج.م'
+    return {
+      generatedAt: new Date().toISOString(),
+      restaurant: (settings as any).restaurantName || 'المنيو',
+      currency,
+      categories: categories.map((cat) => ({
+        id: cat.id,
+        name: cat.name,
+        emoji: cat.emoji,
+        products: products
+          .filter((product) => product.categoryId === cat.id)
+          .sort((a, b) => Number(a.price) - Number(b.price) || String(a.name).localeCompare(String(b.name), 'ar'))
+          .map((product) => ({
+            id: product.id,
+            name: product.name,
+            description: product.description,
+            emoji: product.emoji,
+            price: Math.round((Number(product.price) || 0) * 100) / 100,
+          })),
+      })).filter((cat) => cat.products.length > 0),
+    }
+  })
 
   app.post('/auth/login', async (req, reply) => {
     const ip = req.ip || 'unknown'

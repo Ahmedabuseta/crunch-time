@@ -27,8 +27,8 @@ const acts = proxyActivities<Activities>({
   },
 })
 
-/** Four tool rounds plus the answer. Bounds both latency and spend. */
-export const MAX_STEPS = 5
+/** Seven tool rounds plus a forced answer. Bounds latency and spend. */
+export const MAX_STEPS = 8
 
 export interface TurnInput {
   turnId: string
@@ -53,7 +53,7 @@ export async function assistantTurn(input: TurnInput): Promise<TurnResult> {
   // starts, so it is part of the history `loadContext` returned.
   const history = context.messages
   const produced: ChatCard[] = []
-  const exchanges: { id: string; name: string; args: unknown; data: unknown }[] = []
+  const exchanges: { id: string; name: string; args: unknown; data: unknown; summary?: string }[] = []
   let promptTokens = 0
   let completionTokens = 0
 
@@ -65,13 +65,17 @@ export async function assistantTurn(input: TurnInput): Promise<TurnResult> {
       exchanges,
       cardIds: produced.map((card, index) => cardId(card, index)),
       step,
+      message: input.message,
+      forceAnswer: step === MAX_STEPS - 1,
     })
 
     if (out.kind === 'tool-calls') {
+      promptTokens += out.promptTokens
+      completionTokens += out.completionTokens
       for (const call of out.calls) {
         const result = await acts.runTool({ turnId: input.turnId, name: call.name, args: call.args })
         produced.push(...result.cards)
-        exchanges.push({ id: call.id, name: call.name, args: call.args, data: result.data })
+        exchanges.push({ id: call.id, name: call.name, args: call.args, data: result.data, summary: result.summary })
       }
       continue
     }
@@ -106,12 +110,16 @@ export async function assistantTurn(input: TurnInput): Promise<TurnResult> {
     }
   }
 
-  // Out of steps. Answer honestly with whatever the tools found rather than
-  // returning a half-finished loop to the phone.
-  const text = produced.length > 0
-    ? 'جمعت البيانات دي، بس محتاج أسألك توضيح أكتر عشان أكمّل.'
+  // Out of steps. Answer from what the tools actually returned instead of
+  // discarding a turn that did real work.
+  const summaries = exchanges
+    .map((exchange) => exchange.summary)
+    .filter((summary): summary is string => Boolean(summary?.trim()))
+    .slice(-3)
+  const text = summaries.length > 0
+    ? `جمعت البيانات دي: ${summaries.join(' · ')}`.slice(0, 780)
     : 'محتاج توضيح أكتر عشان أقدر أجاوب.'
-  const cards = produced.slice(0, 3)
+  const cards = produced.slice(-3)
   const saved = await acts.persistTurn({
     threadId: input.threadId,
     user: input.message,

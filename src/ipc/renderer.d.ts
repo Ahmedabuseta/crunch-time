@@ -224,6 +224,14 @@ export interface ApiBridge {
     update: (id: string, data: any) => Promise<{ ok: boolean }>
     delete: (id: string, opts?: DeleteOpts) => Promise<{ ok: boolean; error?: string }>
   }
+  menu: {
+    exportWord: (opts?: {
+      productIds?: string[]
+      includeInactive?: boolean
+      includeRecipes?: boolean
+      includeCosts?: boolean
+    }) => Promise<{ ok: boolean; path?: string; canceled?: boolean; message?: string; error?: string }>
+  }
   addon: {
     list: () => Promise<any[]>
     create: (data: any) => Promise<{ id: string }>

@@ -9,7 +9,8 @@ import { useInventoryStore } from '@/services/inventory/inventory.store'
 import { RecipePanel } from './RecipePanel'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { Plus, Pencil, Trash2, X, Link, ChevronDown, UtensilsCrossed, ClipboardList, PlugZap, SlidersHorizontal, TrendingUp, CheckCircle, AlertTriangle, Eye, EyeOff, ArrowUp, ArrowDown } from 'lucide-react'
+import { Plus, Pencil, Trash2, X, Link, ChevronDown, UtensilsCrossed, ClipboardList, PlugZap, SlidersHorizontal, TrendingUp, CheckCircle, AlertTriangle, Eye, EyeOff, ArrowUp, ArrowDown, FileDown } from 'lucide-react'
+import { MenuExportDialog } from '@/components/MenuExportDialog'
 import { cn } from '@/lib/utils'
 import { fmtMoney } from '@/lib/format'
 import { EmojiPicker } from '@/components/ui/emoji-picker'
@@ -48,6 +49,7 @@ export function ProductsPage() {
   const [selectedAddons, setSelectedAddons] = useState<string[]>([])
   const [selectedModGroups, setSelectedModGroups] = useState<string[]>([])
   const [recipeFor, setRecipeFor] = useState<string | null>(null)
+  const [exportOpen, setExportOpen] = useState(false)
   const [view, setView] = useState<ViewMode>('table')
   const [pendingDelete, setPendingDelete] = useState<any>(null)
   const [catFilter, setCatFilter] = useState<string | null>(null)
@@ -229,9 +231,16 @@ export function ProductsPage() {
     <div className="flex flex-col h-full">
       <div className="flex items-center justify-between px-5 py-4 border-b">
         <h2 className="text-base font-black">المنتجات ({products.length})</h2>
-        <Button size="sm" className="gap-1.5 rounded-xl" onClick={() => { showForm || editId ? resetForm() : openCreate() }}>
-          {<Plus className="h-4 w-4" />} إضافة منتج
-        </Button>
+        <div className="flex items-center gap-2">
+          {isAdmin && (
+            <Button variant="outline" size="sm" className="gap-1.5 rounded-xl" onClick={() => setExportOpen(true)}>
+              <FileDown className="h-4 w-4" /> تصدير Word
+            </Button>
+          )}
+          <Button size="sm" className="gap-1.5 rounded-xl" onClick={() => { showForm || editId ? resetForm() : openCreate() }}>
+            {<Plus className="h-4 w-4" />} إضافة منتج
+          </Button>
+        </div>
       </div>
 
       {/* Add / Edit modal */}
@@ -613,6 +622,13 @@ export function ProductsPage() {
       </div>
 
       <Pagination page={list.page} totalPages={list.totalPages} total={list.total} start={list.start} end={list.end} onPageChange={(p) => list.setPage(p)} />
+
+      <MenuExportDialog
+        open={exportOpen}
+        onClose={() => setExportOpen(false)}
+        products={products}
+        categories={categories}
+      />
 
       <ConfirmDialog
         open={!!pendingDelete}

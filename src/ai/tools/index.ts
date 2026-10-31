@@ -5,9 +5,20 @@
 // a future tool forgets.
 import { READ_TOOLS } from './read'
 import { WRITE_TOOLS } from './write'
+import { MANAGE_READ_TOOLS } from './manage-read'
+import { MANAGE_WRITE_TOOLS } from './manage-write'
+import { ANALYTICS_TOOLS } from './analytics'
+import { ALIAS_TOOLS } from './aliases'
 import type { ToolDef, ToolRegistry } from './types'
 
-export const ALL_TOOLS: ToolDef[] = [...READ_TOOLS, ...WRITE_TOOLS]
+export const ALL_TOOLS: ToolDef[] = [
+  ...READ_TOOLS,
+  ...MANAGE_READ_TOOLS,
+  ...ANALYTICS_TOOLS,
+  ...WRITE_TOOLS,
+  ...MANAGE_WRITE_TOOLS,
+  ...ALIAS_TOOLS,
+]
 
 export const TOOLS: ToolRegistry = new Map(ALL_TOOLS.map((tool) => [tool.name, tool]))
 

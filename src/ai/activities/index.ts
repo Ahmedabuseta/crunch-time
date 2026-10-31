@@ -9,6 +9,7 @@ import { ApplicationFailure } from '@temporalio/activity'
 import { getAiConfigWithKey } from '../config'
 import { buildSystemPrompt } from '../prompt'
 import { ALL_TOOLS, getTool, redact } from '../tools'
+import { selectTools } from '../tools/select'
 import { resolveCards, AssistantReplySchema, ToolOutputSchema, type AssistantReply, type ChatCard } from '../schemas'
 import { appendMessage, modelHistory } from '../history'
 import { recordUsage } from '../guard/budget'
@@ -65,14 +66,18 @@ export interface ModelStepInput {
   /** Plain turns from the transcript, oldest first. */
   history: { role: 'user' | 'assistant'; content: string }[]
   /** Tool calls already run this turn, in order. */
-  exchanges: { id: string; name: string; args: unknown; data: unknown }[]
+  exchanges: { id: string; name: string; args: unknown; data: unknown; summary?: string }[]
   /** Ids of cards produced so far, so the model can choose among them. */
   cardIds: string[]
   step: number
+  /** The owner's current message, used to expose only relevant tool schemas. */
+  message: string
+  /** The last step of a turn must answer; data tools are no longer offered. */
+  forceAnswer?: boolean
 }
 
 export type ModelStepOutput =
-  | { kind: 'tool-calls'; calls: { id: string; name: string; args: unknown }[] }
+  | { kind: 'tool-calls'; calls: { id: string; name: string; args: unknown }[]; promptTokens: number; completionTokens: number }
   | { kind: 'answer'; reply: AssistantReply; promptTokens: number; completionTokens: number; degraded: boolean }
 
 /**
@@ -95,15 +100,18 @@ export async function modelStep(input: ModelStepInput): Promise<ModelStepOutput>
     ? `${input.system}\n\nكروت متاحة في الرد ده: ${input.cardIds.join(', ')}`
     : `${input.system}\n\nمفيش كروت متاحة في الرد ده.`
 
-  const sdkTools = {
-    ...Object.fromEntries(
-      ALL_TOOLS.map((def) => [
-        def.name,
-        tool({ description: def.description, inputSchema: def.schema }),
-      ]),
-    ),
-    [ANSWER_TOOL]: answerTool(),
-  }
+  const exposedTools = input.forceAnswer ? [] : selectTools(ALL_TOOLS, input.message)
+  const sdkTools = input.forceAnswer
+    ? { [ANSWER_TOOL]: answerTool() }
+    : {
+        ...Object.fromEntries(
+          exposedTools.map((def) => [
+            def.name,
+            tool({ description: def.description, inputSchema: def.schema }),
+          ]),
+        ),
+        [ANSWER_TOOL]: answerTool(),
+      }
 
   // Tool calls and their results are reassembled here rather than in the
   // workflow: the workflow stores plain JSON, and only this module knows the
@@ -120,6 +128,7 @@ export async function modelStep(input: ModelStepInput): Promise<ModelStepOutput>
       system,
       messages,
       tools: sdkTools,
+      ...(input.forceAnswer ? { toolChoice: 'required' as const } : {}),
       // One step per activity: the workflow decides when to go round again.
       maxRetries: 1,
       onError: ({ error }) => {
@@ -188,14 +197,18 @@ export async function modelStep(input: ModelStepInput): Promise<ModelStepOutput>
   }
 
   const calls = await readToolCalls()
-  const answerCall = calls.find((call) => call.toolName === ANSWER_TOOL)
+  const dataCalls = calls.filter((call) => call.toolName !== ANSWER_TOOL)
 
-  if (!answerCall && calls.length > 0) {
+  if (dataCalls.length > 0) {
+    const usage = await usageOf(attempt.result)
     return {
       kind: 'tool-calls',
-      calls: calls.map((call) => ({ id: call.toolCallId, name: call.toolName, args: call.input })),
+      calls: dataCalls.map((call) => ({ id: call.toolCallId, name: call.toolName, args: call.input })),
+      ...usage,
     }
   }
+
+  const answerCall = calls.find((call) => call.toolName === ANSWER_TOOL)
 
   /**
    * No `answer` call and no data tool: the model replied in prose, which no
@@ -265,7 +278,7 @@ export async function modelStep(input: ModelStepInput): Promise<ModelStepOutput>
  */
 function buildMessages(
   history: { role: 'user' | 'assistant'; content: string }[],
-  exchanges: { id: string; name: string; args: unknown; data: unknown }[],
+  exchanges: { id: string; name: string; args: unknown; data: unknown; summary?: string }[],
 ): any[] {
   const messages: any[] = history.map((turn) => ({ role: turn.role, content: turn.content }))
   for (const exchange of exchanges) {
@@ -279,7 +292,10 @@ function buildMessages(
         type: 'tool-result',
         toolCallId: exchange.id,
         toolName: exchange.name,
-        output: { type: 'json', value: exchange.data },
+        output: {
+          type: 'json',
+          value: { summary: exchange.summary ?? '', data: exchange.data },
+        },
       }],
     })
   }
@@ -292,6 +308,18 @@ function isStructuredOutputUnsupported(err: any): boolean {
     /response_format|json_schema|structured|json mode/i.test(message) &&
     /400|unsupported|not support|cannot be combined/i.test(message)
   )
+}
+
+async function usageOf(result: any): Promise<{ promptTokens: number; completionTokens: number }> {
+  try {
+    const usage = (await result?.usage) as { inputTokens?: number; outputTokens?: number }
+    return {
+      promptTokens: Number(usage?.inputTokens) || 0,
+      completionTokens: Number(usage?.outputTokens) || 0,
+    }
+  } catch {
+    return { promptTokens: 0, completionTokens: 0 }
+  }
 }
 
 /**
@@ -351,31 +379,41 @@ export interface RunToolOutput {
 export async function runTool(input: RunToolInput): Promise<RunToolOutput> {
   const def = getTool(input.name)
   if (!def) {
-    throw ApplicationFailure.nonRetryable(`أداة غير معروفة: ${input.name}`, 'UnknownTool')
+    const error = `أداة غير معروفة: ${input.name}`
+    return { summary: error, data: { error }, cards: [] }
   }
 
   publishStatus(input.turnId, def.name)
 
+  const parsedArgs = def.schema.safeParse(input.args)
+  if (!parsedArgs.success) {
+    const error = 'بيانات الأداة مش صالحة — اسأل صاحب المطعم يوضّح الطلب.'
+    return {
+      summary: error,
+      data: { error, issues: parsedArgs.error.flatten() },
+      cards: [],
+    }
+  }
+
   let raw: unknown
+  const ctx = { turnId: input.turnId, cards: [] as ChatCard[], now: new Date() }
   try {
-    raw = await def.run(input.args as any, { turnId: input.turnId, cards: [], now: new Date() })
+    raw = await def.run(parsedArgs.data, ctx)
   } catch (err: any) {
-    throw ApplicationFailure.nonRetryable(err?.message || 'تعذّر تنفيذ الأداة', 'ToolFailed')
+    const error = err?.message || 'تعذّر تنفيذ الأداة'
+    return { summary: error, data: { error }, cards: [] }
   }
 
   const parsed = ToolOutputSchema.safeParse(raw)
   if (!parsed.success) {
-    throw ApplicationFailure.nonRetryable(
-      `نتيجة الأداة ${def.name} غير صالحة`,
-      'ValidationError',
-      { issues: parsed.error.flatten() },
-    )
+    const error = `نتيجة الأداة ${def.name} غير صالحة`
+    return { summary: error, data: { error, issues: parsed.error.flatten() }, cards: [] }
   }
 
   return {
     summary: parsed.data.summary,
     data: redact(parsed.data.data),
-    cards: parsed.data.cards,
+    cards: [...ctx.cards, ...parsed.data.cards].slice(0, 2),
   }
 }
 
@@ -396,14 +434,20 @@ export interface ValidateReplyOutput {
  * so it surfaces in the Temporal UI instead of being retried into a bill.
  */
 export async function validateReply(input: ValidateReplyInput): Promise<ValidateReplyOutput> {
-  const parsed = AssistantReplySchema.safeParse(input.reply)
+  const fallbackText = (() => {
+    const action = input.producedCards.find((card) => card.kind === 'action')
+    if (action && action.kind === 'action') return `جاهز أعمل ${action.title} لـ ${action.subject} — مستني تأكيدك.`
+    const first = input.producedCards[0]
+    return first?.kind === 'table' ? `شوف ${first.title} في الكارت.` : 'شوف التفاصيل في الكارت.'
+  })()
+  const parsed = AssistantReplySchema.safeParse({
+    ...input.reply,
+    text: input.reply.text.trim() || fallbackText,
+  })
   if (!parsed.success) {
     throw ApplicationFailure.nonRetryable('رد المساعد غير مطابق للمخطط', 'ValidationError', {
       issues: parsed.error.flatten(),
     })
-  }
-  if (!parsed.data.text.trim()) {
-    throw ApplicationFailure.nonRetryable('رد المساعد فاضي', 'ValidationError')
   }
   return { reply: parsed.data, cards: resolveCards(parsed.data.cards, input.producedCards) }
 }

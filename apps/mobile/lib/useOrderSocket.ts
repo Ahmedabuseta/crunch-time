@@ -17,15 +17,22 @@ export function useOrderSocket(enabled = true) {
   const [live, setLive] = useState(false);
 
   useEffect(() => {
-    if (!enabled) {
-      setLive(false);
-      return;
-    }
+    if (!enabled) return;
 
     let socket: WebSocket | null = null;
     let retry: ReturnType<typeof setTimeout> | null = null;
+    let reportTimer: ReturnType<typeof setTimeout> | null = null;
     let closed = false;
     let attempts = 0;
+
+    const invalidateDashboard = () => {
+      if (reportTimer) return;
+      reportTimer = setTimeout(() => {
+        reportTimer = null;
+        void queryClient.invalidateQueries({ queryKey: qkPrefix.reports() });
+        void queryClient.invalidateQueries({ queryKey: qkPrefix.ingredients() });
+      }, 1200);
+    };
 
     const connect = () => {
       const baseUrl = getApiBaseUrl();
@@ -50,13 +57,14 @@ export function useOrderSocket(enabled = true) {
               // which does not prefix-match the paged board's ['orders','paged',
               // …] key — so a live sale would never refresh a paged list.
               void queryClient.invalidateQueries({ queryKey: qkPrefix.orders() });
+              invalidateDashboard();
               break;
             case 'shift:updated':
               void queryClient.invalidateQueries({ queryKey: ['shifts'] });
               break;
             case 'cash:updated':
               void queryClient.invalidateQueries({ queryKey: ['cash-drawer'] });
-              void queryClient.invalidateQueries({ queryKey: ['reports'] });
+              invalidateDashboard();
               break;
             default:
               break;
@@ -83,7 +91,9 @@ export function useOrderSocket(enabled = true) {
     connect();
     return () => {
       closed = true;
+      setLive(false);
       if (retry) clearTimeout(retry);
+      if (reportTimer) clearTimeout(reportTimer);
       try {
         socket?.close();
       } catch {
@@ -92,5 +102,5 @@ export function useOrderSocket(enabled = true) {
     };
   }, [queryClient, enabled]);
 
-  return { live };
+  return { live: enabled && live };
 }

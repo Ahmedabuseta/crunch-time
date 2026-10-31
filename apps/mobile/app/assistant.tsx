@@ -513,7 +513,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     lineHeight: 22,
     textAlignVertical: 'top',
-    textAlign: 'right',
+    textAlign: 'left',
     writingDirection: 'rtl',
   },
   send: {

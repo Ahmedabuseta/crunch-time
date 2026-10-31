@@ -19,6 +19,7 @@ import { buildCustomerReceiptHtml, contentWidth } from '@/lib/print'
 import { toast } from '@/components/ui/toast'
 import { Emoji } from '@/components/Emoji'
 import { RemoteAccessCard } from '@/components/RemoteAccessCard'
+import { MenuQrCard } from '@/components/MenuQrCard'
 
 // Arabic weekday names, indexed by Date.getDay() (0 = Sunday).
 const DAY_NAMES = ['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت']
@@ -1695,6 +1696,7 @@ export function SettingsPage() {
         </div>
 
         <RemoteAccessCard />
+        <MenuQrCard />
           </>
         )}
 

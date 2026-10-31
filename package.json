@@ -1,6 +1,6 @@
 {
   "name": "fastfood-cashier",
-  "version": "1.8.2",
+  "version": "1.9.0",
   "description": "Fast Food Cashier App",
   "author": {
     "name": "Fast Food",
@@ -42,6 +42,7 @@
     "better-sqlite3": "^13.0.3",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "docx": "^9.15.0",
     "electron-log": "^5.4.4",
     "electron-updater": "^6.8.9",
     "esbuild": "^0.28.2",

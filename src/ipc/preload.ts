@@ -142,6 +142,11 @@ contextBridge.exposeInMainWorld('api', {
     delete: (id: string, opts?: DeleteOpts) => invoke('product:delete', id, opts),
   },
 
+  // ─── Menu document export ─────────────────────────────────
+  menu: {
+    exportWord: (opts?: unknown) => invoke('menu:exportWord', opts),
+  },
+
   // ─── Addons ───────────────────────────────────────────────
   addon: {
     list: () => invoke('addon:list'),

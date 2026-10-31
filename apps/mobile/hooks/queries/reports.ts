@@ -17,13 +17,15 @@ export function useZReport(shiftId?: string) {
   });
 }
 
+export interface ReportQuery {
+  [key: string]: string | number | undefined;
+}
+
 /** Any of the server's named reports, flattened by the viewer. */
-export function useReport<T = unknown>(name: string, query?: RangeQuery) {
+export function useReport<T = unknown>(name: string, query?: ReportQuery) {
   return useQuery({
     queryKey: qk.reports(name, query),
-    // `RangeQuery` is a plain string map; the helper wants an index signature.
-    queryFn: () =>
-      api.report<T>(name, query as Record<string, string | number | undefined> | undefined),
+    queryFn: () => api.report<T>(name, query),
     enabled: Boolean(name),
     staleTime: STALE.report,
   });

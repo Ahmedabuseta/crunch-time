@@ -11,9 +11,12 @@ import { getDb, getSqlite } from '../db/client'
 import * as schema from '../db/schema'
 import * as catalog from '../backend/catalog'
 import * as inventory from '../backend/inventory'
+import * as addonsBackend from '../backend/addons'
+import * as modifiersBackend from '../backend/modifiers'
+import { recomputeProductCost, now, uuid } from '../backend/shared'
 import { writeAudit, withDeviceLabel } from '../backend/audit'
-import { now, uuid } from '../backend/shared'
 import { asOwner } from './privileges'
+import { setAlias, type AliasEntity } from './tools/alias-store'
 import type { ActionPreview } from './cards'
 
 const { aiActions } = schema
@@ -24,6 +27,24 @@ export type ActionKind =
   | 'adjust_stock'
   | 'record_waste'
   | 'exchange_brand'
+  | 'create_product'
+  | 'update_product'
+  | 'delete_product'
+  | 'set_product_addons'
+  | 'set_product_modifiers'
+  | 'create_ingredient'
+  | 'update_ingredient'
+  | 'delete_ingredient'
+  | 'add_recipe_line'
+  | 'update_recipe_line'
+  | 'remove_recipe_line'
+  | 'create_subrecipe'
+  | 'update_subrecipe'
+  | 'delete_subrecipe'
+  | 'add_subrecipe_ingredient'
+  | 'update_subrecipe_ingredient'
+  | 'remove_subrecipe_ingredient'
+  | 'learn_alias'
 
 export type ActionStatus = 'proposed' | 'executed' | 'failed' | 'cancelled' | 'expired'
 
@@ -223,9 +244,89 @@ function apply(kind: ActionKind, payload: Record<string, any>): unknown {
         supplier: payload.supplier ? String(payload.supplier) : undefined,
         note: payload.note ? String(payload.note) : undefined,
       })
+    case 'create_product':
+      return catalog.createProduct({
+        name: payload.name,
+        price: payload.price,
+        costPrice: payload.costPrice,
+        categoryId: payload.categoryId,
+        emoji: payload.emoji,
+        description: payload.description,
+        supportsRollback: payload.supportsRollback,
+      })
+    case 'update_product':
+      return catalog.updateProduct(String(payload.productId), payload.patch ?? {})
+    case 'delete_product':
+      return catalog.deleteProduct(String(payload.productId))
+    case 'set_product_addons':
+      return addonsBackend.setAddonLinks(String(payload.productId), Array.isArray(payload.addonIds) ? payload.addonIds.map(String) : [])
+    case 'set_product_modifiers':
+      return modifiersBackend.setModifierLinks(String(payload.productId), Array.isArray(payload.groupIds) ? payload.groupIds.map(String) : [])
+    case 'create_ingredient':
+      return inventory.createIngredient(payload)
+    case 'update_ingredient':
+      return inventory.updateIngredient(String(payload.ingredientId), payload.patch ?? {})
+    case 'delete_ingredient':
+      return inventory.deleteIngredient(String(payload.ingredientId))
+    case 'add_recipe_line':
+    case 'update_recipe_line':
+      return inventory.upsertRecipe({
+        ...(payload.recipeId ? { id: String(payload.recipeId) } : {}),
+        productId: payload.productId ? String(payload.productId) : undefined,
+        ingredientId: payload.ingredientId ? String(payload.ingredientId) : null,
+        subRecipeId: payload.subRecipeId ? String(payload.subRecipeId) : null,
+        quantityPerUnit: Number(payload.quantityPerUnit),
+      })
+    case 'remove_recipe_line':
+      return inventory.deleteRecipe(String(payload.recipeId))
+    case 'create_subrecipe':
+      return inventory.upsertSubRecipe({ name: String(payload.name), unit: String(payload.unit || 'وحدة') })
+    case 'update_subrecipe':
+      return inventory.upsertSubRecipe({
+        id: String(payload.subRecipeId),
+        name: String(payload.name),
+        unit: String(payload.unit || 'وحدة'),
+        active: payload.active !== false,
+      })
+    case 'delete_subrecipe':
+      return inventory.deleteSubRecipe(String(payload.subRecipeId))
+    case 'add_subrecipe_ingredient':
+    case 'update_subrecipe_ingredient':
+      return applySubRecipeIngredient(payload)
+    case 'remove_subrecipe_ingredient':
+      return applyRemoveSubRecipeIngredient(payload)
+    case 'learn_alias':
+      // The target was resolved and shown on the card; the write itself is the
+      // alias row, so a re-pointed alias simply replaces the old target.
+      return setAlias(String(payload.entity) as AliasEntity, String(payload.alias ?? ''), String(payload.targetId ?? ''))
     default:
       throw new Error('نوع الإجراء غير معروف')
   }
+}
+
+function applySubRecipeIngredient(payload: Record<string, any>): unknown {
+  const result = inventory.upsertSubRecipeIngredient({
+    ...(payload.lineId ? { id: String(payload.lineId) } : {}),
+    subRecipeId: String(payload.subRecipeId),
+    ingredientId: String(payload.ingredientId),
+    quantityPerUnit: Number(payload.quantityPerUnit),
+  })
+  recomputeSubRecipeProducts(String(payload.subRecipeId))
+  return result
+}
+
+function applyRemoveSubRecipeIngredient(payload: Record<string, any>): unknown {
+  const line = inventory.getSubRecipeIngredientById(String(payload.lineId)) as any
+  const result = inventory.deleteSubRecipeIngredient(String(payload.lineId))
+  if (line?.subRecipeId) recomputeSubRecipeProducts(String(line.subRecipeId))
+  return result
+}
+
+function recomputeSubRecipeProducts(subRecipeId: string): void {
+  const rows = getSqlite()
+    .prepare('SELECT DISTINCT product_id AS productId FROM recipes WHERE sub_recipe_id = ?')
+    .all(subRecipeId) as { productId: string }[]
+  for (const row of rows) recomputeProductCost(row.productId)
 }
 
 export function cancelAction(id: string): { ok: boolean; status: ActionStatus; error?: string } {

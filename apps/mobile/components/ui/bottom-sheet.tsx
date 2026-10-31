@@ -3,9 +3,11 @@ import { View } from '@/components/ui/view';
 import { useKeyboardHeight } from '@/hooks/useKeyboardHeight'; // Make sure this path is correct
 import { useColor } from '@/hooks/useColor';
 import { BORDER_RADIUS } from '@/theme/globals';
+import { X } from 'lucide-react-native';
 import React, { useEffect } from 'react';
 import {
   Modal,
+  Pressable,
   ScrollView,
   TouchableWithoutFeedback,
   useWindowDimensions,
@@ -45,6 +47,10 @@ type BottomSheetContentProps = {
    * the *current* one, which means an animated height rather than a constant.
    */
   sheetHeight: number;
+  /** The drag gesture lives on the handle only, so the content can scroll. */
+  gesture?: any;
+  /** Closes with the sheet animation; also wired to the hardware back button. */
+  onClose?: () => void;
   onHandlePress?: () => void;
 };
 
@@ -59,9 +65,33 @@ const BottomSheetContent = ({
   mutedColor,
   screenHeight,
   sheetHeight,
+  gesture,
+  onClose,
   onHandlePress,
 }: BottomSheetContentProps) => {
   const insets = useSafeAreaInsets();
+  const danger = useColor('red');
+
+  const handle = (
+    <View
+      style={{
+        width: '100%',
+        paddingVertical: 12,
+        alignItems: 'center',
+      }}
+    >
+      <TouchableWithoutFeedback onPress={onHandlePress}>
+        <View
+          style={{
+            width: 64,
+            height: 6,
+            backgroundColor: mutedColor,
+            borderRadius: 999,
+          }}
+        />
+      </TouchableWithoutFeedback>
+    </View>
+  );
 
   return (
     <Animated.View
@@ -74,43 +104,43 @@ const BottomSheetContent = ({
           backgroundColor: cardColor,
           borderTopLeftRadius: BORDER_RADIUS,
           borderTopRightRadius: BORDER_RADIUS,
+          direction: 'rtl',
         },
         rBottomSheetStyle,
         style,
       ]}
     >
-      {/* Handle */}
-      <TouchableWithoutFeedback onPress={onHandlePress}>
-        <View
-          style={{
-            width: '100%',
-            paddingVertical: 12,
-            alignItems: 'center',
-          }}
-        >
-          <View
-            style={{
-              width: 64,
-              height: 6,
-              backgroundColor: mutedColor,
-              borderRadius: 999,
-            }}
-          />
-        </View>
-      </TouchableWithoutFeedback>
+      {/* Handle — the only place the sheet is dragged from. */}
+      {gesture ? <GestureDetector gesture={gesture}>{handle}</GestureDetector> : handle}
 
-      {/* Title */}
-      {title && (
+      {/* Title row: the close button sits on the left, the title stays centred. */}
+      {(title || onClose) && (
         <View
           style={{
             marginHorizontal: 16,
-            marginTop: 16,
+            marginTop: 8,
             paddingBottom: 8,
+            flexDirection: 'row',
+            alignItems: 'center',
           }}
         >
-          <Text variant='title' style={{ textAlign: 'center' }}>
-            {title}
+          <View style={{ width: 36 }} />
+          <Text variant='title' style={{ flex: 1, textAlign: 'center' }}>
+            {title ?? ''}
           </Text>
+          {onClose ? (
+            <Pressable
+              onPress={onClose}
+              hitSlop={10}
+              style={{ padding: 8 }}
+              accessibilityRole='button'
+              accessibilityLabel='إغلاق'
+            >
+              <X size={20} color={danger} />
+            </Pressable>
+          ) : (
+            <View style={{ width: 36 }} />
+          )}
         </View>
       )}
 
@@ -309,6 +339,8 @@ export function BottomSheet({
       transparent
       statusBarTranslucent
       animationType='none'
+      // Android hardware back: close the sheet instead of doing nothing.
+      onRequestClose={animateClose}
     >
       <GestureHandlerRootView style={{ flex: 1 }}>
         <Animated.View
@@ -322,33 +354,19 @@ export function BottomSheet({
             <Animated.View style={{ flex: 1 }} />
           </TouchableWithoutFeedback>
 
-          {disablePanGesture ? (
-            <BottomSheetContent
-              children={children}
-              title={title}
-              style={style}
-              rBottomSheetStyle={rBottomSheetStyle}
-              cardColor={cardColor}
-              mutedColor={mutedColor}
-              screenHeight={screenHeight}
-              sheetHeight={-defaultHeight}
-              onHandlePress={() => runOnJS(handlePress)()}
-            />
-          ) : (
-            <GestureDetector gesture={gesture}>
-              <BottomSheetContent
-                children={children}
-                title={title}
-                style={style}
-                rBottomSheetStyle={rBottomSheetStyle}
-                cardColor={cardColor}
-                mutedColor={mutedColor}
-                screenHeight={screenHeight}
-              sheetHeight={-defaultHeight}
-                onHandlePress={() => runOnJS(handlePress)()}
-              />
-            </GestureDetector>
-          )}
+          <BottomSheetContent
+            children={children}
+            title={title}
+            style={style}
+            rBottomSheetStyle={rBottomSheetStyle}
+            cardColor={cardColor}
+            mutedColor={mutedColor}
+            screenHeight={screenHeight}
+            sheetHeight={-defaultHeight}
+            gesture={disablePanGesture ? undefined : gesture}
+            onClose={animateClose}
+            onHandlePress={() => runOnJS(handlePress)()}
+          />
         </Animated.View>
       </GestureHandlerRootView>
     </Modal>
