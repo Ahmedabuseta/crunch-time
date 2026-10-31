@@ -2,7 +2,9 @@
 // unit-testable, shared with the HTTP server); this file only wires each
 // ipcMain channel to the equivalent backend function.
 import { ipcMain, app, BrowserWindow, dialog, powerSaveBlocker } from 'electron'
-import { runMigrations } from '../db/migrate'
+import { appendFileSync, mkdirSync } from 'node:fs'
+import path from 'node:path'
+import { legacyBackfillError, runMigrations } from '../db/migrate'
 import { seedDatabase } from '../db/seed'
 import { createBackend, Backend } from '../backend'
 import type { MenuExportOptions } from '../backend/menu-export'
@@ -20,6 +22,28 @@ import {
 import { silentPrint } from './print'
 
 let backend: Backend | null = null
+
+// Set when the database could not be prepared at launch. `registerIpcHandlers`
+// still runs so the renderer keeps working against whatever schema exists, and
+// the login screen can say what went wrong instead of showing an empty list.
+let startupError: string | null = null
+
+function recordStartupError(message: string, error: unknown): void {
+  startupError = message
+  console.error('[backend]', message, error)
+  // A packaged Windows app has no visible console — keep a file the owner can
+  // send us when something fails on their machine but not in development.
+  try {
+    const dir = path.join(app.getPath('userData'), 'logs')
+    mkdirSync(dir, { recursive: true })
+    appendFileSync(
+      path.join(dir, 'startup.log'),
+      `${new Date().toISOString()} ${message} ${(error as any)?.stack || String(error)}\n`,
+    )
+  } catch {
+    // diagnostics are best-effort
+  }
+}
 
 // The phone talks to this machine; if it suspends, a chat dies mid-stream and a
 // confirm card stops answering. `prevent-app-suspension` keeps the machine and
@@ -75,8 +99,20 @@ function getBackend(): Backend {
 }
 
 export async function initBackend() {
-  runMigrations()
-  await seedDatabase()
+  // Register the IPC surface even if the database could not be prepared: a
+  // throw here used to leave the renderer with no handlers at all, which the
+  // owner saw as a login screen with no users.
+  try {
+    runMigrations()
+    if (legacyBackfillError) {
+      // Migrations survived, but a data backfill did not — keep it in the
+      // startup log so a machine-only failure can be diagnosed from the file.
+      recordStartupError('database backfills failed', legacyBackfillError)
+    }
+    await seedDatabase()
+  } catch (error) {
+    recordStartupError('database initialisation failed', error)
+  }
   registerIpcHandlers()
   // A phone-side change (new order, status, driver) is pushed to every window
   // so the desktop order board updates live instead of waiting for its poll.
@@ -107,6 +143,9 @@ export function registerIpcHandlers() {
   const b = getBackend()
   // Fresh session per registration — matches the original per-call closure.
   b.session.clearUser()
+
+  // ─── Startup health: what failed before the window opened ──
+  ipcMain.handle('app:startupError', () => ({ error: startupError }))
 
   // ─── Session: track current user for role-based access ─────
   ipcMain.handle('session:setUser', (_e, user: { id: string; role: string } | null) => {

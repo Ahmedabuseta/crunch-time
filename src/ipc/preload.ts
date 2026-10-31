@@ -31,6 +31,11 @@ type UpdateStatusPayload = {
 }
 
 contextBridge.exposeInMainWorld('api', {
+  // ─── Startup health ─────────────────────────────────────────
+  app: {
+    startupError: () => invoke('app:startupError'),
+  },
+
   // ─── Session ────────────────────────────────────────────────
   session: {
     setUser: (user: { id: string; role: string } | null) => invoke('session:setUser', user),

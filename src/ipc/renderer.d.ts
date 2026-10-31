@@ -159,6 +159,10 @@ export interface KitchenStation {
 }
 
 export interface ApiBridge {
+  app: {
+    /** Non-null when the database could not be prepared at launch. */
+    startupError: () => Promise<{ error: string | null }>
+  }
   session: {
     setUser: (user: { id: string; role: string } | null) => Promise<void>
     clearUser: () => Promise<void>

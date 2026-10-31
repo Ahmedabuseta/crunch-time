@@ -5,6 +5,8 @@ interface UserStore {
   users: User[]
   currentUser: AuthenticatedUser | null
   loading: boolean
+  /** Why the login list is empty, when it could not be loaded at all. */
+  error: string | null
   fetch: () => Promise<void>
   create: (data: CreateUserInput) => Promise<string>
   update: (id: string, data: UpdateUserInput) => Promise<void>
@@ -17,11 +19,25 @@ export const useUserStore = create<UserStore>((set) => ({
   users: [],
   currentUser: null,
   loading: false,
+  error: null,
 
   fetch: async () => {
-    set({ loading: true })
-    const data = await window.api.user.list()
-    set({ users: data as User[], loading: false })
+    set({ loading: true, error: null })
+    try {
+      const data = await window.api.user.list()
+      set({ users: data as User[], loading: false })
+    } catch (err: any) {
+      // An empty login screen must explain itself: ask the main process what
+      // failed at startup (database init) and show that instead of nothing.
+      let detail = err?.message || 'تعذر تحميل المستخدمين'
+      try {
+        const health = await window.api.app?.startupError?.()
+        if (health?.error) detail = `${detail} — ${health.error}`
+      } catch {
+        // the health channel itself is unavailable
+      }
+      set({ users: [], loading: false, error: detail })
+    }
   },
 
   create: async (data) => {
