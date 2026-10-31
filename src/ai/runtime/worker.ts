@@ -7,8 +7,10 @@
 // to do on a shop PC at boot.
 import { existsSync, readFileSync } from 'fs'
 import path from 'path'
-import { NativeConnection, Worker } from '@temporalio/worker'
-import { activities } from '../activities'
+// Type-only: the SDK loads a native bridge. Requiring it eagerly would make
+// the whole app (login included) depend on that module loading, so it is
+// imported inside startWorker instead.
+import type { Worker } from '@temporalio/worker'
 import { temporalAddress } from './server'
 
 export const TASK_QUEUE = 'assistant'
@@ -59,8 +61,12 @@ export async function startWorker(port: number): Promise<{ ok: boolean; error?: 
   }
 
   try {
-    const connection = await NativeConnection.connect({ address: temporalAddress(port) })
-    const instance = await Worker.create({
+    const [sdk, { activities }] = await Promise.all([
+      import('@temporalio/worker'),
+      import('../activities'),
+    ])
+    const connection = await sdk.NativeConnection.connect({ address: temporalAddress(port) })
+    const instance = await sdk.Worker.create({
       connection,
       taskQueue: TASK_QUEUE,
       activities,

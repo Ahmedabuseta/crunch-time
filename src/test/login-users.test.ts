@@ -7,11 +7,18 @@ const { useUserStore } = await import('../services/user/user.store')
 
 const originalWindow = (globalThis as any).window
 
-const setBridge = (list: () => Promise<unknown>, startupError?: () => Promise<{ error: string | null }>) => {
+const setBridge = (
+  list: () => Promise<unknown>,
+  startupError?: () => Promise<{ error: string | null }>,
+  fatal?: () => Promise<{ error: string | null }>,
+) => {
   ;(globalThis as any).window = {
     api: {
       user: { list },
-      app: { startupError: startupError ?? (async () => ({ error: null })) },
+      app: {
+        startupError: startupError ?? (async () => ({ error: null })),
+        fatal: fatal ?? (async () => ({ error: null })),
+      },
     },
   }
 }
@@ -47,6 +54,18 @@ describe('user store fetch', () => {
     expect(state.users).toEqual([])
     expect(state.error).toContain('No handler registered')
     expect(state.error).toContain('database initialisation failed')
+  })
+
+  it('prefers the bundle-load error, which is the specific cause', async () => {
+    setBridge(
+      async () => { throw new Error('No handler registered for user:list') },
+      async () => ({ error: 'database initialisation failed' }),
+      async () => ({ error: 'Cannot find module argon2' }),
+    )
+
+    await useUserStore.getState().fetch()
+
+    expect(useUserStore.getState().error).toContain('Cannot find module argon2')
   })
 
   it('survives a missing health channel', async () => {

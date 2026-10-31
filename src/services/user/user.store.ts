@@ -30,12 +30,15 @@ export const useUserStore = create<UserStore>((set) => ({
       // An empty login screen must explain itself: ask the main process what
       // failed at startup (database init) and show that instead of nothing.
       let detail = err?.message || 'تعذر تحميل المستخدمين'
-      try {
-        const health = await window.api.app?.startupError?.()
-        if (health?.error) detail = `${detail} — ${health.error}`
-      } catch {
-        // the health channel itself is unavailable
-      }
+      const [health, fatal] = await Promise.allSettled([
+        window.api.app?.startupError?.(),
+        window.api.app?.fatal?.(),
+      ])
+      // A bundle-load failure is the more specific reason, so it wins.
+      const bundleError = fatal.status === 'fulfilled' ? fatal.value?.error : null
+      const initError = health.status === 'fulfilled' ? health.value?.error : null
+      if (bundleError) detail = `${detail} — ${bundleError}`
+      else if (initError) detail = `${detail} — ${initError}`
       set({ users: [], loading: false, error: detail })
     }
   },

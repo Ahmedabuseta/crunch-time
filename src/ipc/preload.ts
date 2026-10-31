@@ -34,6 +34,8 @@ contextBridge.exposeInMainWorld('api', {
   // ─── Startup health ─────────────────────────────────────────
   app: {
     startupError: () => invoke('app:startupError'),
+    /** Registered by electron.cjs before the backend bundle loads. */
+    fatal: () => invoke('app:fatal'),
   },
 
   // ─── Session ────────────────────────────────────────────────

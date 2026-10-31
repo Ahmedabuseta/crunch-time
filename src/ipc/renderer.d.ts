@@ -162,6 +162,8 @@ export interface ApiBridge {
   app: {
     /** Non-null when the database could not be prepared at launch. */
     startupError: () => Promise<{ error: string | null }>
+    /** Non-null when the backend bundle itself could not be loaded. */
+    fatal: () => Promise<{ error: string | null }>
   }
   session: {
     setUser: (user: { id: string; role: string } | null) => Promise<void>
