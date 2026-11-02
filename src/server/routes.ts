@@ -101,6 +101,14 @@ export function registerRoutes(app: FastifyInstance, backend: Backend) {
     return reply.type('text/html; charset=utf-8').send(MENU_PAGE_HTML)
   })
 
+  app.options('/public/menu', async (_req, reply) => {
+    reply.header('access-control-allow-origin', '*')
+    reply.header('access-control-allow-methods', 'GET, OPTIONS')
+    reply.header('access-control-allow-headers', 'cache-control, pragma, content-type')
+    reply.header('access-control-max-age', '86400')
+    return reply.code(204).send()
+  })
+
   app.get('/public/menu', async (_req, reply) => {
     reply.header('cache-control', 'no-store')
     // The Vercel menu reads this from another origin.

@@ -225,6 +225,20 @@ describe('remote server: public QR menu', () => {
     expect(await page.text()).toContain('المنيو')
   })
 
+  it('answers the browser preflight for the public menu', async () => {
+    const res = await fetch(`${base}/public/menu`, {
+      method: 'OPTIONS',
+      headers: {
+        origin: 'https://crunchtime-tanta.vercel.app',
+        'access-control-request-method': 'GET',
+        'access-control-request-headers': 'cache-control',
+      },
+    })
+    expect(res.status).toBe(204)
+    expect(res.headers.get('access-control-allow-origin')).toBe('*')
+    expect(res.headers.get('access-control-allow-headers')).toContain('cache-control')
+  })
+
   it('reflects catalogue edits without any export step', async () => {
     const category = (await backend.catalog.listCategories())[0]
     const created = await backend.catalog.createProduct({
