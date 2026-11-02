@@ -82,6 +82,7 @@ contextBridge.exposeInMainWorld('api', {
     delete: (id: string, opts?: DeleteOpts) => invoke('discountCode:delete', id, opts),
     validate: (code: string) => invoke('discountCode:validate', code),
     use: (id: string) => invoke('discountCode:use', id),
+    resolveAuto: (lines: unknown[], subtotal: number) => invoke('discountCode:resolveAuto', lines, subtotal),
   },
 
   // ─── Delivery zones ───────────────────────────────────────

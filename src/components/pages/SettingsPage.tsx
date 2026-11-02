@@ -19,9 +19,7 @@ import { buildCustomerReceiptHtml, contentWidth } from '@/lib/print'
 import { toast } from '@/components/ui/toast'
 import { Emoji } from '@/components/Emoji'
 import { RemoteAccessCard } from '@/components/RemoteAccessCard'
-
-// Arabic weekday names, indexed by Date.getDay() (0 = Sunday).
-const DAY_NAMES = ['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت']
+import { DiscountsPanel } from '@/components/discounts/DiscountsPanel'
 
 // ─── Receipt branding form helpers ─────────────────────────────
 const inputClass = 'w-full px-3 py-2 rounded-xl bg-secondary text-sm border-0 focus:ring-1 focus:ring-primary focus:outline-none'
@@ -101,11 +99,6 @@ export function SettingsPage() {
   const isAdmin = useIsAdmin()
   const [activeTab, setActiveTab] = useState<SettingsTab>('general')
   const [settingsMenuOpen, setSettingsMenuOpen] = useState(true)
-  const [discountSearch, setDiscountSearch] = useState('')
-  const [discountFilter, setDiscountFilter] = useState<string | null>(null)
-  const [discountView, setDiscountView] = useState<ViewMode>('cards')
-  const [discountPage, setDiscountPage] = useState(1)
-  const [discountSort, setDiscountSort] = useState<SortState<any> | null>(null)
   const [expenseSearch, setExpenseSearch] = useState('')
   const [expenseFilter, setExpenseFilter] = useState<string | null>(null)
   const [expenseView, setExpenseView] = useState<ViewMode>('cards')
@@ -117,13 +110,11 @@ export function SettingsPage() {
   const [zonePage, setZonePage] = useState(1)
   const [zoneSort, setZoneSort] = useState<SortState<any> | null>(null)
   const [settings, setSettings] = useState<any>({})
-  const [discounts, setDiscounts] = useState<any[]>([])
   const [allProducts, setAllProducts] = useState<any[]>([])
   const [expenses, setExpenses] = useState<any[]>([])
   const [categories, setCategories] = useState<any[]>([])
   const [printers, setPrinters] = useState<any[]>([])
   const [printMsg, setPrintMsg] = useState('')
-  const [showDiscountForm, setShowDiscountForm] = useState(false)
   const [showExpenseForm, setShowExpenseForm] = useState(false)
   const [showZoneForm, setShowZoneForm] = useState(false)
   const [showStationForm, setShowStationForm] = useState(false)
@@ -150,20 +141,14 @@ export function SettingsPage() {
   const removeProfile = useProfileStore((s) => s.remove)
   const [showProfileForm, setShowProfileForm] = useState(false)
   const [editingProfile, setEditingProfile] = useState<any | null>(null)
-  const [editingDiscount, setEditingDiscount] = useState<any | null>(null)
   const [editingExpense, setEditingExpense] = useState<any | null>(null)
   const [profileForm, setProfileForm] = useState({ name: '', phone: '' })
-  const [discountForm, setDiscountForm] = useState({
-    code: '', type: 'percentage', value: '', maxUses: '',
-    mode: 'order', dailyUses: '',
-    dayProducts: Array.from({ length: 7 }, (_, dayOfWeek) => ({ dayOfWeek, productId: '' })),
-  })
   const [expenseForm, setExpenseForm] = useState({ name: '', category: 'رواتب', amount: '', type: 'monthly' })
   const [backupStatus, setBackupStatus] = useState<any>({ lastBackup: null, backupCount: 0 })
   const [backupBusy, setBackupBusy] = useState(false)
   const [backupMessage, setBackupMessage] = useState('')
   const [confirmRestore, setConfirmRestore] = useState(false)
-  const [pendingDelete, setPendingDelete] = useState<{ kind: 'discount' | 'expense' | 'zone' | 'station' | 'profile'; item: any } | null>(null)
+  const [pendingDelete, setPendingDelete] = useState<{ kind: 'expense' | 'zone' | 'station' | 'profile'; item: any } | null>(null)
   const [logoError, setLogoError] = useState('')
   const [logoBusy, setLogoBusy] = useState(false)
   const [sampleStatus, setSampleStatus] = useState('')
@@ -171,14 +156,6 @@ export function SettingsPage() {
   const saveTimer = useRef<Record<string, any>>({})
 
   const settingsPageSize = 8
-  const filteredDiscounts = discounts.filter(d => {
-    const query = discountSearch.trim().toLowerCase()
-    const matchesSearch = !query || String(d.code).toLowerCase().includes(query)
-    const matchesFilter = !discountFilter || (discountFilter === 'active' ? d.active : !d.active)
-    return matchesSearch && matchesFilter
-  })
-  const discountPages = Math.max(1, Math.ceil(filteredDiscounts.length / settingsPageSize))
-  const visibleDiscounts = sortRows(filteredDiscounts, discountSort).slice((discountPage - 1) * settingsPageSize, discountPage * settingsPageSize)
   const filteredExpenses = expenses.filter(e => {
     const query = expenseSearch.trim().toLowerCase()
     const matchesSearch = !query || `${e.name} ${e.category}`.toLowerCase().includes(query)
@@ -208,9 +185,8 @@ export function SettingsPage() {
   }
 
   const load = async () => {
-    const [s, d, e, b, cats, prs, prods] = await Promise.all([
+    const [s, e, b, cats, prs, prods] = await Promise.all([
       window.api.settings.get(),
-      window.api.discountCode.list(),
       window.api.expense.list(),
       window.api.backup.getStatus(),
       window.api.category.list().catch(() => []),
@@ -218,7 +194,6 @@ export function SettingsPage() {
       window.api.product.list().catch(() => []),
     ])
     setSettings(s)
-    setDiscounts(d)
     setExpenses(e)
     setBackupStatus(b || { lastBackup: null, backupCount: 0 })
     setCategories(cats || [])
@@ -230,14 +205,6 @@ export function SettingsPage() {
   }
 
   useEffect(() => { load() }, [])
-
-  // Today's product for a 'daily' employee code — shown
-  // in the codes list so the cashier can see what's on.
-  const discountDayLabel = (d: any) => {
-    const row = (d.dayProducts || []).find((r: any) => r.dayOfWeek === new Date().getDay())
-    const p = allProducts.find((pr: any) => pr.id === row?.productId)
-    return p?.name || ''
-  }
 
   // Debounced autosave. Timers are tracked per key so that editing a second
   // field never cancels the pending write of the first one.
@@ -257,77 +224,6 @@ export function SettingsPage() {
         toast({ title: 'لم يتم حفظ إعداد الطباعة', description: err?.message || 'تحقق من الطابعة والمحطات أولاً', variant: 'error', duration: 6500 })
       }
     }, 500)
-  }
-
-  const handleAddDiscount = async () => {
-    if (!discountForm.code || !discountForm.value) return
-    if (discountForm.mode === 'daily' && discountForm.dayProducts.some((dp) => !dp.productId)) {
-      toast({ title: 'اكمل صنف كل يوم من الأيام السبعة', variant: 'error' })
-      return
-    }
-    try {
-      await window.api.discountCode.create({
-        code: discountForm.code.toUpperCase().trim(),
-        type: discountForm.type,
-        value: parseFloat(discountForm.value),
-        maxUses: parseInt(discountForm.maxUses) || 0,
-        mode: discountForm.mode,
-        dailyUses: parseInt(discountForm.dailyUses) || 0,
-        dayProducts: discountForm.mode === 'daily' ? discountForm.dayProducts : undefined,
-      })
-      setDiscountForm({
-        code: '', type: 'percentage', value: '', maxUses: '',
-        mode: 'order', dailyUses: '',
-        dayProducts: Array.from({ length: 7 }, (_, dayOfWeek) => ({ dayOfWeek, productId: '' })),
-      })
-      setShowDiscountForm(false)
-      toast({ title: 'تمت إضافة كود الخصم', description: discountForm.code.toUpperCase(), variant: 'success' })
-      await load()
-    } catch (err: any) {
-      toast({ title: 'فشل إضافة كود الخصم', description: err?.message || 'حدث خطأ', variant: 'error' })
-    }
-  }
-
-  const handleUpdateDiscount = async () => {
-    if (!editingDiscount || !editingDiscount.code || !editingDiscount.value) return
-    const mode = editingDiscount.mode || 'order'
-    if (mode === 'daily') {
-      const rows = editingDiscount.dayProducts || []
-      if (rows.length < 7 || rows.some((r: any) => !r.productId)) {
-        toast({ title: 'اكمل صنف كل يوم من الأيام السبعة', variant: 'error' })
-        return
-      }
-    }
-    try {
-      await window.api.discountCode.update(editingDiscount.id, {
-        code: String(editingDiscount.code).toUpperCase().trim(),
-        type: editingDiscount.type,
-        value: parseFloat(editingDiscount.value),
-        maxUses: parseInt(editingDiscount.maxUses) || 0,
-        mode,
-        dailyUses: parseInt(editingDiscount.dailyUses) || 0,
-        dayProducts: mode === 'daily' ? (editingDiscount.dayProducts || []).map((r: any) => ({ dayOfWeek: r.dayOfWeek, productId: r.productId })) : undefined,
-      })
-      toast({ title: 'تم تحديث كود الخصم', description: editingDiscount.code, variant: 'success' })
-      setEditingDiscount(null)
-      await load()
-    } catch (err: any) {
-      toast({ title: 'فشل تحديث كود الخصم', description: err?.message || 'حدث خطأ', variant: 'error' })
-    }
-  }
-
-  const handleToggleDiscountActive = async (d: any) => {
-    try {
-      await window.api.discountCode.update(d.id, { active: !d.active })
-      toast({
-        title: d.active ? 'تم تعطيل كود الخصم' : 'تم تفعيل كود الخصم',
-        description: d.code,
-        variant: 'success'
-      })
-      await load()
-    } catch (err: any) {
-      toast({ title: 'فشل تغيير حالة كود الخصم', description: err?.message || 'حدث خطأ', variant: 'error' })
-    }
   }
 
   const handleAddExpense = async () => {
@@ -1201,285 +1097,7 @@ export function SettingsPage() {
 
         {activeTab === 'sales' && (
           <>
-        {/* Discount Codes */}
-        <div className="border-2 rounded-2xl bg-card overflow-hidden">
-          <div className="flex items-center justify-between p-4 border-b">
-            <div className="flex items-center gap-2">
-              <Tag className="h-5 w-5 text-green-500" />
-              <h3 className="font-bold text-sm">أكواد الخصم</h3>
-              <span className="text-[10px] bg-green-500/10 text-green-600 dark:text-green-400 rounded-full px-2 py-0.5 font-bold">
-                {discounts.filter(d => d.active).length} نشط
-              </span>
-            </div>
-            <Button size="sm" className="gap-1.5 rounded-xl" onClick={() => {
-              if (showDiscountForm || editingDiscount) {
-                setShowDiscountForm(false)
-                setEditingDiscount(null)
-              } else {
-                setDiscountForm({
-                  code: '', type: 'percentage', value: '', maxUses: '',
-                  mode: 'order', dailyUses: '',
-                  dayProducts: Array.from({ length: 7 }, (_, dayOfWeek) => ({ dayOfWeek, productId: '' })),
-                })
-                setShowDiscountForm(true)
-              }
-            }}>
-              {(showDiscountForm || editingDiscount) ? <X className="h-4 w-4" /> : <Plus className="h-4 w-4" />} {(showDiscountForm || editingDiscount) ? 'إغلاق' : 'إضافة كود'}
-            </Button>
-          </div>
-
-          {(showDiscountForm || editingDiscount) && (
-            <div className="p-4 border-b space-y-3 animate-slide-up bg-secondary/20">
-              <div className="flex items-center justify-between">
-                <h4 className="font-bold text-xs text-muted-foreground">
-                  {editingDiscount ? `تعديل كود الخصم: ${editingDiscount.code}` : 'إضافة كود خصم جديد'}
-                </h4>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <input
-                  value={editingDiscount ? editingDiscount.code : discountForm.code}
-                  onChange={e => editingDiscount ? setEditingDiscount({ ...editingDiscount, code: e.target.value.toUpperCase() }) : setDiscountForm(f => ({ ...f, code: e.target.value }))}
-                  placeholder="الكود (مثل SAVE10)"
-                  className="px-3 py-2 rounded-xl bg-secondary text-sm border-0 focus:ring-1 focus:ring-primary focus:outline-none uppercase font-mono font-bold"
-                />
-                <Select
-                  value={editingDiscount ? editingDiscount.type : discountForm.type}
-                  onValueChange={v => editingDiscount ? setEditingDiscount({ ...editingDiscount, type: v }) : setDiscountForm(f => ({ ...f, type: v }))}
-                >
-                  <SelectTrigger className="rounded-xl">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="percentage">نسبة مئوية (%)</SelectItem>
-                    <SelectItem value="fixed">مبلغ ثابت (ج.م)</SelectItem>
-                  </SelectContent>
-                </Select>
-                <input
-                  type="number"
-                  value={editingDiscount ? editingDiscount.value : discountForm.value}
-                  onChange={e => editingDiscount ? setEditingDiscount({ ...editingDiscount, value: e.target.value }) : setDiscountForm(f => ({ ...f, value: e.target.value }))}
-                  placeholder={(editingDiscount ? editingDiscount.type : discountForm.type) === 'percentage' ? 'النسبة (مثل 10)' : 'المبلغ (مثل 20)'}
-                  className="px-3 py-2 rounded-xl bg-secondary text-sm border-0 focus:ring-1 focus:ring-primary focus:outline-none"
-                />
-                <input
-                  type="number"
-                  value={editingDiscount ? (editingDiscount.maxUses ?? '') : discountForm.maxUses}
-                  onChange={e => editingDiscount ? setEditingDiscount({ ...editingDiscount, maxUses: e.target.value }) : setDiscountForm(f => ({ ...f, maxUses: e.target.value }))}
-                  placeholder="حد الاستخدام (0 = بلا حد)"
-                  className="px-3 py-2 rounded-xl bg-secondary text-sm border-0 focus:ring-1 focus:ring-primary focus:outline-none"
-                />
-                <Select
-                  value={editingDiscount ? (editingDiscount.mode || 'order') : discountForm.mode}
-                  onValueChange={v => {
-                    if (editingDiscount) {
-                      const rows = Array.from({ length: 7 }, (_, d) => {
-                        const existing = (editingDiscount.dayProducts || []).find((r: any) => r.dayOfWeek === d)
-                        return { dayOfWeek: d, productId: existing?.productId || '' }
-                      })
-                      setEditingDiscount({ ...editingDiscount, mode: v, dayProducts: rows })
-                    } else {
-                      setDiscountForm(f => ({ ...f, mode: v }))
-                    }
-                  }}
-                >
-                  <SelectTrigger className="rounded-xl">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="order">خصم عام (كل الطلب)</SelectItem>
-                    <SelectItem value="daily">خصم موظفين يومي (صنف اليوم)</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              {(editingDiscount ? (editingDiscount.mode || 'order') : discountForm.mode) === 'daily' && (
-                <div className="space-y-3">
-                  <input
-                    type="number"
-                    value={editingDiscount ? (editingDiscount.dailyUses ?? '') : discountForm.dailyUses}
-                    onChange={e => editingDiscount ? setEditingDiscount({ ...editingDiscount, dailyUses: e.target.value }) : setDiscountForm(f => ({ ...f, dailyUses: e.target.value }))}
-                    placeholder="الاستخدامات اليومية (0 = بلا حد)"
-                    className="w-full px-3 py-2 rounded-xl bg-secondary text-sm border-0 focus:ring-1 focus:ring-primary focus:outline-none"
-                  />
-                  <p className="text-[11px] font-bold text-muted-foreground">
-                    صنف كل يوم — الخصم يُطبق على صنف اليوم فقط، وباقي الطلب بسعره الكامل
-                  </p>
-                  <div className="space-y-1.5">
-                    {Array.from({ length: 7 }, (_, d) => {
-                      const row = editingDiscount
-                        ? (editingDiscount.dayProducts || []).find((r: any) => r.dayOfWeek === d)
-                        : discountForm.dayProducts.find((r) => r.dayOfWeek === d)
-                      const productId = row?.productId || ''
-                      return (
-                        <div key={d} className="flex items-center gap-2">
-                          <span className="w-16 text-xs font-bold text-muted-foreground shrink-0">{DAY_NAMES[d]}</span>
-                          <Select
-                            value={productId}
-                            onValueChange={v => {
-                              if (editingDiscount) {
-                                const rows = Array.from({ length: 7 }, (_, dd) => {
-                                  const existing = (editingDiscount.dayProducts || []).find((r: any) => r.dayOfWeek === dd)
-                                  return { dayOfWeek: dd, productId: dd === d ? v : (existing?.productId || '') }
-                                })
-                                setEditingDiscount({ ...editingDiscount, dayProducts: rows })
-                              } else {
-                                setDiscountForm(f => ({ ...f, dayProducts: f.dayProducts.map((r) => r.dayOfWeek === d ? { ...r, productId: v } : r) }))
-                              }
-                            }}
-                          >
-                            <SelectTrigger className="flex-1 rounded-xl h-9">
-                              <SelectValue placeholder="اختار الصنف" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {allProducts.map((p: any) => (
-                                <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                      )
-                    })}
-                  </div>
-                </div>
-              )}
-              <div className="flex gap-2">
-                <Button className="flex-1 rounded-xl" onClick={editingDiscount ? handleUpdateDiscount : handleAddDiscount}>
-                  {editingDiscount ? 'تحديث الكود' : 'إضافة الكود'}
-                </Button>
-                {editingDiscount && (
-                  <Button variant="ghost" className="rounded-xl" onClick={() => setEditingDiscount(null)}>إلغاء</Button>
-                )}
-              </div>
-            </div>
-          )}
-
-          <ListToolbar
-            search={discountSearch}
-            onSearchChange={value => { setDiscountSearch(value); setDiscountPage(1) }}
-            searchPlaceholder="ابحث عن كود خصم..."
-            filters={[
-              { value: null, label: 'الكل', count: discounts.length },
-              { value: 'active', label: 'نشطة', count: discounts.filter(d => d.active).length },
-              { value: 'inactive', label: 'معطلة', count: discounts.filter(d => !d.active).length },
-            ]}
-            filterValue={discountFilter}
-            onFilterChange={value => { setDiscountFilter(value); setDiscountPage(1) }}
-            view={discountView}
-            onViewChange={setDiscountView}
-            className="px-4"
-          />
-          {discountView === 'table' ? (
-            <DataTable
-              data={visibleDiscounts}
-              keyExtractor={d => d.id}
-              sort={discountSort}
-              onSortChange={(s) => { setDiscountSort(s); setDiscountPage(1) }}
-              columns={[
-                { key: 'code', label: 'الكود', render: d => <span className="font-mono font-bold">{d.code}</span> },
-                { key: 'value', label: 'القيمة', render: d => d.type === 'percentage' ? `${d.value}%` : `${fmtMoney(Number(d.value) || 0)} ج.م` },
-                {
-                  key: 'mode',
-                  label: 'النوع',
-                  sortValue: (d: any) => d.mode || 'order',
-                  render: d => (d.mode || 'order') === 'daily' ? (
-                    <span className="text-[10px] font-bold rounded-full px-2.5 py-0.5 bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-500/20">
-                      يومي{discountDayLabel(d) ? ` — ${discountDayLabel(d)}` : ''}
-                    </span>
-                  ) : (
-                    <span className="text-[10px] font-bold rounded-full px-2.5 py-0.5 bg-secondary text-muted-foreground border border-border">عام</span>
-                  )
-                },
-                {
-                  key: 'usage',
-                  label: 'الاستخدام',
-                  sortValue: (d: any) => d.usedCount,
-                  render: d => {
-                    const base = d.maxUses > 0 ? `${d.usedCount} / ${d.maxUses} (متبقي ${d.maxUses - d.usedCount})` : `${d.usedCount} (بلا حد)`
-                    return (d.mode || 'order') === 'daily' && d.dailyUses > 0 ? `${base} — ${d.dailyUses}/يوم` : base
-                  }
-                },
-                {
-                  key: 'status',
-                  label: 'الحالة',
-                  sortValue: (d: any) => d.active,
-                  render: d => (
-                    <button
-                      onClick={() => handleToggleDiscountActive(d)}
-                      className={cn(
-                        "text-[10px] font-bold rounded-full px-2.5 py-0.5 cursor-pointer transition-colors border",
-                        d.active
-                          ? "bg-green-500/10 text-green-600 dark:text-green-400 border-green-500/20 hover:bg-green-500/20"
-                          : "bg-secondary text-muted-foreground border-border hover:bg-secondary/80"
-                      )}
-                      title="اضغط للتبديل بين نشط ومعطل"
-                    >
-                      {d.active ? 'نشط' : 'معطل'}
-                    </button>
-                  )
-                },
-                {
-                  key: 'actions',
-                  label: 'إجراءات',
-                  className: 'text-left',
-                  render: d => (
-                    <div className="flex items-center gap-1">
-                      <Button variant="ghost" size="icon" className="h-7 w-7 rounded-lg" onClick={() => { setEditingDiscount({ ...d }); setShowDiscountForm(false) }} title="تعديل">
-                        <Pencil className="h-3.5 w-3.5" />
-                      </Button>
-                      <Button variant="ghost" size="icon" className="h-7 w-7 rounded-lg text-destructive" onClick={() => setPendingDelete({ kind: 'discount', item: d })} title="حذف">
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
-                    </div>
-                  )
-                },
-              ]}
-              className="mx-4 mb-4"
-            />
-          ) : <div className="p-4 space-y-2">
-            {visibleDiscounts.map(d => (
-              <div key={d.id} className="flex items-center gap-3 bg-secondary/60 rounded-xl p-3">
-                <Tag className="h-4 w-4 text-green-500 shrink-0" />
-                <div className="flex-1 cursor-pointer" onClick={() => { setEditingDiscount({ ...d }); setShowDiscountForm(false) }}>
-                  <p className="text-sm font-bold font-mono">{d.code}</p>
-                  <p className="text-[10px] text-muted-foreground">
-                    {d.type === 'percentage' ? `${d.value}%` : `${fmtMoney(Number(d.value) || 0)} ج.م`}
-                    {(d.mode || 'order') === 'daily'
-                      ? ` — يومي${discountDayLabel(d) ? `: ${discountDayLabel(d)}` : ''}${d.dailyUses > 0 ? ` (${d.dailyUses}/يوم)` : ''}`
-                      : d.maxUses > 0 ? ` — متبقي ${d.maxUses - d.usedCount} استخدام` : ' — بلا حد'}
-                  </p>
-                </div>
-                <button
-                  onClick={() => handleToggleDiscountActive(d)}
-                  className={cn(
-                    "text-[10px] font-bold rounded-full px-2.5 py-0.5 cursor-pointer transition-colors border",
-                    d.active
-                      ? "bg-green-500/10 text-green-600 dark:text-green-400 border-green-500/20 hover:bg-green-500/20"
-                      : "bg-secondary text-muted-foreground border-border hover:bg-secondary/80"
-                  )}
-                  title="اضغط للتبديل بين نشط ومعطل"
-                >
-                  {d.active ? 'نشط' : 'معطل'}
-                </button>
-                <Button variant="ghost" size="icon" className="h-7 w-7 rounded-lg" onClick={() => { setEditingDiscount({ ...d }); setShowDiscountForm(false) }} title="تعديل">
-                  <Pencil className="h-3.5 w-3.5" />
-                </Button>
-                <Button variant="ghost" size="icon" className="h-7 w-7 rounded-lg text-destructive" onClick={() => setPendingDelete({ kind: 'discount', item: d })} title="حذف">
-                  <Trash2 className="h-3.5 w-3.5" />
-                </Button>
-              </div>
-            ))}
-            {filteredDiscounts.length === 0 && <p className="text-center text-xs text-muted-foreground py-4">لا توجد أكواد خصم مطابقة</p>}
-          </div>
-          }
-          <Pagination
-            page={discountPage}
-            totalPages={discountPages}
-            total={filteredDiscounts.length}
-            start={(discountPage - 1) * settingsPageSize}
-            end={Math.min(discountPage * settingsPageSize, filteredDiscounts.length)}
-            onPageChange={setDiscountPage}
-            pageSize={settingsPageSize}
-          />
-        </div>
+        <DiscountsPanel allProducts={allProducts} categories={categories} />
 
         {/* Expenses */}
         <div className="border-2 rounded-2xl bg-card overflow-hidden">
@@ -1703,8 +1321,8 @@ export function SettingsPage() {
 
       <ConfirmDialog
         open={!!pendingDelete}
-        title={pendingDelete?.kind === 'discount' ? 'حذف كود الخصم' : pendingDelete?.kind === 'zone' ? 'تعطيل منطقة التوصيل' : pendingDelete?.kind === 'station' ? 'تعطيل المحطة' : pendingDelete?.kind === 'profile' ? 'تعطيل الديلفري' : 'حذف المصروف'}
-        description={pendingDelete ? (pendingDelete.kind === 'discount' ? `سيتم حذف «${pendingDelete.item.code}» نهائياً.` : pendingDelete.kind === 'zone' ? `سيتم تعطيل منطقة «${pendingDelete.item.name}» — مش هتظهر للكاشير.` : pendingDelete.kind === 'station' ? `سيتم تعطيل محطة «${pendingDelete.item.name}» — أصنافها مش هتتطبع في المطبخ.` : pendingDelete.kind === 'profile' ? `سيتم تعطيل «${pendingDelete.item.name}» — مش هتظهر للكاشير.` : `سيتم حذف «${pendingDelete.item.name}» نهائياً.`) : undefined}
+        title={pendingDelete?.kind === 'zone' ? 'تعطيل منطقة التوصيل' : pendingDelete?.kind === 'station' ? 'تعطيل المحطة' : pendingDelete?.kind === 'profile' ? 'تعطيل الديلفري' : 'حذف المصروف'}
+        description={pendingDelete ? (pendingDelete.kind === 'zone' ? `سيتم تعطيل منطقة «${pendingDelete.item.name}» — مش هتظهر للكاشير.` : pendingDelete.kind === 'station' ? `سيتم تعطيل محطة «${pendingDelete.item.name}» — أصنافها مش هتتطبع في المطبخ.` : pendingDelete.kind === 'profile' ? `سيتم تعطيل «${pendingDelete.item.name}» — مش هتظهر للكاشير.` : `سيتم حذف «${pendingDelete.item.name}» نهائياً.`) : undefined}
         allowHardDelete={isAdmin}
         hardDeleteDescription="يحذف العنصر نهائياً من قاعدة البيانات. لن يمكن استرجاعه."
         onConfirm={async ({ hard }) => {
@@ -1712,8 +1330,7 @@ export function SettingsPage() {
           const opts = { hard }
           const p = pendingDelete
           try {
-            if (p.kind === 'discount') await window.api.discountCode.delete(p.item.id, opts)
-            else if (p.kind === 'zone') await removeZone(p.item.id, opts)
+            if (p.kind === 'zone') await removeZone(p.item.id, opts)
             else if (p.kind === 'station') await removeStation(p.item.id, opts)
             else if (p.kind === 'profile') await removeProfile(p.item.id, opts)
             else await window.api.expense.delete(p.item.id, opts)

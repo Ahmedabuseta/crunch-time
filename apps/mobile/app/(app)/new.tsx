@@ -13,10 +13,10 @@ import { useValidateDiscountCode } from '@/hooks/mutations/lookup';
 import { useCreateOrder } from '@/hooks/mutations/orders';
 import { useMenu, useProductOptions } from '@/hooks/queries/catalogue';
 import { useDeliveryProfiles, useDeliveryZones } from '@/hooks/queries/reference';
-import { useSettings } from '@/hooks/queries/store';
+import { useAutoDiscount, useSettings } from '@/hooks/queries/store';
 import { useColor } from '@/hooks/useColor';
 import { categoryColor } from '@/lib/categoryColors';
-import { computeDiscount, describeDiscount, type DiscountRule } from '@/lib/discount';
+import { computeDiscount, describeDiscount, describeSchedule, type DiscountLine, type DiscountRule } from '@/lib/discount';
 import { TAB_BAR_GAP, TAB_BAR_HEIGHT, TAB_BAR_SPACE } from '@/theme/globals';
 import { fmtMoneyInt } from '@/lib/format';
 import { BlurTargetView } from 'expo-blur';
@@ -51,9 +51,11 @@ const newKey = () => `${Date.now().toString(36)}-${Math.random().toString(36).sl
 const lineUnitPrice = (line: CartLine) =>
   line.product.price + line.modifiers.reduce((sum, m) => sum + (m.priceAdjustment || 0), 0);
 
-const lineTotal = (line: CartLine) =>
-  lineUnitPrice(line) * line.quantity +
-  line.addons.reduce((sum, a) => sum + a.price, 0) * line.quantity;
+// The discount base includes addons, matching the till's subtotal.
+const lineUnitTotal = (line: CartLine) =>
+  lineUnitPrice(line) + line.addons.reduce((sum, a) => sum + a.price, 0);
+
+const lineTotal = (line: CartLine) => Math.round(lineUnitTotal(line) * line.quantity);
 
 // Stable empty collections, so the derived lists keep their identity between
 // renders and the memo below is not invalidated.
@@ -149,16 +151,27 @@ export default function NewOrderScreen() {
   const tax = Math.round(subtotal * taxRate);
 
   const appliedDiscount = discountResult?.valid ? discountResult.discount ?? null : null;
-  const { total: discountAmount, lineDiscounts } = computeDiscount(
-    appliedDiscount,
-    cart.map((line) => ({
-      lineId: line.lineId,
-      productId: line.product.id,
-      lineTotal: Math.round(lineTotal(line)),
-    })),
-    subtotal
-  );
+  const discountLines: DiscountLine[] = cart.map((line) => ({
+    lineId: line.lineId,
+    productId: line.product.id,
+    categoryId: line.product.categoryId,
+    unitTotal: lineUnitTotal(line),
+    quantity: line.quantity,
+    lineTotal: lineTotal(line),
+  }));
+  const manualDiscount = computeDiscount(appliedDiscount, discountLines, subtotal);
 
+  // A manual code always wins; otherwise the best auto promo applies.
+  const autoQuery = useAutoDiscount(discountLines, subtotal);
+  const autoDiscount = autoQuery.data?.auto ?? null;
+  const applied =
+    appliedDiscount && manualDiscount.total > 0
+      ? { rule: appliedDiscount, total: manualDiscount.total, lineDiscounts: manualDiscount.lineDiscounts, auto: false }
+      : autoDiscount && autoDiscount.total > 0
+        ? { rule: autoDiscount.discount, total: autoDiscount.total, lineDiscounts: autoDiscount.lineDiscounts, auto: true }
+        : null;
+
+  const discountAmount = Math.min(Math.max(applied?.total ?? 0, 0), subtotal);
   const total = subtotal + tax + deliveryFee - discountAmount;
   const itemCount = cart.reduce((sum, line) => sum + line.quantity, 0);
 
@@ -244,6 +257,17 @@ export default function NewOrderScreen() {
     if (cart.length === 0) return;
     setBusy(true);
     try {
+      // Re-check a typed code right before saving; it may have expired or hit
+      // its usage cap while the cashier was finishing the order.
+      if (appliedDiscount) {
+        const res = await validateDiscountMutation.mutateAsync(appliedDiscount.code);
+        if (!res.validation.valid) {
+          setDiscountResult(res.validation);
+          setBusy(false);
+          return;
+        }
+      }
+
       const payload: CreateOrderPayload = {
         orderType,
         paymentType,
@@ -256,7 +280,7 @@ export default function NewOrderScreen() {
           quantity: line.quantity,
           unitPrice: lineUnitPrice(line),
           note: line.note || undefined,
-          itemDiscount: lineDiscounts[line.lineId] || 0,
+          itemDiscount: applied?.lineDiscounts[line.lineId] || 0,
           modifiers: line.modifiers.map((m) => ({
             modifierId: m.id,
             modifierName: m.name,
@@ -266,8 +290,8 @@ export default function NewOrderScreen() {
         })),
         note: note.trim() || undefined,
         // The server marks the code used itself when it creates the order.
-        discountCode: discountAmount > 0 ? discountCode.trim() : undefined,
-        discountCodeId: discountAmount > 0 ? appliedDiscount?.id : undefined,
+        discountCode: discountAmount > 0 ? applied?.rule.code : undefined,
+        discountCodeId: discountAmount > 0 ? applied?.rule.id : undefined,
         discountAmount: discountAmount > 0 ? discountAmount : undefined,
         ...(orderType === 'delivery'
           ? {
@@ -472,6 +496,8 @@ export default function NewOrderScreen() {
           onValidateDiscount={onValidateDiscount}
           discountResult={discountResult}
           discountAmount={discountAmount}
+          applied={applied}
+          manualReason={manualDiscount.reason}
           checkingCode={checkingCode}
           busy={busy}
           onSubmit={submit}
@@ -666,6 +692,8 @@ function CheckoutPanel({
   onValidateDiscount,
   discountResult,
   discountAmount,
+  applied,
+  manualReason,
   checkingCode,
   busy,
   onSubmit,
@@ -710,6 +738,13 @@ function CheckoutPanel({
   onValidateDiscount: () => void;
   discountResult: { valid: boolean; discount?: DiscountRule; error?: string } | null;
   discountAmount: number;
+  applied: {
+    rule: DiscountRule;
+    total: number;
+    lineDiscounts: Record<string, number>;
+    auto: boolean;
+  } | null;
+  manualReason?: string;
   checkingCode: boolean;
   busy: boolean;
   onSubmit: () => void;
@@ -937,23 +972,28 @@ function CheckoutPanel({
                   تحقق
                 </Button>
               </View>
-              {discountResult ? (
-                discountResult.valid ? (
-                  <View style={{ gap: 2 }}>
-                    <Text variant='caption' style={{ color: c.green, fontWeight: '700' }}>
-                      {describeDiscount(discountResult.discount)}
+              {applied ? (
+                <View style={{ gap: 2 }}>
+                  <Text variant='caption' style={{ color: c.green, fontWeight: '700' }}>
+                    {describeDiscount(applied.rule)}
+                    {applied.auto ? ' — تلقائي' : ''}
+                  </Text>
+                  {applied.auto && describeSchedule(applied.rule) ? (
+                    <Text variant='caption' style={{ color: c.muted }}>
+                      {describeSchedule(applied.rule)}
                     </Text>
-                    {discountResult.discount?.remaining != null ? (
-                      <Text variant='caption' style={{ color: c.muted }}>
-                        متبقي {discountResult.discount.remaining} استخدام النهاردة
-                      </Text>
-                    ) : null}
-                    {discountAmount === 0 ? (
-                      <Text variant='caption' style={{ color: c.muted }}>
-                        مفيش صنف في السلة بيشمله الكود ده
-                      </Text>
-                    ) : null}
-                  </View>
+                  ) : null}
+                  {!applied.auto && applied.rule.remaining != null ? (
+                    <Text variant='caption' style={{ color: c.muted }}>
+                      متبقي {applied.rule.remaining} استخدام النهاردة
+                    </Text>
+                  ) : null}
+                </View>
+              ) : discountResult ? (
+                discountResult.valid ? (
+                  <Text variant='caption' style={{ color: c.muted, fontWeight: '700' }}>
+                    {manualReason ?? 'مفيش صنف في السلة بيشمله الكود ده'}
+                  </Text>
                 ) : (
                   <Text variant='caption' style={{ color: c.red, fontWeight: '700' }}>
                     {discountResult.error ?? 'كود غير صالح'}
@@ -968,7 +1008,7 @@ function CheckoutPanel({
               <SummaryRow label='الضريبة' value={tax} muted={c.muted} />
               {discountAmount > 0 ? (
                 <SummaryRow
-                  label={`الخصم (${discountCode.trim()})`}
+                  label={`الخصم (${applied?.rule.code ?? discountCode.trim()})`}
                   value={-discountAmount}
                   muted={c.green}
                 />

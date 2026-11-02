@@ -153,6 +153,10 @@ export function registerIpcHandlers() {
     b.settings.useDiscountCode(id)
   )
 
+  ipcMain.handle('discountCode:resolveAuto', (_e, lines: any[], subtotal: number) =>
+    b.settings.resolveAutoDiscount(lines, subtotal)
+  )
+
   // ═══════════════════════════════════════════════════════════
   // DELIVERY ZONES
   // ═══════════════════════════════════════════════════════════

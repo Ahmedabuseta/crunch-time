@@ -48,6 +48,15 @@ export async function seedDatabase() {
   // 10 uses per day. Edit the rotation in Settings.
   const insertDaily = db.prepare("INSERT OR IGNORE INTO discount_codes (id, code, type, value, mode, daily_uses, active, max_uses, used_count) VALUES (?, ?, ?, ?, 'daily', ?, 1, 0, 0)")
   insertDaily.run('disc-staff', 'STAFF', 'percentage', 50, 10)
+  // Examples of the richer rules: a buy-2-get-1 offer the cashier types, and a
+  // happy-hour discount that applies itself every day between 3pm and 6pm.
+  const insertOffer = db.prepare(
+    `INSERT OR IGNORE INTO discount_codes
+     (id, code, type, value, mode, scope, start_time, end_time, buy_qty, get_qty, get_percent, auto_apply, active, max_uses, used_count)
+     VALUES (?, ?, ?, ?, 'order', 'order', ?, ?, ?, ?, ?, ?, 1, 0, 0)`
+  )
+  insertOffer.run('disc-buy2get1', 'BUY2GET1', 'bogo', 0, null, null, 2, 1, 100, 0)
+  insertOffer.run('disc-happy20', 'HAPPY20', 'percentage', 20, '15:00', '18:00', 0, 0, 100, 1)
 
   // ─── Expenses ────────────────────────────────────────────────
   const insertExp = db.prepare('INSERT OR IGNORE INTO expenses (id, name, category, amount, type, active) VALUES (?, ?, ?, ?, ?, 1)')

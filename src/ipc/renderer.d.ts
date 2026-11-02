@@ -177,6 +177,7 @@ export interface ApiBridge {
     delete: (id: string, opts?: DeleteOpts) => Promise<{ ok: boolean; error?: string }>
     validate: (code: string) => Promise<any>
     use: (id: string) => Promise<{ ok: boolean }>
+    resolveAuto: (lines: any[], subtotal: number) => Promise<any>
   }
   deliveryZone: {
     list: (includeInactive?: boolean) => Promise<DeliveryZone[]>
