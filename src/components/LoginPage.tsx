@@ -48,6 +48,8 @@ const encodedPattern = `data:image/svg+xml,${encodeURIComponent(patternSvg)}`
 
 export function LoginPage({ onLogin }: LoginPageProps) {
   const users = useUserStore((s) => s.users)
+  const loadingUsers = useUserStore((s) => s.loading)
+  const usersError = useUserStore((s) => s.error)
   const fetchUsers = useUserStore((s) => s.fetch)
   const login = useUserStore((s) => s.login)
   const [selectedUser, setSelectedUser] = useState<string | null>(null)
@@ -132,6 +134,22 @@ export function LoginPage({ onLogin }: LoginPageProps) {
             {isAdminUser ? 'سجل دخولك بكلمة السر' : 'سجل دخولك بالرقم السري'}
           </p>
         </div>
+
+        {/* Nothing to log in as — say why instead of showing an empty screen */}
+        {!loadingUsers && users.length === 0 && (
+          <div className="rounded-3xl border-2 border-destructive/40 bg-card/80 backdrop-blur-sm px-5 py-4 space-y-2 text-center">
+            <p className="text-sm font-black text-destructive">تعذر تحميل المستخدمين</p>
+            <p className="text-[11px] text-muted-foreground leading-relaxed break-words" dir="auto">
+              {usersError || 'قاعدة البيانات لم تُجهَّز بشكل صحيح. أعد تشغيل التطبيق، ولو تكرر الخطأ أرسل ملف السجل.'}
+            </p>
+            <button
+              onClick={() => fetchUsers()}
+              className="mt-1 rounded-xl bg-primary text-primary-foreground px-4 py-2 text-xs font-bold cursor-pointer"
+            >
+              إعادة المحاولة
+            </button>
+          </div>
+        )}
 
         {/* User Selection — big cards with opposite slopes */}
         <div className="flex gap-5 justify-center">

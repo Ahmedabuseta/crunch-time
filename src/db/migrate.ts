@@ -10,8 +10,12 @@ import { migration as auditLogMigration } from './migrations/008-audit-log'
 import { migration as welcome20Migration } from './migrations/009-welcome20'
 import { migration as inventoryCategoriesMigration } from './migrations/010-inventory-categories'
 import { migration as assistantMigration } from './migrations/011-assistant'
+import { migration as aiAliasesMigration } from './migrations/012-ai-aliases'
 import { migration as discountScheduleMigration } from './migrations/013-discount-schedule'
 import type { Migration } from './migrations/types'
+
+/** Why the last best-effort backfill pass failed, for the startup log. */
+export let legacyBackfillError: string | null = null
 
 function ensureColumn(db: import('better-sqlite3').Database, table: string, column: string, definition: string) {
   const cols = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]
@@ -72,6 +76,7 @@ export function runMigrations() {
     welcome20Migration,
     inventoryCategoriesMigration,
     assistantMigration,
+    aiAliasesMigration,
     discountScheduleMigration,
   ]
   const applied = db.prepare('SELECT id FROM schema_migrations').all() as { id: string }[]
@@ -86,8 +91,21 @@ export function runMigrations() {
     apply()
   }
 
-  // Keep this legacy block for one release so databases created by older
-  // versions receive the same IF NOT EXISTS protections before backfills run.
+  try {
+    applyLegacyBackfills(db)
+  } catch (error) {
+    // Best-effort work must never abort startup: the caller would never reach
+    // its ipcMain.handle registrations, and the app would open on a login
+    // screen with no users (or any other logo screen, but no data behind it).
+    legacyBackfillError = error instanceof Error ? error.message : String(error)
+    console.error('[db] legacy backfills failed — startup continues:', error)
+  }
+}
+
+// Keep this legacy block for one release so databases created by older
+// versions receive the same IF NOT EXISTS protections before backfills run.
+// Every statement here is idempotent and safe to retry on the next launch.
+function applyLegacyBackfills(db: import('better-sqlite3').Database) {
   // ─── Backfill columns added after the initial schema ────────
   ensureColumn(db, 'products', 'cost_price', 'REAL NOT NULL DEFAULT 0')
   ensureColumn(db, 'products', 'supports_rollback', 'INTEGER NOT NULL DEFAULT 1')

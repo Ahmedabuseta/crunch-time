@@ -158,12 +158,16 @@ export function profitSummary(_from?: string, to?: string) {
   }
 }
 
-export function hourlyBreakdown(date?: string) {
+export function hourlyBreakdown(from?: string, to?: string) {
   requireAdmin()
-  const targetDate = date || new Date().toISOString().slice(0, 10)
+  const fromDate = (from || new Date().toISOString().slice(0, 10)).slice(0, 10)
+  const toDate = (to || fromDate).slice(0, 10)
   const db = getDb()
   const all = db.select().from(orders).all()
-  const dayOrders = all.filter(o => o.createdAt.startsWith(targetDate) && o.status !== 'CANCELLED')
+  const dayOrders = all.filter(o => {
+    const day = o.createdAt.slice(0, 10)
+    return day >= fromDate && day <= toDate && o.status !== 'CANCELLED'
+  })
   const hours: Record<number, { orderCount: number; revenue: number }> = {}
   for (let h = 0; h < 24; h++) hours[h] = { orderCount: 0, revenue: 0 }
   for (const o of dayOrders) {

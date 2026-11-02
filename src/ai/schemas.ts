@@ -111,9 +111,9 @@ export function resolveCards(ids: readonly string[], produced: readonly ChatCard
     out.push(card)
     if (out.length === 3) break
   }
-  // Nothing the model chose survived — show what the tools found rather than
-  // an empty answer with data sitting behind it.
-  return out.length > 0 ? out : produced.slice(0, 3)
+  // Nothing the model chose survived — show the most recent results rather
+  // than the first ones, which may be a superseded lookup.
+  return out.length > 0 ? out : produced.slice(-3)
 }
 
 /** Stable id for a card. Actions carry their own; others are positional. */

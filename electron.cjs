@@ -1,5 +1,5 @@
 const { app, BrowserWindow, ipcMain } = require('electron')
-const { existsSync } = require('fs')
+const { appendFileSync, existsSync, mkdirSync } = require('fs')
 const path = require('path')
 
 const isDev = process.env.NODE_ENV === 'development'
@@ -13,6 +13,26 @@ const APP_ICON = path.join(__dirname, 'build', 'icon.png')
 // device scale factors are a common source of soft glyph edges in Electron.
 app.commandLine.appendSwitch('high-dpi-support', '1')
 app.commandLine.appendSwitch('force-device-scale-factor', '1')
+
+// Anything that stops the backend bundle from loading leaves the app with no
+// IPC handlers, which the renderer can only report as "no users". Keep the
+// message for the login screen and for a file the owner can send us — a
+// packaged Windows build has no visible console.
+let startupFailure = null
+
+function recordStartupFailure(error) {
+  startupFailure = String((error && error.message) || error)
+  try {
+    const dir = path.join(app.getPath('userData'), 'logs')
+    mkdirSync(dir, { recursive: true })
+    appendFileSync(
+      path.join(dir, 'startup.log'),
+      `${new Date().toISOString()} [electron] ${(error && error.stack) || error}\n`,
+    )
+  } catch {
+    // diagnostics are best-effort
+  }
+}
 
 function createWindow() {
   const win = new BrowserWindow({
@@ -251,11 +271,19 @@ function setupAutoUpdates(win) {
 }
 
 app.whenReady().then(async () => {
+  // Registered before the backend bundle is even loaded, so it is answerable
+  // even when that require() throws (missing native module, bad install, …).
+  try {
+    ipcMain.handle('app:fatal', () => ({ error: startupFailure }))
+  } catch {
+    // already registered by a previous startup in this process
+  }
   // Migrate + seed the SQLite DB, then register all IPC handlers, then open the window.
   try {
     const { initBackend } = require(MAIN_JS)
     await initBackend()
   } catch (e) {
+    recordStartupFailure(e)
     console.error('[electron] backend init failed:', e)
   }
   const win = createWindow()

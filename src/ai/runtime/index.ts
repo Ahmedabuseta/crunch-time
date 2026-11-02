@@ -3,7 +3,10 @@
 // The assistant is only usable while all three are up, and a half-up runtime is
 // worse than a down one (the phone would hang on a start it can never finish),
 // so `ensureRuntime` is all-or-nothing and reports the first failure.
-import { Client, Connection, WorkflowNotFoundError } from '@temporalio/client'
+// Type-only: the SDK is loaded when the assistant actually starts (see
+// ensureRuntime). Requiring it at module load made every startup — including
+// the login screen — depend on the Temporal native bridge.
+import type { Client, Connection } from '@temporalio/client'
 import { getAiConfig } from '../config'
 import { startTemporal, stopTemporal, temporalStatus } from './server'
 import { startWorker, stopWorker, workerStatus, TASK_QUEUE } from './worker'
@@ -61,6 +64,7 @@ export async function ensureRuntime(): Promise<{ ok: boolean; error?: string }> 
 
   try {
     if (!connection) {
+      const { Client, Connection } = await import('@temporalio/client')
       connection = await Connection.connect({ address: `127.0.0.1:${config.temporalPort}` })
       client = new Client({ connection })
     }
@@ -97,8 +101,9 @@ export async function workflowExists(workflowId: string): Promise<boolean> {
     const handle = getClient().workflow.getHandle(workflowId)
     await handle.describe()
     return true
-  } catch (err) {
-    if (err instanceof WorkflowNotFoundError) return false
+  } catch {
+    // Not found, already finished, or the client is not up — all mean "no
+    // running workflow to wait on".
     return false
   }
 }

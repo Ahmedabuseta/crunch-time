@@ -159,6 +159,12 @@ export interface KitchenStation {
 }
 
 export interface ApiBridge {
+  app: {
+    /** Non-null when the database could not be prepared at launch. */
+    startupError: () => Promise<{ error: string | null }>
+    /** Non-null when the backend bundle itself could not be loaded. */
+    fatal: () => Promise<{ error: string | null }>
+  }
   session: {
     setUser: (user: { id: string; role: string } | null) => Promise<void>
     clearUser: () => Promise<void>
@@ -224,6 +230,14 @@ export interface ApiBridge {
     create: (data: any) => Promise<{ id: string }>
     update: (id: string, data: any) => Promise<{ ok: boolean }>
     delete: (id: string, opts?: DeleteOpts) => Promise<{ ok: boolean; error?: string }>
+  }
+  menu: {
+    exportWord: (opts?: {
+      productIds?: string[]
+      includeInactive?: boolean
+      includeRecipes?: boolean
+      includeCosts?: boolean
+    }) => Promise<{ ok: boolean; path?: string; canceled?: boolean; message?: string; error?: string }>
   }
   addon: {
     list: () => Promise<any[]>

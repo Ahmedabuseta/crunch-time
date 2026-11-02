@@ -1,13 +1,13 @@
 import { api } from '@/api/endpoints';
 import type { DeliveryProfile, Order } from '@/api/types';
 import { FilterSelect } from '@/components/app/FilterSelect';
+import { HomeDashboard } from '@/components/app/HomeDashboard';
 import { Card } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Text } from '@/components/ui/text';
 import { View } from '@/components/ui/view';
 import { useColor } from '@/hooks/useColor';
 import { usePagedQuery } from '@/hooks/queries/paged';
-import { useDailySummary } from '@/hooks/queries/reports';
 import { useOnlineStatus } from '@/hooks/useOnlineStatus';
 import { STALE } from '@/lib/cachePolicy';
 import { DATE_PRESETS, dateRange, type DatePreset } from '@/lib/dateRanges';
@@ -19,9 +19,10 @@ import {
   fmtTime,
 } from '@/lib/format';
 import { rangeLabel } from '@/lib/listQuery';
-import { qk } from '@/lib/queryKeys';
+import { qk, qkPrefix } from '@/lib/queryKeys';
 import { useOrderSocket } from '@/lib/useOrderSocket';
 import { TAB_BAR_SPACE } from '@/theme/globals';
+import { useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 import { ChefHat, Radio, ShoppingBag, Sparkles, Truck, UtensilsCrossed } from 'lucide-react-native';
 import React, { useCallback, useEffect, useState } from 'react';
@@ -56,10 +57,12 @@ const TYPE_OPTIONS = [
 export default function BoardScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const queryClient = useQueryClient();
 
   const [drivers, setDrivers] = useState<DeliveryProfile[]>([]);
   const [driverFilter, setDriverFilter] = useState('');
   const [datePreset, setDatePreset] = useState<DatePreset>('');
+  const [dashboardRefreshing, setDashboardRefreshing] = useState(false);
 
   const { live } = useOrderSocket();
   const online = useOnlineStatus();
@@ -104,14 +107,9 @@ export default function BoardScreen() {
       })
     : paged.items;
 
-  const daily = useDailySummary();
-  const summary = daily.data?.report;
-
   const primary = useColor('primary');
   const muted = useColor('mutedForeground');
   const border = useColor('border');
-  const card = useColor('card');
-  const text = useColor('text');
   const secondary = useColor('secondary');
   const green = useColor('green');
   const red = useColor('red');
@@ -144,6 +142,19 @@ export default function BoardScreen() {
     setFilters((prev) => ({ ...prev, from, to }));
   };
 
+  const onRefresh = async () => {
+    setDashboardRefreshing(true);
+    try {
+      await Promise.all([
+        paged.refresh(),
+        queryClient.invalidateQueries({ queryKey: qkPrefix.reports() }),
+        queryClient.invalidateQueries({ queryKey: qkPrefix.ingredients() }),
+      ]);
+    } finally {
+      setDashboardRefreshing(false);
+    }
+  };
+
   // Fetch the next page before the list visibly reaches the bottom.
   const NEAR_BOTTOM = 240;
   const onScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
@@ -156,18 +167,22 @@ export default function BoardScreen() {
   return (
     <ScrollView
       style={{ flex: 1 }}
-      contentContainerStyle={{ paddingTop: insets.top + 12, paddingBottom: TAB_BAR_SPACE + 16 }}
+      contentContainerStyle={{ paddingTop: insets.top + 12, paddingBottom: TAB_BAR_SPACE + 16, direction: 'rtl' }}
       onScroll={onScroll}
       scrollEventThrottle={160}
       refreshControl={
-        <RefreshControl refreshing={paged.refreshing} onRefresh={paged.refresh} tintColor={primary} />
+        <RefreshControl
+          refreshing={paged.refreshing || dashboardRefreshing}
+          onRefresh={onRefresh}
+          tintColor={primary}
+        />
       }
     >
       <View style={styles.header}>
         <View style={{ flex: 1, gap: 2 }}>
-          <Text variant='title'>الطلبات</Text>
-          <Text variant='caption' style={{ color: muted }}>
-            {rangeLabel(paged.items.length, paged.total)}
+          <Text variant='title' style={styles.rtl}>الرئيسية</Text>
+          <Text variant='caption' style={[styles.rtl, { color: muted }]}>
+            ملخص البيزنس والطلبات
           </Text>
         </View>
         <Pressable
@@ -181,38 +196,19 @@ export default function BoardScreen() {
         </Pressable>
         <View style={[styles.livePill, { backgroundColor: connected ? `${green}22` : secondary }]}>
           <Radio size={13} color={connected ? green : muted} />
-          <Text variant='caption' style={{ color: connected ? green : muted, fontSize: 12 }}>
+          <Text variant='caption' style={[styles.rtl, { color: connected ? green : muted, fontSize: 12 }]}>
             {connected ? 'مباشر' : 'غير متصل'}
           </Text>
         </View>
       </View>
 
-      <View style={styles.stats}>
-        <Stat
-          label='طلبات النهاردة'
-          value={summary ? String(summary.totalOrders) : '—'}
-          card={card}
-          border={border}
-          muted={muted}
-          text={text}
-        />
-        <Stat
-          label='مبيعات النهاردة'
-          value={summary ? `${fmtMoneyInt(summary.totalRevenue)} ج.م` : '—'}
-          card={card}
-          border={border}
-          muted={muted}
-          text={text}
-          tint={primary}
-        />
-        <Stat
-          label='متوسط الفاتورة'
-          value={summary ? `${fmtMoneyInt(summary.avgOrderValue)} ج.م` : '—'}
-          card={card}
-          border={border}
-          muted={muted}
-          text={text}
-        />
+      <HomeDashboard />
+
+      <View style={styles.ordersHeader}>
+        <Text variant='subtitle' style={styles.rtl}>الطلبات</Text>
+        <Text variant='caption' style={[styles.rtl, { color: muted }]}>
+          {rangeLabel(paged.items.length, paged.total)}
+        </Text>
       </View>
 
       <ScrollView
@@ -254,7 +250,7 @@ export default function BoardScreen() {
       </ScrollView>
 
       {paged.error ? (
-        <Text variant='caption' style={{ color: red, textAlign: 'center', paddingHorizontal: 20 }}>
+        <Text variant='caption' style={[styles.rtl, { color: red, textAlign: 'center', paddingHorizontal: 20 }]}>
           {paged.error}
         </Text>
       ) : null}
@@ -268,8 +264,8 @@ export default function BoardScreen() {
       ) : orders.length === 0 ? (
         <View style={styles.empty}>
           <ChefHat size={40} color={muted} />
-          <Text variant='subtitle'>لا توجد طلبات</Text>
-          <Text variant='caption' style={{ color: muted, textAlign: 'center' }}>
+          <Text variant='subtitle' style={styles.rtl}>لا توجد طلبات</Text>
+          <Text variant='caption' style={[styles.rtl, { color: muted, textAlign: 'center' }]}>
             {hasFilters ? 'مفيش طلبات بالفلاتر دي' : 'أول ما يتعمل طلب هيظهر هنا على طول'}
           </Text>
         </View>
@@ -303,36 +299,6 @@ export default function BoardScreen() {
   );
 }
 
-/** A compact top-line number: today's orders, sales, average ticket. */
-function Stat({
-  label,
-  value,
-  card,
-  border,
-  muted,
-  text,
-  tint,
-}: {
-  label: string;
-  value: string;
-  card: string;
-  border: string;
-  muted: string;
-  text: string;
-  tint?: string;
-}) {
-  return (
-    <View style={[styles.stat, { backgroundColor: card, borderColor: border }]}>
-      <Text variant='caption' style={{ color: muted, fontSize: 11 }} numberOfLines={1}>
-        {label}
-      </Text>
-      <Text style={{ fontWeight: '700', fontSize: 15, color: tint ?? text }} numberOfLines={1}>
-        {value}
-      </Text>
-    </View>
-  );
-}
-
 function OrderCard({
   order,
   statusColor,
@@ -357,11 +323,11 @@ function OrderCard({
     <Pressable onPress={onPress}>
       <Card style={{ gap: 8 }}>
         <View style={styles.row}>
-          <Text style={{ fontWeight: '700', fontVariant: ['tabular-nums'] }}>{order.id}</Text>
+          <Text style={[styles.id, { fontWeight: '700', fontVariant: ['tabular-nums'] }]}>{order.id}</Text>
           <View
             style={[styles.statusPill, { backgroundColor: `${statusColor}22` }]}
           >
-            <Text variant='caption' style={{ color: statusColor, fontWeight: '700', fontSize: 12 }}>
+            <Text variant='caption' style={[styles.rtl, { color: statusColor, fontWeight: '700', fontSize: 12 }]}>
               {ORDER_STATUS_LABELS[order.status] ?? order.status}
             </Text>
           </View>
@@ -370,26 +336,26 @@ function OrderCard({
         <View style={styles.row}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
             <TypeIcon size={14} color={muted} />
-            <Text variant='caption' style={{ color: muted }}>
+            <Text variant='caption' style={[styles.rtl, { color: muted }]}>
               {ORDER_TYPE_LABELS[order.orderType] ?? order.orderType}
               {order.deliveryZoneName ? ` · ${order.deliveryZoneName}` : ''}
             </Text>
             {order.driverStatus ? (
-              <Text variant='caption' style={{ color: muted }}>
+              <Text variant='caption' style={[styles.rtl, { color: muted }]}>
                 · {order.driverStatus === 'assigned' ? order.deliveryProfileName || 'مع سائق' : 'بدون سائق'}
               </Text>
             ) : null}
           </View>
-          <Text variant='caption' style={{ color: muted }}>
+          <Text variant='caption' style={[styles.time, { color: muted }]}>
             {fmtTime(order.createdAt)}
           </Text>
         </View>
 
         <View style={styles.row}>
-          <Text variant='caption' style={{ color: muted }}>
+          <Text variant='caption' style={[styles.rtl, { color: muted }]}>
             {PAYMENT_LABELS[order.paymentType] ?? order.paymentType} · {order.items?.length ?? 0} صنف
           </Text>
-          <Text style={{ fontWeight: '700', color: primary }}>
+          <Text style={[styles.rtl, { fontWeight: '700', color: primary }]}>
             {fmtMoneyInt(order.total)} ج.م
           </Text>
         </View>
@@ -399,8 +365,15 @@ function OrderCard({
 }
 
 const styles = StyleSheet.create({
+  // Everything on the board is Arabic; the explicit direction makes it right
+  // even before the process-wide RTL flag has had its one restart.
+  // React Native mirrors left/right under RTL; `ui/Text` undoes that once.
+  rtl: { textAlign: 'right', writingDirection: 'rtl' },
+  id: { textAlign: 'right', writingDirection: 'ltr' },
+  time: { textAlign: 'left', writingDirection: 'ltr' },
   header: {
     flexDirection: 'row',
+    direction: 'rtl',
     alignItems: 'center',
     gap: 12,
     paddingHorizontal: 20,
@@ -423,19 +396,19 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  stats: { flexDirection: 'row', gap: 8, paddingHorizontal: 16, paddingBottom: 12 },
-  stat: {
-    flex: 1,
-    gap: 2,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    borderRadius: 16,
-    borderWidth: 1,
+  filterRow: { gap: 8, paddingHorizontal: 16, paddingBottom: 14, direction: 'rtl' },
+  ordersHeader: {
+    flexDirection: 'row',
+    direction: 'rtl',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingTop: 2,
+    paddingBottom: 10,
   },
-  filterRow: { gap: 8, paddingHorizontal: 16, paddingBottom: 14 },
   clearChip: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 999, borderWidth: 1 },
   footer: { paddingVertical: 18, alignItems: 'center' },
   empty: { alignItems: 'center', gap: 8, paddingTop: 60, paddingHorizontal: 32 },
-  row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  row: { flexDirection: 'row', direction: 'rtl', alignItems: 'center', justifyContent: 'space-between' },
   statusPill: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999 },
 });

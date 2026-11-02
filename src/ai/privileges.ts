@@ -8,21 +8,9 @@ import * as session from '../backend/session'
 const OWNER = { id: 'remote-owner', role: 'admin' }
 
 export function asOwner<T>(fn: () => T): T {
-  const prev = session.getUser()
-  session.setUser(OWNER)
-  try {
-    return fn()
-  } finally {
-    session.setUser(prev)
-  }
+  return session.runAs(OWNER, fn)
 }
 
 export async function asOwnerAsync<T>(fn: () => Promise<T>): Promise<T> {
-  const prev = session.getUser()
-  session.setUser(OWNER)
-  try {
-    return await fn()
-  } finally {
-    session.setUser(prev)
-  }
+  return session.runAs(OWNER, fn)
 }

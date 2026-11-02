@@ -276,6 +276,14 @@ export function listRecipes(productId: string) {
   return listRecipeRows('recipes', 'product_id', productId)
 }
 
+export function getRecipeById(id: string) {
+  return getDb().select().from(recipes).where(eq(recipes.id, id)).get() ?? null
+}
+
+export function getSubRecipeIngredientById(id: string) {
+  return getDb().select().from(subRecipeIngredients).where(eq(subRecipeIngredients.id, id)).get() ?? null
+}
+
 export function upsertRecipe(data: any) {
   requireAdmin()
   const db = getDb()

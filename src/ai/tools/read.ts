@@ -170,7 +170,7 @@ export const READ_TOOLS: ToolDef[] = [
 
   {
     name: 'item_margins',
-    description: 'هامش الربح لكل صنف: سعر البيع والتكلفة ونسبة الهامش. لأي سؤال عن الأسعار أو أقل صنف بربح.',
+    description: 'ترتيب الأصناف بأقل هامش ربح للمقارنة بين الأصناف. مش للبحث عن سعر صنف واحد — استخدم product_price للسؤال «بكام».',
     write: false,
     schema: z.object({
       category: z.string().optional().describe('اسم القسم لتصفية الأصناف'),
@@ -238,6 +238,10 @@ export const READ_TOOLS: ToolDef[] = [
       const lines = asOwner(() => inventory.listRecipes(resolved.row.id)) as any[]
       const total = lines.reduce((sum, line) => sum + (Number(line.lineCost) || 0), 0)
       const items = lines.map((line) => ({
+        lineId: String(line.id),
+        kind: line.subRecipeId ? 'sub_recipe' : 'ingredient',
+        ingredientId: line.ingredientId ? String(line.ingredientId) : null,
+        subRecipeId: line.subRecipeId ? String(line.subRecipeId) : null,
         name: String(line.ingredientName ?? line.subRecipeName ?? ''),
         quantity: Number(line.quantityPerUnit) || 0,
         unit: String(line.unit ?? line.subRecipeUnit ?? ''),

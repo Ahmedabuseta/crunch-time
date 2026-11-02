@@ -4,6 +4,12 @@
     "slug": "crunch-time",
     "scheme": "crunchtime",
     "version": "0.1.0",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/9a6d00c8-b273-40a6-9ca6-657943ac302c"
+    },
     "orientation": "portrait",
     "icon": "./assets/images/app-icon.png",
     "userInterfaceStyle": "automatic",

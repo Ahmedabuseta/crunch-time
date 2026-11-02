@@ -4,7 +4,7 @@ import { useColorScheme } from '@/hooks/useColorScheme';
 import { GlobalActions } from '@/components/app/GlobalActions';
 import { BlurTargetView } from 'expo-blur';
 import { Tabs, useIsFocused } from 'expo-router';
-import { BarChart3, ListOrdered, MoreHorizontal, PlusCircle } from 'lucide-react-native';
+import { BarChart3, LayoutDashboard, MoreHorizontal, PlusCircle } from 'lucide-react-native';
 import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
@@ -33,8 +33,8 @@ export default function AppTabsLayout() {
       <Tabs.Screen
         name='board'
         options={{
-          title: 'الطلبات',
-          tabBarIcon: ({ color, size }) => <ListOrdered color={color} size={size} />,
+          title: 'الرئيسية',
+          tabBarIcon: ({ color, size }) => <LayoutDashboard color={color} size={size} />,
         }}
       />
       <Tabs.Screen
@@ -63,6 +63,7 @@ export default function AppTabsLayout() {
       <Tabs.Screen name='order/[id]' options={{ href: null }} />
       <Tabs.Screen name='shift' options={{ href: null }} />
       <Tabs.Screen name='manage' options={{ href: null }} />
+      <Tabs.Screen name='inventory' options={{ href: null }} />
     </Tabs>
 
       {/* One quick-action dial for the whole app, docked in the bar's middle

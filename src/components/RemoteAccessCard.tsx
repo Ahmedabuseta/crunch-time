@@ -4,6 +4,7 @@ import { Wifi, Smartphone, QrCode, Download, LogIn, Globe, Power, RefreshCw, Cop
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { toast } from '@/components/ui/toast'
+import { remoteBaseUrl } from '@/lib/remote-url'
 import type { FunnelStatus, RemoteStatus, TailscaleStatus } from '../ipc/renderer.d'
 
 const inputClass = 'w-full px-3 py-2 rounded-xl bg-secondary text-sm border-0 focus:ring-1 focus:ring-primary focus:outline-none'
@@ -53,13 +54,7 @@ export function RemoteAccessCard() {
   }, [refreshRemote, refreshTailscale])
 
   /** The address the QR should carry: the public one when Funnel is on. */
-  const pairingUrl = () => {
-    if (funnel?.enabled && funnel.url) return funnel.url
-    const t = ts?.ipv4
-    if (t) return `http://${t}:${remote?.port ?? 4317}`
-    const first = remote?.remote?.[0] ?? remote?.lan?.[0] ?? remote?.addresses?.[0]
-    return first ? `http://${first}` : ''
-  }
+  const pairingUrl = () => remoteBaseUrl(remote, ts, funnel)
 
   const showPairing = async () => {
     setBusy(true)

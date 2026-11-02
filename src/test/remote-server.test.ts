@@ -204,6 +204,104 @@ describe('remote server: status reporting', () => {
   })
 })
 
+describe('remote server: public QR menu', () => {
+  it('serves the live menu and the menu page without a token', async () => {
+    const res = await fetch(`${base}/public/menu`)
+    expect(res.status).toBe(200)
+    // The Vercel menu reads this cross-origin.
+    expect(res.headers.get('access-control-allow-origin')).toBe('*')
+    const body = await res.json()
+    expect(typeof body.restaurant).toBe('string')
+    expect(Array.isArray(body.categories)).toBe(true)
+
+    const products = body.categories.flatMap((category: any) => category.products)
+    expect(products.length).toBeGreaterThan(0)
+    // Public payload never carries cost or the internal active flag.
+    expect(products.every((product: any) => !('costPrice' in product) && !('active' in product))).toBe(true)
+
+    const page = await fetch(`${base}/m`)
+    expect(page.status).toBe(200)
+    expect(page.headers.get('content-type')).toContain('text/html')
+    expect(await page.text()).toContain('المنيو')
+  })
+
+  it('reflects catalogue edits without any export step', async () => {
+    const category = (await backend.catalog.listCategories())[0]
+    const created = await backend.catalog.createProduct({
+      name: 'صنف متابعة المنيو',
+      description: 'اختبار',
+      price: 12.5,
+      categoryId: category.id,
+      emoji: '🧪',
+    })
+
+    const readPrice = async () => {
+      const body = await (await fetch(`${base}/public/menu`)).json()
+      return body.categories.flatMap((c: any) => c.products).find((p: any) => p.id === created.id)?.price
+    }
+
+    expect(await readPrice()).toBe(12.5)
+    await backend.catalog.updateProduct(created.id, { price: 19.75 })
+    expect(await readPrice()).toBe(19.75)
+
+    // Deactivating it hides it from the public menu immediately.
+    await backend.catalog.updateProduct(created.id, { active: false })
+    expect(await readPrice()).toBeUndefined()
+  })
+})
+
+describe('remote server: owner reads while a cashier is on the desktop', () => {
+  it('keeps answering the phone with no admin session on the PC', async () => {
+    // A real phone token, issued from the remote secret — the login limiter is
+    // intentionally exhausted by an earlier test.
+    const secret = backend.settings.getRemoteConfig().secret
+    if (!secret) throw new Error('remote secret missing')
+    const token = signToken(secret)
+    backend.session.setUser({ id: 'cashier-1', role: 'cashier' })
+    try {
+      const paths = [
+        '/menu',
+        '/orders',
+        '/delivery-zones',
+        '/delivery-profiles',
+        '/shifts/current',
+        '/reports/daily',
+        '/reports/period',
+        '/reports/profit',
+        '/reports/top-items',
+        '/reports/inventory-alerts',
+        '/inventory/alerts',
+        '/ingredients',
+        '/categories',
+        '/products',
+        '/addons',
+        '/modifier-groups',
+        '/sub-recipes',
+        '/settings',
+        '/users',
+        '/audit',
+        '/backup/status',
+      ]
+      for (const pathname of paths) {
+        const res = await authed(pathname, token)
+        expect(res.status, `${pathname}: ${await res.clone().text()}`).toBe(200)
+      }
+
+      // The phone loads many endpoints at once; every request keeps its own
+      // owner scope and none may fail because another request finished.
+      const burst = await Promise.all(
+        Array.from({ length: 16 }, () => authed('/reports/daily', token)),
+      )
+      expect(burst.every((res) => res.status === 200)).toBe(true)
+
+      // The desktop session was never elevated.
+      expect(backend.session.getUser()).toEqual({ id: 'cashier-1', role: 'cashier' })
+    } finally {
+      backend.session.setUser({ id: 'test-admin', role: 'admin' })
+    }
+  })
+})
+
 describe('tokens', () => {
   it('round-trips a valid token and rejects tampering/expiry', () => {
     const t = signToken('secret-a')

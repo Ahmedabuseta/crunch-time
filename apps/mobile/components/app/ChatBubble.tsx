@@ -80,6 +80,7 @@ const styles = StyleSheet.create({
   own: { alignSelf: 'flex-start' },
   // `Card` sets width: '100%'; the max width above is what keeps it a bubble.
   other: { alignSelf: 'flex-end' },
+  // `ui/Text` undoes React Native's RTL mirroring of textAlign.
   text: { textAlign: 'right', writingDirection: 'rtl' },
   badge: { alignSelf: 'flex-start', paddingVertical: 4, paddingHorizontal: 10 },
 });

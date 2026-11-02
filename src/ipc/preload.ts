@@ -31,6 +31,13 @@ type UpdateStatusPayload = {
 }
 
 contextBridge.exposeInMainWorld('api', {
+  // ─── Startup health ─────────────────────────────────────────
+  app: {
+    startupError: () => invoke('app:startupError'),
+    /** Registered by electron.cjs before the backend bundle loads. */
+    fatal: () => invoke('app:fatal'),
+  },
+
   // ─── Session ────────────────────────────────────────────────
   session: {
     setUser: (user: { id: string; role: string } | null) => invoke('session:setUser', user),
@@ -141,6 +148,11 @@ contextBridge.exposeInMainWorld('api', {
     create: (data: unknown) => invoke('product:create', data),
     update: (id: string, data: unknown) => invoke('product:update', id, data),
     delete: (id: string, opts?: DeleteOpts) => invoke('product:delete', id, opts),
+  },
+
+  // ─── Menu document export ─────────────────────────────────
+  menu: {
+    exportWord: (opts?: unknown) => invoke('menu:exportWord', opts),
   },
 
   // ─── Addons ───────────────────────────────────────────────

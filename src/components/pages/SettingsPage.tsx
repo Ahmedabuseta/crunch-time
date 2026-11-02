@@ -19,6 +19,7 @@ import { buildCustomerReceiptHtml, contentWidth } from '@/lib/print'
 import { toast } from '@/components/ui/toast'
 import { Emoji } from '@/components/Emoji'
 import { RemoteAccessCard } from '@/components/RemoteAccessCard'
+import { MenuQrCard } from '@/components/MenuQrCard'
 import { DiscountsPanel } from '@/components/discounts/DiscountsPanel'
 
 // ─── Receipt branding form helpers ─────────────────────────────
@@ -1313,6 +1314,7 @@ export function SettingsPage() {
         </div>
 
         <RemoteAccessCard />
+        <MenuQrCard />
           </>
         )}
 
