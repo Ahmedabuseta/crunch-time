@@ -1,6 +1,7 @@
 import { api } from '@/api/endpoints';
 import { STALE } from '@/lib/cachePolicy';
 import { qk } from '@/lib/queryKeys';
+import type { DiscountLine } from '@/lib/discount';
 import { useQuery } from '@tanstack/react-query';
 
 /** Store settings — the phone only needs `taxRate` and the receipt fields. */
@@ -42,5 +43,23 @@ export function useBackupStatus() {
     queryFn: () => api.backupStatus(),
     staleTime: 0,
     meta: { persist: false },
+  });
+}
+
+/**
+ * Best auto-applied promo for the current basket. Keyed by a line signature so
+ * an unchanged cart reuses the answer, and disabled while a manual code is in
+ * play — the manual code always wins.
+ */
+export function useAutoDiscount(lines: DiscountLine[], subtotal: number, enabled = true) {
+  const signature = lines
+    .map((line) => `${line.lineId}:${line.productId}:${line.categoryId}:${line.unitTotal}:${line.quantity}`)
+    .join('|');
+
+  return useQuery({
+    queryKey: ['discount-auto', signature, subtotal],
+    queryFn: () => api.resolveAutoDiscount({ lines, subtotal }),
+    enabled: enabled && lines.length > 0,
+    staleTime: 15_000,
   });
 }

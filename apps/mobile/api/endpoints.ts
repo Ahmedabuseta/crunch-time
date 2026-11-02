@@ -1,6 +1,6 @@
 // One typed function per server route the app uses.
 import { request } from './client';
-import type { DiscountRule } from '@/lib/discount';
+import type { DiscountLine, DiscountRule } from '@/lib/discount';
 import type {
   Addon,
   AppUser,
@@ -194,6 +194,12 @@ export const api = {
       '/discount-codes/validate',
       { method: 'POST', body: { code } }
     ),
+
+  /** Best auto-applied promo for the current basket, chosen by the server. */
+  resolveAutoDiscount: (body: { lines: DiscountLine[]; subtotal: number }) =>
+    request<{
+      auto: { discount: DiscountRule; total: number; lineDiscounts: Record<string, number> } | null;
+    }>('/discount-codes/auto', { method: 'POST', body }),
 
   /** Not paged: it feeds a locally-filtered picker, not a list you scroll. */
   subRecipes: () => request<{ subRecipes: SubRecipe[] }>('/sub-recipes'),

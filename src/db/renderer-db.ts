@@ -1,4 +1,6 @@
 import { allocateNetRevenue } from '../lib/net-revenue'
+import { computeDiscount, type DiscountLine } from '../lib/discount-engine'
+import { isScheduleActive } from '../lib/discount-schedule'
 import {
   categoryForIngredient,
   defaultStorageForCategory,
@@ -540,6 +542,18 @@ export const rendererApi = {
       const dc = T.discountCodes.get(r => r.code.toUpperCase() === code.toUpperCase() && r.active)
       if (!dc) return { valid: false, error: 'كود غير صالح' }
       if (dc.maxUses > 0 && dc.usedCount >= dc.maxUses) return { valid: false, error: 'انتهى الاستخدام' }
+      const schedule = isScheduleActive(dc)
+      if (!schedule.active) return { valid: false, error: schedule.reason }
+
+      const rule = {
+        id: dc.id, code: dc.code, type: dc.type, value: dc.value,
+        scope: dc.scope || 'order', productIds: dc.productIds || [], categoryIds: dc.categoryIds || [],
+        minSubtotal: dc.minSubtotal || 0, buyQty: dc.buyQty || 0, getQty: dc.getQty || 0,
+        getPercent: dc.getPercent ?? 100, autoApply: !!dc.autoApply,
+        startsAt: dc.startsAt || null, endsAt: dc.endsAt || null, daysOfWeek: dc.daysOfWeek || null,
+        startTime: dc.startTime || null, endTime: dc.endTime || null,
+      }
+
       // Employee daily code: shared uses per day, and the
       // discount only applies to the product-of-the-day.
       if (dc.mode === 'daily') {
@@ -556,13 +570,35 @@ export const rendererApi = {
         return {
           valid: true,
           discount: {
-            id: dc.id, code: dc.code, type: dc.type, value: dc.value,
+            ...rule,
             mode: 'daily', productId: product.id, productName: product.name,
             remaining: dc.dailyUses > 0 ? dc.dailyUses - usedToday : null,
           },
         }
       }
-      return { valid: true, discount: { id: dc.id, code: dc.code, type: dc.type, value: dc.value } }
+      return { valid: true, discount: rule }
+    },
+    resolveAuto: (lines: DiscountLine[], subtotal: number) => {
+      let best: any = null
+      for (const dc of T.discountCodes.select(r => r.active && r.autoApply)) {
+        if (dc.mode === 'daily') continue
+        if (dc.maxUses > 0 && dc.usedCount >= dc.maxUses) continue
+        if (!isScheduleActive(dc).active) continue
+        const rule = {
+          id: dc.id, code: dc.code, type: dc.type, value: dc.value,
+          scope: dc.scope || 'order', productIds: dc.productIds || [], categoryIds: dc.categoryIds || [],
+          minSubtotal: dc.minSubtotal || 0, buyQty: dc.buyQty || 0, getQty: dc.getQty || 0,
+          getPercent: dc.getPercent ?? 100, autoApply: true,
+          startsAt: dc.startsAt || null, endsAt: dc.endsAt || null, daysOfWeek: dc.daysOfWeek || null,
+          startTime: dc.startTime || null, endTime: dc.endTime || null,
+        }
+        const result = computeDiscount(rule as any, lines, subtotal)
+        if (result.total <= 0) continue
+        if (!best || result.total > best.total) {
+          best = { discount: rule, total: result.total, lineDiscounts: result.lineDiscounts }
+        }
+      }
+      return best
     },
     use: (id: string) => { const dc = T.discountCodes.get(r => r.id === id); if (dc) dc.usedCount++; return { ok: true } },
   },

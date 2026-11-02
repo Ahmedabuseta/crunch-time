@@ -66,6 +66,15 @@ export function registerAdminRoutes(app: FastifyInstance, backend: Backend) {
       backend.settings.deleteDiscountCode((req.params as any).id, hardOpt(req))))
   app.post('/discount-codes/validate', async (req) =>
     ({ validation: await backend.settings.validateDiscountCode(String((req.body as any)?.code ?? '')) }))
+  app.post('/discount-codes/auto', async (req) => {
+    const body = (req.body || {}) as any
+    return {
+      auto: await backend.settings.resolveAutoDiscount(
+        Array.isArray(body.lines) ? body.lines : [],
+        Number(body.subtotal) || 0,
+      ),
+    }
+  })
   app.post('/discount-codes/:id/use', async (req) =>
     mutate(req, { action: 'discountCode.use', entity: 'discount_code', entityId: (req.params as any).id, afterFrom: () => null }, () =>
       backend.settings.useDiscountCode((req.params as any).id)))

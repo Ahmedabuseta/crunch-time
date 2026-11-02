@@ -15,6 +15,14 @@ import { ShoppingCart, Trash2, CheckCircle, Banknote, CreditCard, Printer, Rotat
 import { useState, useEffect } from 'react'
 import { cn } from '@/lib/utils'
 import { fmtMoney } from '@/lib/format'
+import {
+  computeDiscount,
+  describeDiscount,
+  type DiscountLine,
+  type DiscountRule,
+  type DiscountResult,
+} from '@/lib/discount-engine'
+import { describeSchedule } from '@/lib/discount-schedule'
 import { toast } from '@/components/ui/toast'
 
 const paymentTypes = [
@@ -78,6 +86,7 @@ export function Cart() {
   const [lastOrder, setLastOrder] = useState<LastOrder | null>(null)
   const [validationError, setValidationError] = useState('')
   const [discountResult, setDiscountResult] = useState<{ valid: boolean; discount?: any; error?: string } | null>(null)
+  const [autoResult, setAutoResult] = useState<{ discount: DiscountRule; total: number; lineDiscounts: Record<string, number> } | null>(null)
   const [settings, setSettings] = useState<any>({})
   const [printStatus, setPrintStatus] = useState('')
   const [step, setStep] = useState<1 | 2>(1)
@@ -97,53 +106,61 @@ export function Cart() {
   const sub = Math.round(subtotal())
   const tax = Math.round(sub * taxRate)
   const deliveryFee = orderType === 'delivery' && activeZone ? Math.round(Number(activeZone.fee) || 0) : 0
-  // Employee daily codes discount only the product-of-the-day:
-  // compute the per-line discount for matching items so the
-  // discount rides on those lines (order_items.item_discount)
-  // while the order-level amount stays the sum of them.
-  const dailyDiscounts = (() => {
-    if (!discountResult?.valid || discountResult.discount.mode !== 'daily') return null
-    const disc = discountResult.discount
-    const lineTotal = (item: any) =>
-      Math.round((item.product.price + item.modifiers.reduce((s: number, m: any) => s + m.priceAdjustment, 0)) * item.quantity)
-    const matching = items.filter((i) => i.product.id === disc.productId)
-    if (matching.length === 0) return { lineDiscounts: new Map<string, number>(), total: 0 }
-    const lineDiscounts = new Map<string, number>()
-    if (disc.type === 'percentage') {
-      let total = 0
-      for (const item of matching) {
-        const lt = lineTotal(item)
-        const d = Math.min(Math.round(lt * (disc.value / 100)), lt)
-        lineDiscounts.set(item.lineId, d)
-        total += d
-      }
-      return { lineDiscounts, total }
+  // Lines handed to the discount engine: product + modifiers + addons, so the
+  // till and the phone compute the same discount for the same cart.
+  const discountLines: DiscountLine[] = items.map((item) => {
+    const addonTotal = item.addons.reduce((sum, addon) => sum + addon.price * (addon.qty || 1), 0)
+    const modifierTotal = item.modifiers.reduce((sum, modifier) => sum + modifier.priceAdjustment, 0)
+    const unitTotal = item.product.price + modifierTotal + addonTotal
+    return {
+      lineId: item.lineId,
+      productId: item.product.id,
+      categoryId: item.product.categoryId,
+      unitTotal,
+      quantity: item.quantity,
+      lineTotal: Math.round(unitTotal * item.quantity),
     }
-    // Fixed amount: spread across the matching lines; the last
-    // line absorbs the rounding remainder so the sum is exact.
-    const matchingTotal = matching.reduce((s, i) => s + lineTotal(i), 0)
-    const total = Math.min(Math.round(Number(disc.value) || 0), matchingTotal)
-    let assigned = 0
-    matching.forEach((item, idx) => {
-      const d = idx === matching.length - 1 ? total - assigned : Math.round(total * (lineTotal(item) / matchingTotal))
-      lineDiscounts.set(item.lineId, d)
-      assigned += d
-    })
-    return { lineDiscounts, total }
-  })()
-  const rawDiscount = discountResult?.valid
-    ? discountResult.discount.mode === 'daily'
-      ? dailyDiscounts?.total ?? 0
-      : discountResult.discount.type === 'percentage'
-        ? Math.round(sub * (discountResult.discount.value / 100))
-        : Math.round(Number(discountResult.discount.value) || 0)
-    : 0
-  // Never discount more than the goods themselves — mirrors seed.ts, and keeps
-  // the total from going negative (and therefore never a float).
-  const discountAmount = Math.min(Math.max(rawDiscount, 0), sub)
-  // A daily code only counts as used when its product is actually
-  // in the order — otherwise it stays unrecorded and unused.
-  const appliedDiscount = discountResult?.valid && discountAmount > 0
+  })
+  const discountSignature = discountLines
+    .map((line) => `${line.lineId}:${line.productId}:${line.categoryId}:${line.unitTotal}:${line.quantity}`)
+    .join('|')
+
+  // Auto-applied promos: the best valid one, recomputed as the cart changes.
+  useEffect(() => {
+    if (discountLines.length === 0) {
+      setAutoResult(null)
+      return
+    }
+    let cancelled = false
+    const timer = setTimeout(() => {
+      window.api.discountCode.resolveAuto(discountLines, sub)
+        .then((result: any) => { if (!cancelled) setAutoResult(result ?? null) })
+        .catch(() => { if (!cancelled) setAutoResult(null) })
+    }, 150)
+    return () => { cancelled = true; clearTimeout(timer) }
+  }, [discountSignature, sub])
+
+  const manualRule: DiscountRule | null = discountResult?.valid ? discountResult.discount : null
+  const manualDiscount: DiscountResult | null = manualRule
+    ? computeDiscount(manualRule, discountLines, sub)
+    : null
+
+  // A manual code always wins; otherwise the best auto promo applies.
+  const applied: {
+    rule: DiscountRule
+    total: number
+    lineDiscounts: Record<string, number>
+    auto: boolean
+  } | null =
+    manualRule && manualDiscount && manualDiscount.total > 0
+      ? { rule: manualRule, total: manualDiscount.total, lineDiscounts: manualDiscount.lineDiscounts, auto: false }
+      : autoResult && autoResult.total > 0
+        ? { rule: autoResult.discount, total: autoResult.total, lineDiscounts: autoResult.lineDiscounts, auto: true }
+        : null
+
+  // Never discount more than the goods themselves — keeps the total from
+  // going negative (and therefore never a float).
+  const discountAmount = Math.min(Math.max(applied?.total ?? 0, 0), sub)
   const total = sub + tax + deliveryFee - discountAmount
 
   const handleValidateDiscount = async () => {
@@ -167,12 +184,61 @@ const handleCheckout = async () => {
     if (orderType === 'dine-in' && !tableNumber.trim()) { setValidationError('اكتب رقم الترابيزة لطلب الصالة'); return }
 
     try {
+      // Recompute right before saving: a code may have expired, or a daily
+      // product may have rotated since the cashier validated it.
+      let checkoutApplied = applied
+      if (discountResult?.valid) {
+        const refreshed = await window.api.discountCode.validate(discountResult.discount.code)
+        setDiscountResult(refreshed)
+        if (!refreshed?.valid) {
+          setValidationError(refreshed?.error || 'كود الخصم لم يعد صالحاً')
+          return
+        }
+        const recomputed = computeDiscount(refreshed.discount, discountLines, sub)
+        if (recomputed.total > 0) {
+          checkoutApplied = {
+            rule: refreshed.discount,
+            total: recomputed.total,
+            lineDiscounts: recomputed.lineDiscounts,
+            auto: false,
+          }
+        } else {
+          // The typed code does not apply to this basket — drop it and let the
+          // best auto offer take over rather than blocking the sale.
+          setDiscountResult(null)
+          const freshAuto = await window.api.discountCode.resolveAuto(discountLines, sub)
+          setAutoResult(freshAuto ?? null)
+          checkoutApplied = freshAuto && freshAuto.total > 0
+            ? {
+                rule: freshAuto.discount,
+                total: freshAuto.total,
+                lineDiscounts: freshAuto.lineDiscounts,
+                auto: true,
+              }
+            : null
+        }
+      } else {
+        const freshAuto = await window.api.discountCode.resolveAuto(discountLines, sub)
+        setAutoResult(freshAuto ?? null)
+        checkoutApplied = freshAuto && freshAuto.total > 0
+          ? {
+              rule: freshAuto.discount,
+              total: freshAuto.total,
+              lineDiscounts: freshAuto.lineDiscounts,
+              auto: true,
+            }
+          : null
+      }
+
+      const checkoutDiscountAmount = Math.min(Math.max(checkoutApplied?.total ?? 0, 0), sub)
+      const checkoutTotal = sub + tax + deliveryFee - checkoutDiscountAmount
+
       const cartItems = [...items]
       const orderItems = cartItems.map((item) => ({
         productId: item.product.id,
         quantity: item.quantity,
         unitPrice: item.product.price + item.modifiers.reduce((s, m) => s + m.priceAdjustment, 0),
-        itemDiscount: dailyDiscounts?.lineDiscounts.get(item.lineId) || 0,
+        itemDiscount: checkoutApplied?.lineDiscounts[item.lineId] || 0,
         note: (item.note || '').trim() || undefined,
         modifiers: item.modifiers,
         addons: item.addons.flatMap((a) => Array(a.qty || 1).fill(a.id)),
@@ -190,21 +256,21 @@ const handleCheckout = async () => {
         deliveryNote: orderType === 'delivery' ? deliveryNote.trim() || undefined : undefined,
         deliveryProfileId: orderType === 'delivery' ? deliveryProfileId || undefined : undefined,
         deliveryProfileName: orderType === 'delivery' ? deliveryProfileName || undefined : undefined,
-        subtotal: sub, tax, deliveryFee, total,
+        subtotal: sub, tax, deliveryFee, total: checkoutTotal,
         paymentType, cashierName: currentUser?.name,
         userId: currentUser?.id,
         note: orderNote.trim() || undefined,
-        discountCode: appliedDiscount ? discountCode : undefined,
-        discountAmount: discountAmount > 0 ? discountAmount : undefined,
-        discountCodeId: appliedDiscount ? discountResult.discount?.id : undefined,
+        discountCode: checkoutApplied ? checkoutApplied.rule.code : undefined,
+        discountAmount: checkoutDiscountAmount > 0 ? checkoutDiscountAmount : undefined,
+        discountCodeId: checkoutApplied?.rule.id,
         items: orderItems,
       })
 
       await deductForOrder(result)
       await fetchAlerts()
       await fetchOrders()
-      if (appliedDiscount && discountResult?.valid && discountResult.discount?.id) {
-        await window.api.discountCode.use(discountResult.discount.id)
+      if (checkoutApplied) {
+        await window.api.discountCode.use(checkoutApplied.rule.id)
       }
 
       setLastOrder({
@@ -215,8 +281,9 @@ const handleCheckout = async () => {
         deliveryNote: orderType === 'delivery' ? deliveryNote.trim() || undefined : undefined,
         deliveryProfileId: orderType === 'delivery' ? deliveryProfileId || undefined : undefined,
         deliveryProfileName: orderType === 'delivery' ? deliveryProfileName || undefined : undefined,
-        discountAmount, discountCode: appliedDiscount ? discountCode : undefined,
-        orderNote: orderNote.trim() || undefined, total, orderType,
+        discountAmount: checkoutDiscountAmount,
+        discountCode: checkoutApplied ? checkoutApplied.rule.code : undefined,
+        orderNote: orderNote.trim() || undefined, total: checkoutTotal, orderType,
         tableNumber: orderType === 'dine-in' ? tableNumber.trim() || undefined : undefined,
         customerName: customerName || undefined,
         customerPhone: deliveryPhone || undefined, customerAddress: deliveryAddress || undefined,
@@ -248,8 +315,9 @@ const handleCheckout = async () => {
               note: i.note, modifiers: i.modifiers, addons: i.addons,
             })),
             subtotal: sub, tax, taxRate, deliveryFee,
-            discountAmount, discountCode: appliedDiscount ? discountCode : undefined,
-            total, paymentType,
+            discountAmount: checkoutDiscountAmount,
+            discountCode: checkoutApplied ? checkoutApplied.rule.code : undefined,
+            total: checkoutTotal, paymentType,
           },
           receiptPrinter: s?.receiptPrinter,
           paperWidth: s?.receiptWidth || '80mm',
@@ -460,22 +528,33 @@ const handleCheckout = async () => {
               </div>
               <Button className="rounded-xl h-11 px-4 text-sm font-bold shrink-0" onClick={handleValidateDiscount}>تحقق</Button>
             </div>
-            {discountResult && (
+            {applied ? (
               <div className="space-y-1">
-                <div className={cn("text-xs font-bold px-2 py-1 rounded-lg", discountResult.valid ? "bg-green-500/10 text-green-400" : "bg-red-500/10 text-red-400")}>
-                  {discountResult.valid
-                    ? discountResult.discount.mode === 'daily'
-                      ? `✓ خصم ${discountResult.discount.type === 'percentage' ? discountResult.discount.value + '%' : fmtMoney(Number(discountResult.discount.value) || 0) + ' ج.م'} على صنف اليوم: ${discountResult.discount.productName}${discountResult.discount.remaining != null ? ` — متبقي اليوم: ${discountResult.discount.remaining}` : ''}`
-                      : `✓ خصم ${discountResult.discount.type === 'percentage' ? discountResult.discount.value + '%' : fmtMoney(Number(discountResult.discount.value) || 0) + ' ج.م'}`
-                    : `✗ ${discountResult.error}`}
+                <div className="text-xs font-bold px-2 py-1 rounded-lg bg-green-500/10 text-green-400">
+                  ✓ {describeDiscount(applied.rule)}{applied.auto ? ' — تلقائي' : ''}
+                  {applied.rule.mode === 'daily' && applied.rule.remaining != null ? ` — متبقي اليوم: ${applied.rule.remaining}` : ''}
                 </div>
-                {discountResult.valid && discountResult.discount.mode === 'daily' && !items.some((i) => i.product.id === discountResult.discount.productId) && (
+                {describeSchedule(applied.rule) && (
+                  <p className="text-[11px] font-medium text-muted-foreground px-1">{describeSchedule(applied.rule)}</p>
+                )}
+                {applied.rule.mode === 'daily' && !items.some((i) => i.product.id === applied.rule.productId) && (
                   <p className="text-[11px] font-medium text-muted-foreground px-1">
-                    أضف «{discountResult.discount.productName}» إلى الطلب ليُطبق الخصم — باقي الأصناف بسعرها الكامل
+                    أضف «{applied.rule.productName}» إلى الطلب ليُطبق الخصم — باقي الأصناف بسعرها الكامل
                   </p>
                 )}
               </div>
-            )}
+            ) : discountResult ? (
+              <div className="space-y-1">
+                {!discountResult.valid && (
+                  <div className="text-xs font-bold px-2 py-1 rounded-lg bg-red-500/10 text-red-400">✗ {discountResult.error}</div>
+                )}
+                {discountResult.valid && manualDiscount && (
+                  <div className="text-xs font-bold px-2 py-1 rounded-lg bg-amber-500/10 text-amber-500">
+                    {manualDiscount.reason || 'الكود لا ينطبق على أصناف الطلب'}
+                  </div>
+                )}
+              </div>
+            ) : null}
 
             {/* Totals */}
             <div className="bg-secondary/30 rounded-xl p-3 space-y-1 text-xs text-muted-foreground">

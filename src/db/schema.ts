@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, real, index, unique } from 'drizzle-orm/sqlite-core'
+import { sqliteTable, text, integer, real, index, unique, primaryKey } from 'drizzle-orm/sqlite-core'
 import { relations } from 'drizzle-orm'
 
 // ─── Categories ────────────────────────────────────────────────
@@ -373,14 +373,39 @@ export const deliveryProfiles = sqliteTable('delivery_profiles', {
 export const discountCodes = sqliteTable('discount_codes', {
   id: text('id').primaryKey(),
   code: text('code').notNull(),
-  type: text('type').notNull(), // 'percentage' | 'fixed'
+  type: text('type').notNull(), // 'percentage' | 'fixed' | 'bogo'
   value: real('value').notNull(),
   mode: text('mode').notNull().default('order'), // 'order' | 'daily'
   dailyUses: integer('daily_uses').notNull().default(0),
   active: integer('active', { mode: 'boolean' }).notNull().default(true),
   maxUses: integer('max_uses').notNull().default(0),
   usedCount: integer('used_count').notNull().default(0),
+  scope: text('scope').notNull().default('order'), // 'order' | 'products' | 'categories'
+  startsAt: text('starts_at'),
+  endsAt: text('ends_at'),
+  daysOfWeek: text('days_of_week'), // CSV of 0..6, null = every day
+  startTime: text('start_time'), // HH:MM local
+  endTime: text('end_time'), // HH:MM local, end < start = overnight
+  minSubtotal: real('min_subtotal').notNull().default(0),
+  buyQty: integer('buy_qty').notNull().default(0),
+  getQty: integer('get_qty').notNull().default(0),
+  getPercent: real('get_percent').notNull().default(100),
+  autoApply: integer('auto_apply', { mode: 'boolean' }).notNull().default(false),
 })
+
+export const discountCodeProducts = sqliteTable('discount_code_products', {
+  discountCodeId: text('discount_code_id').notNull().references(() => discountCodes.id),
+  productId: text('product_id').notNull().references(() => products.id),
+}, (t) => [
+  primaryKey({ columns: [t.discountCodeId, t.productId] }),
+])
+
+export const discountCodeCategories = sqliteTable('discount_code_categories', {
+  discountCodeId: text('discount_code_id').notNull().references(() => discountCodes.id),
+  categoryId: text('category_id').notNull().references(() => categories.id),
+}, (t) => [
+  primaryKey({ columns: [t.discountCodeId, t.categoryId] }),
+])
 
 // Weekly rotation for 'daily' employee codes: one product per
 // weekday (0 = Sunday … 6 = Saturday). The code only discounts

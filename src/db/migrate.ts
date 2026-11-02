@@ -11,6 +11,7 @@ import { migration as welcome20Migration } from './migrations/009-welcome20'
 import { migration as inventoryCategoriesMigration } from './migrations/010-inventory-categories'
 import { migration as assistantMigration } from './migrations/011-assistant'
 import { migration as aiAliasesMigration } from './migrations/012-ai-aliases'
+import { migration as discountScheduleMigration } from './migrations/013-discount-schedule'
 import type { Migration } from './migrations/types'
 
 /** Why the last best-effort backfill pass failed, for the startup log. */
@@ -76,6 +77,7 @@ export function runMigrations() {
     inventoryCategoriesMigration,
     assistantMigration,
     aiAliasesMigration,
+    discountScheduleMigration,
   ]
   const applied = db.prepare('SELECT id FROM schema_migrations').all() as { id: string }[]
   const appliedIds = new Set(applied.map(({ id }) => id))

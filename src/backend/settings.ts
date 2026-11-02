@@ -8,8 +8,13 @@ import { requireAdmin } from './session'
 import { getElectron } from './electron'
 import { hashPin, verifyPin as verifyPinHash } from '../lib/auth'
 import { writeAudit } from './audit'
+import { computeDiscount, type DiscountLine, type DiscountRule } from '../lib/discount-engine'
+import { isScheduleActive, serializeDaysOfWeek } from '../lib/discount-schedule'
 
-const { settings, discountCodes, discountDayProducts, products, kitchenStations } = schema
+const {
+  settings, discountCodes, discountDayProducts, discountCodeProducts,
+  discountCodeCategories, products, kitchenStations,
+} = schema
 
 export const DEFAULT_REMOTE_PORT = 4317
 
@@ -231,13 +236,129 @@ function saveDayProducts(codeId: string, dayProducts: { dayOfWeek: number; produ
   })()
 }
 
+// Replaces the product/category targeting rows. Undefined means "leave that
+// side untouched"; an empty array clears it.
+function saveDiscountScopes(codeId: string, productIds?: string[], categoryIds?: string[]) {
+  if (productIds === undefined && categoryIds === undefined) return
+  const db = getDb()
+  getSqlite().transaction(() => {
+    if (productIds !== undefined) {
+      db.delete(discountCodeProducts).where(eq(discountCodeProducts.discountCodeId, codeId)).run()
+      for (const productId of productIds) {
+        db.insert(discountCodeProducts).values({ discountCodeId: codeId, productId }).run()
+      }
+    }
+    if (categoryIds !== undefined) {
+      db.delete(discountCodeCategories).where(eq(discountCodeCategories.discountCodeId, codeId)).run()
+      for (const categoryId of categoryIds) {
+        db.insert(discountCodeCategories).values({ discountCodeId: codeId, categoryId }).run()
+      }
+    }
+  })()
+}
+
+function scopeIds(codeId: string) {
+  const db = getDb()
+  return {
+    productIds: db.select({ productId: discountCodeProducts.productId })
+      .from(discountCodeProducts).where(eq(discountCodeProducts.discountCodeId, codeId)).all()
+      .map((row) => row.productId),
+    categoryIds: db.select({ categoryId: discountCodeCategories.categoryId })
+      .from(discountCodeCategories).where(eq(discountCodeCategories.discountCodeId, codeId)).all()
+      .map((row) => row.categoryId),
+  }
+}
+
+function discountRule(dc: typeof discountCodes.$inferSelect): DiscountRule {
+  const { productIds, categoryIds } = scopeIds(dc.id)
+  return {
+    id: dc.id,
+    code: dc.code,
+    type: dc.type === 'bogo' ? 'bogo' : dc.type === 'fixed' ? 'fixed' : 'percentage',
+    value: dc.value,
+    mode: dc.mode === 'daily' ? 'daily' : 'order',
+    scope: dc.scope === 'products' || dc.scope === 'categories' ? dc.scope : 'order',
+    productIds,
+    categoryIds,
+    minSubtotal: dc.minSubtotal,
+    buyQty: dc.buyQty,
+    getQty: dc.getQty,
+    getPercent: dc.getPercent,
+    autoApply: dc.autoApply,
+    startsAt: dc.startsAt,
+    endsAt: dc.endsAt,
+    daysOfWeek: dc.daysOfWeek,
+    startTime: dc.startTime,
+    endTime: dc.endTime,
+  }
+}
+
+function mapDiscountFields(data: any) {
+  const out: Record<string, any> = {}
+  if (data.code !== undefined) out.code = String(data.code).trim()
+  if (data.type !== undefined) out.type = ['percentage', 'fixed', 'bogo'].includes(data.type) ? data.type : 'percentage'
+  if (data.value !== undefined) out.value = Number(data.value) || 0
+  if (data.mode !== undefined) out.mode = data.mode === 'daily' ? 'daily' : 'order'
+  if (data.dailyUses !== undefined) out.dailyUses = Number(data.dailyUses) || 0
+  if (data.active !== undefined) out.active = Boolean(data.active)
+  if (data.maxUses !== undefined) out.maxUses = Number(data.maxUses) || 0
+  if (data.usedCount !== undefined) out.usedCount = Number(data.usedCount) || 0
+  if (data.scope !== undefined) out.scope = ['products', 'categories'].includes(data.scope) ? data.scope : 'order'
+  if (data.startsAt !== undefined) out.startsAt = data.startsAt || null
+  if (data.endsAt !== undefined) out.endsAt = data.endsAt || null
+  if (data.daysOfWeek !== undefined) out.daysOfWeek = serializeDaysOfWeek(data.daysOfWeek)
+  if (data.startTime !== undefined) out.startTime = data.startTime || null
+  if (data.endTime !== undefined) out.endTime = data.endTime || null
+  if (data.minSubtotal !== undefined) out.minSubtotal = Number(data.minSubtotal) || 0
+  if (data.buyQty !== undefined) out.buyQty = Math.max(0, Math.floor(Number(data.buyQty) || 0))
+  if (data.getQty !== undefined) out.getQty = Math.max(0, Math.floor(Number(data.getQty) || 0))
+  if (data.getPercent !== undefined) out.getPercent = Number(data.getPercent) || 0
+  if (data.autoApply !== undefined) out.autoApply = Boolean(data.autoApply)
+  return out
+}
+
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
+const TIME_RE = /^\d{2}:\d{2}$/
+
+function validateDiscountRow(row: Record<string, any>) {
+  if (row.mode === 'daily' && row.autoApply) {
+    throw new Error('الخصم اليومي للموظفين لا يمكن تطبيقه تلقائياً')
+  }
+  if (row.startsAt && !DATE_RE.test(row.startsAt)) throw new Error('تاريخ البداية غير صحيح')
+  if (row.endsAt && !DATE_RE.test(row.endsAt)) throw new Error('تاريخ النهاية غير صحيح')
+  if (row.startsAt && row.endsAt && row.startsAt > row.endsAt) {
+    throw new Error('تاريخ البداية يجب أن يكون قبل تاريخ النهاية')
+  }
+  if (row.startTime && !TIME_RE.test(row.startTime)) throw new Error('وقت البداية غير صحيح')
+  if (row.endTime && !TIME_RE.test(row.endTime)) throw new Error('وقت النهاية غير صحيح')
+
+  if (row.type === 'percentage' && !(row.value > 0 && row.value <= 100)) {
+    throw new Error('النسبة يجب أن تكون بين 1 و 100')
+  }
+  if (row.type === 'fixed' && !(row.value > 0)) {
+    throw new Error('المبلغ يجب أن يكون أكبر من صفر')
+  }
+  if (row.type === 'bogo') {
+    if (!(row.buyQty >= 1) || !(row.getQty >= 1)) {
+      throw new Error('حدد عدد القطع المشتراة والقطع المجانية')
+    }
+    if (!(row.getPercent > 0 && row.getPercent <= 100)) {
+      throw new Error('نسبة خصم القطع المجانية غير صحيحة')
+    }
+  }
+}
+
 export function listDiscountCodes() {
   const db = getDb()
   const codes = db.select().from(discountCodes).all()
   const dayRows = db.select().from(discountDayProducts).all()
+  const productRows = db.select().from(discountCodeProducts).all()
+  const categoryRows = db.select().from(discountCodeCategories).all()
   return codes.map((c) => ({
     ...c,
     dayProducts: dayRows.filter((d) => d.discountCodeId === c.id),
+    productIds: productRows.filter((row) => row.discountCodeId === c.id).map((row) => row.productId),
+    categoryIds: categoryRows.filter((row) => row.discountCodeId === c.id).map((row) => row.categoryId),
   }))
 }
 
@@ -245,27 +366,75 @@ export function createDiscountCode(data: any) {
   requireAdmin()
   const db = getDb()
   const id = uuid()
-  const { mode, dailyUses, dayProducts, ...rest } = data
+  const { dayProducts, productIds, categoryIds } = data
+  const row: Record<string, any> = {
+    type: 'percentage', value: 0, mode: 'order', dailyUses: 0, maxUses: 0,
+    scope: 'order', daysOfWeek: null, minSubtotal: 0,
+    buyQty: 0, getQty: 0, getPercent: 100, autoApply: false,
+    ...mapDiscountFields(data),
+  }
+  validateDiscountRow(row)
+  if (row.scope === 'products' && (!productIds || productIds.length === 0)) {
+    throw new Error('اختار صنفاً واحداً على الأقل')
+  }
+  if (row.scope === 'categories' && (!categoryIds || categoryIds.length === 0)) {
+    throw new Error('اختار قسماً واحداً على الأقل')
+  }
+
   db.insert(discountCodes).values({
-    id, ...rest,
-    mode: mode || 'order',
-    dailyUses: Number(dailyUses) || 0,
-    active: true, usedCount: 0,
+    id,
+    code: row.code,
+    type: row.type,
+    value: row.value,
+    mode: row.mode,
+    dailyUses: row.dailyUses,
+    active: true,
+    maxUses: row.maxUses,
+    usedCount: 0,
+    scope: row.scope,
+    startsAt: row.startsAt,
+    endsAt: row.endsAt,
+    daysOfWeek: row.daysOfWeek,
+    startTime: row.startTime,
+    endTime: row.endTime,
+    minSubtotal: row.minSubtotal,
+    buyQty: row.buyQty,
+    getQty: row.getQty,
+    getPercent: row.getPercent,
+    autoApply: row.autoApply,
   }).run()
-  if ((mode || 'order') === 'daily') saveDayProducts(id, dayProducts)
+
+  if (row.mode === 'daily') saveDayProducts(id, dayProducts)
+  saveDiscountScopes(id, productIds, categoryIds)
   return { id }
 }
 
 export function updateDiscountCode(id: string, data: any) {
   requireAdmin()
   const db = getDb()
-  const { mode, dailyUses, dayProducts, ...rest } = data
-  db.update(discountCodes).set({
-    ...rest,
-    ...(mode !== undefined ? { mode } : {}),
-    ...(dailyUses !== undefined ? { dailyUses: Number(dailyUses) || 0 } : {}),
-  }).where(eq(discountCodes.id, id)).run()
-  if (dayProducts) saveDayProducts(id, dayProducts)
+  const existing = db.select().from(discountCodes).where(eq(discountCodes.id, id)).get()
+  if (!existing) throw new Error('كود الخصم غير موجود')
+
+  const mapped = mapDiscountFields(data)
+  const row = { ...existing, ...mapped }
+  validateDiscountRow(row as Record<string, any>)
+
+  if (row.scope === 'products') {
+    const ids = data.productIds !== undefined ? data.productIds : scopeIds(id).productIds
+    if (!ids || ids.length === 0) throw new Error('اختار صنفاً واحداً على الأقل')
+  }
+  if (row.scope === 'categories') {
+    const ids = data.categoryIds !== undefined ? data.categoryIds : scopeIds(id).categoryIds
+    if (!ids || ids.length === 0) throw new Error('اختار قسماً واحداً على الأقل')
+  }
+
+  db.update(discountCodes).set(mapped).where(eq(discountCodes.id, id)).run()
+  if (data.dayProducts) saveDayProducts(id, data.dayProducts)
+  if (data.productIds !== undefined || data.categoryIds !== undefined) {
+    saveDiscountScopes(id, data.productIds, data.categoryIds)
+  } else if (row.scope === 'order') {
+    saveDiscountScopes(id, [], [])
+  }
   return { ok: true }
 }
 
@@ -274,6 +443,8 @@ export function deleteDiscountCode(id: string, opts?: { hard?: boolean }) {
   const db = getDb()
   if (opts?.hard) {
     db.delete(discountDayProducts).where(eq(discountDayProducts.discountCodeId, id)).run()
+    db.delete(discountCodeProducts).where(eq(discountCodeProducts.discountCodeId, id)).run()
+    db.delete(discountCodeCategories).where(eq(discountCodeCategories.discountCodeId, id)).run()
     return hardDelete('discount_codes', id)
   }
   const row = db.select({ id: discountCodes.id }).from(discountCodes).where(eq(discountCodes.id, id)).get()
@@ -289,6 +460,9 @@ export function validateDiscountCode(code: string) {
     .get()
   if (!dc) return { valid: false, error: 'كود غير صالح' }
   if (dc.maxUses > 0 && dc.usedCount >= dc.maxUses) return { valid: false, error: 'انتهى الاستخدام' }
+
+  const schedule = isScheduleActive(dc)
+  if (!schedule.active) return { valid: false, error: schedule.reason }
 
   // Employee daily code: shared pool of uses per day, and the
   // discount only applies to the product-of-the-day.
@@ -314,14 +488,40 @@ export function validateDiscountCode(code: string) {
     return {
       valid: true,
       discount: {
-        id: dc.id, code: dc.code, type: dc.type, value: dc.value,
-        mode: 'daily', productId: product.id, productName: product.name,
+        ...discountRule(dc),
+        mode: 'daily',
+        productId: product.id,
+        productName: product.name,
         remaining: dc.dailyUses > 0 ? dc.dailyUses - usedToday : null,
       },
     }
   }
 
-  return { valid: true, discount: { id: dc.id, code: dc.code, type: dc.type, value: dc.value } }
+  return { valid: true, discount: discountRule(dc) }
+}
+
+// Best auto-applied promo for the current cart. Schedule and usage caps are
+// checked here; the caller only has to compare the returned amounts.
+export function resolveAutoDiscount(lines: DiscountLine[], subtotal: number) {
+  const db = getDb()
+  const codes = db.select().from(discountCodes)
+    .where(and(eq(discountCodes.active, true), eq(discountCodes.autoApply, true)))
+    .all()
+
+  let best: { discount: DiscountRule; total: number; lineDiscounts: Record<string, number> } | null = null
+  for (const dc of codes) {
+    if (dc.mode === 'daily') continue
+    if (dc.maxUses > 0 && dc.usedCount >= dc.maxUses) continue
+    if (!isScheduleActive(dc).active) continue
+
+    const rule = discountRule(dc)
+    const result = computeDiscount(rule, lines, subtotal)
+    if (result.total <= 0) continue
+    if (!best || result.total > best.total) {
+      best = { discount: rule, total: result.total, lineDiscounts: result.lineDiscounts }
+    }
+  }
+  return best
 }
 
 export function useDiscountCode(id: string) {
