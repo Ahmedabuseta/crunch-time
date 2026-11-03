@@ -14,6 +14,7 @@ import { CategorySidebar } from '@/components/CategorySidebar'
 import { OrderHistory } from '@/components/OrderHistory'
 import { DeliveryPage } from '@/components/pages/DeliveryPage'
 import { Reports } from '@/components/Reports'
+import { AnalysisPage } from '@/components/pages/AnalysisPage'
 import { ProductsPage } from '@/components/pages/ProductsPage'
 import { CategoriesPage } from '@/components/pages/CategoriesPage'
 import { AddonsPage } from '@/components/pages/AddonsPage'
@@ -153,7 +154,7 @@ function App() {
   }
   const isAdmin = currentUser.role === 'admin'
 
-  const adminPages: Page[] = ['reports', 'products', 'categories', 'addons', 'modifiers', 'inventory', 'users', 'shifts', 'settings', 'shift-report']
+  const adminPages: Page[] = ['reports', 'analysis', 'products', 'categories', 'addons', 'modifiers', 'inventory', 'users', 'shifts', 'settings', 'shift-report']
   if (!isAdmin && adminPages.includes(page)) {
     setPage('menu')
   }
@@ -179,6 +180,7 @@ function App() {
       case 'delivery': return <DeliveryPage onAssigned={refreshUnassigned} />
       case 'my-shift': return <MyShiftPage />
       case 'reports': return <Reports />
+      case 'analysis': return <AnalysisPage />
       case 'products': return <ProductsPage />
       case 'categories': return <CategoriesPage />
       case 'addons': return <AddonsPage />

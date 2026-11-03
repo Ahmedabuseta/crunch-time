@@ -381,6 +381,53 @@ export interface ApiBridge {
     discountSummary: (from?: string, to?: string) => Promise<any>
     driverSummary: (opts?: { from?: string; to?: string }) => Promise<any>
   }
+  analysis: {
+    query: (sql: string) => Promise<{
+      columns: string[]
+      rows: unknown[][]
+      rowCount: number
+      truncated: boolean
+      elapsedMs: number
+    }>
+    schema: () => Promise<{
+      name: string
+      columns: { name: string; type: string; notNull: boolean; primaryKey: boolean }[]
+    }[]>
+    refresh: () => Promise<number>
+    ask: (question: string) => Promise<{
+      question: string
+      answer: string
+      queries: {
+        sql: string
+        purpose: string | null
+        toolCallId: string | null
+        columns: string[]
+        rows: unknown[][]
+        rowCount: number
+        truncated: boolean
+        elapsedMs: number
+        error?: string
+      }[]
+      steps: number
+      trace: {
+        index: number
+        text: string
+        reasoning: string | null
+        finishReason: string | null
+        toolCalls: { id: string; name: string; args: unknown }[]
+        toolResults: { id: string; name: string; output: unknown }[]
+        usage: { inputTokens: number; outputTokens: number; reasoningTokens: number }
+      }[]
+      context: {
+        provider: string | null
+        model: string | null
+        tables: number
+        startedAt: string
+        durationMs: number
+      }
+      usage: { inputTokens: number; outputTokens: number }
+    }>
+  }
   backup: {
     trigger: () => Promise<any>
     getStatus: () => Promise<any>

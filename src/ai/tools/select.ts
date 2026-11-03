@@ -8,6 +8,7 @@ import { normalizeArabic } from '../guard/arabic'
 import type { ToolDef } from './types'
 
 const CORE = [
+  'query_database',
   'query_metrics',
   'product_price',
   'product_list',

@@ -193,7 +193,7 @@ describe('tool registry', () => {
     expect(MANAGE_WRITE_TOOLS).toHaveLength(17)
     expect(ALIAS_TOOLS).toHaveLength(3)
     expect(ALL_TOOLS.filter((tool) => tool.write)).toHaveLength(23)
-    expect(TOOLS.size).toBe(44)
+    expect(TOOLS.size).toBe(45)
   })
 
   it('gives every tool a description and a schema', () => {

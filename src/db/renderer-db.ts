@@ -469,7 +469,7 @@ export const rendererApi = {
     clearUser: () => {},
   },
   settings: {
-    get: () => getSettings(),
+    get: async () => getSettings(),
     update: (data: any) => { T.settings.update(r => r.id === 'settings', data); return { ok: true } },
   },
   // Remote POS server — the in-browser mock has no Node HTTP listener, so the
@@ -719,7 +719,7 @@ export const rendererApi = {
       T.productAddons.delete(r => r.addonId === id)
       return { ok: true }
     },
-    listByProduct: (productId: string) => T.productAddons.select(r => r.productId === productId).map(l => T.addons.get(a => a.id === l.addonId)).filter(Boolean),
+    listByProduct: async (productId: string) => T.productAddons.select(r => r.productId === productId).map(l => T.addons.get(a => a.id === l.addonId)).filter(Boolean),
     linkToProduct: (productId: string, addonId: string) => { T.productAddons.insert({ productId, addonId }); return { ok: true } },
     setProductLinks: (productId: string, addonIds: string[]) => { T.productAddons.delete(r => r.productId === productId); addonIds.forEach(id => T.productAddons.insert({ productId, addonId: id })); return { ok: true } },
     listRecipes: (addonId: string) => T.addonRecipes.select(r => r.addonId === addonId),
@@ -763,7 +763,7 @@ export const rendererApi = {
       T.modifiers.update(r => r.id === id, { active: false })
       return { ok: true }
     },
-    listByProduct: (productId: string) => {
+    listByProduct: async (productId: string) => {
       const links = T.productModifierGroups.select(r => r.productId === productId)
       return links.map(l => { const g = T.modifierGroups.get(g => g.id === l.modifierGroupId); if (!g) return null; return { ...g, modifiers: T.modifiers.select(r => r.active && r.modifierGroupId === g.id).sort((a, b) => a.sortOrder - b.sortOrder) } }).filter(Boolean)
     },
@@ -1763,6 +1763,12 @@ if (to && o.createdAt > to + '\uffff') return false
       T.subRecipeIngredients.delete(r => r.id === id)
       return { ok: true }
     },
+  },
+  analysis: {
+    query: () => { throw new Error('تحليل SQL يعمل في تطبيق سطح المكتب فقط') },
+    schema: () => [],
+    refresh: () => Date.now(),
+    ask: () => { throw new Error('المحلل الذكي يعمل في تطبيق سطح المكتب فقط') },
   },
   backup: { trigger: () => ({ ok: true }), getStatus: () => ({ lastBackup: null, backupCount: 0 }) },
 }

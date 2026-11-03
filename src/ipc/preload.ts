@@ -297,6 +297,14 @@ contextBridge.exposeInMainWorld('api', {
     driverSummary: (opts?: { from?: string; to?: string }) => invoke('report:driverSummary', opts),
   },
 
+  // ─── Data analysis ────────────────────────────────────────
+  analysis: {
+    query: (sql: string) => invoke('analysis:query', sql),
+    schema: () => invoke('analysis:schema'),
+    refresh: () => invoke('analysis:refresh'),
+    ask: (question: string) => invoke('analysis:ask', question),
+  },
+
   // ─── Backup ───────────────────────────────────────────────
   backup: {
     trigger: () => invoke('backup:trigger'),

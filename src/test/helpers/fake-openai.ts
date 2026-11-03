@@ -10,7 +10,7 @@ import type { Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
 
 export type FakeTurn =
-  | { kind: 'tool'; name: string; args: Record<string, unknown> }
+  | { kind: 'tool'; name: string; args: Record<string, unknown>; reasoning?: string }
   | { kind: 'text'; text: string }
 
 export interface FakeOpenAI {
@@ -44,6 +44,30 @@ function completion(content: string) {
     model: 'fake-model',
     choices: [{ index: 0, message: { role: 'assistant', content }, finish_reason: 'stop' }],
     usage: { prompt_tokens: 5, completion_tokens: 2, total_tokens: 7 },
+  }
+}
+
+function toolCompletion(turn: Extract<FakeTurn, { kind: 'tool' }>) {
+  return {
+    id: CHUNK_ID,
+    object: 'chat.completion',
+    created: 1,
+    model: 'fake-model',
+    choices: [{
+      index: 0,
+      message: {
+        role: 'assistant',
+        content: null,
+        ...(turn.reasoning ? { reasoning_content: turn.reasoning } : {}),
+        tool_calls: [{
+          id: `call-${turn.name}`,
+          type: 'function',
+          function: { name: turn.name, arguments: JSON.stringify(turn.args) },
+        }],
+      },
+      finish_reason: 'tool_calls',
+    }],
+    usage: { prompt_tokens: 20, completion_tokens: 8, total_tokens: 28 },
   }
 }
 
@@ -107,7 +131,7 @@ export async function startFakeOpenAI(
       turnIndex += 1
 
       if (body.stream) respondStream(res, [turn])
-      else respondJson(res, completion(turn.kind === 'text' ? turn.text : ''))
+      else respondJson(res, turn.kind === 'tool' ? toolCompletion(turn) : completion(turn.text))
     })
   })
 

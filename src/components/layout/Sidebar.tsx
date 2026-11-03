@@ -5,7 +5,7 @@ import { useState } from 'react'
 
 export type Page =
   | 'menu' | 'orders' | 'delivery' | 'my-shift'
-  | 'reports' | 'products' | 'categories' | 'addons' | 'modifiers'
+  | 'reports' | 'analysis' | 'products' | 'categories' | 'addons' | 'modifiers'
   | 'inventory' | 'users' | 'shifts' | 'cash-drawer' | 'settings'
   | 'shift-report'
 
@@ -23,6 +23,7 @@ interface NavItem {
 
 const adminItems: NavItem[] = [
   { id: 'reports', label: 'التقارير', icon: 'M3 3v18h18', iconActive: 'M3 3v18h18' },
+  { id: 'analysis', label: 'التحليل', icon: 'M4 6c0-1.657 3.582-3 8-3s8 1.343 8 3-3.582 3-8 3-8-1.343-8-3zm0 0v6c0 1.657 3.582 3 8 3s8-1.343 8-3V6M4 12v6c0 1.657 3.582 3 8 3s8-1.343 8-3v-6', iconActive: 'M4 6c0-1.657 3.582-3 8-3s8 1.343 8 3-3.582 3-8 3-8-1.343-8-3zm0 0v6c0 1.657 3.582 3 8 3s8-1.343 8-3V6M4 12v6c0 1.657 3.582 3 8 3s8-1.343 8-3v-6' },
   { id: 'products', label: 'الكريبات', icon: 'M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4', iconActive: 'M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4' },
   { id: 'categories', label: 'الأقسام', icon: 'M4 6h16M4 10h16M4 14h16M4 18h16', iconActive: 'M4 6h16M4 10h16M4 14h8M4 18h10' },
   { id: 'addons', label: 'الإضافات', icon: 'M12 5v14m-7-7h14', iconActive: 'M12 5v14m-7-7h14' },

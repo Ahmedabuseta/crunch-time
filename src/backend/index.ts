@@ -17,6 +17,7 @@ import * as shifts from './shifts'
 import * as cashdrawer from './cashdrawer'
 import * as inventory from './inventory'
 import * as reports from './reports'
+import * as analysis from './analysis'
 import * as backup from './backup'
 import * as menuExport from './menu-export'
 import * as printing from './printing'
@@ -41,6 +42,7 @@ export interface Backend {
   cashdrawer: typeof cashdrawer
   inventory: typeof inventory
   reports: typeof reports
+  analysis: typeof analysis
   backup: typeof backup
   menuExport: typeof menuExport
   printing: typeof printing
@@ -66,6 +68,7 @@ export function createBackend(bits: ElectronBits): Backend {
     cashdrawer,
     inventory,
     reports,
+    analysis,
     backup,
     menuExport,
     printing,

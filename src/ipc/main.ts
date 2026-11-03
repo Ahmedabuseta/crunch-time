@@ -135,6 +135,7 @@ export async function initBackend() {
   // ports open, and a stale worker would fight the next launch for the queue.
   app.on('will-quit', () => {
     void stopRuntime()
+    void getBackend().analysis.close()
     syncPowerBlocker(false)
   })
 }
@@ -786,6 +787,25 @@ export function registerIpcHandlers() {
 
   ipcMain.handle('report:daysOnHand', () =>
     b.reports.daysOnHand()
+  )
+
+  // ═══════════════════════════════════════════════════════════
+  // DATA ANALYSIS (read-only SQL on a snapshot)
+  // ═══════════════════════════════════════════════════════════
+  ipcMain.handle('analysis:query', (_e, sql: string) =>
+    b.analysis.query(sql)
+  )
+
+  ipcMain.handle('analysis:schema', () =>
+    b.analysis.schema()
+  )
+
+  ipcMain.handle('analysis:refresh', () =>
+    b.analysis.refresh()
+  )
+
+  ipcMain.handle('analysis:ask', (_e, question: string) =>
+    b.analysis.ask(question)
   )
 
   // ═══════════════════════════════════════════════════════════

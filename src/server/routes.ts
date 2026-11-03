@@ -16,6 +16,7 @@ import { registerAdminRoutes } from './routes.admin'
 import { registerDeliveryRoutes } from './routes.delivery'
 import { registerBackupRoutes } from './routes.backup'
 import { registerReportRoutes } from './routes.reports'
+import { registerAnalysisRoutes } from './routes.analysis'
 import { registerAssistantRoutes } from './routes.assistant'
 import { MENU_PAGE_HTML } from './menu-page'
 import { runAsOwner } from './privileges'
@@ -228,6 +229,9 @@ export function registerRoutes(app: FastifyInstance, backend: Backend) {
 
   // ─── Reports ────────────────────────────────────────────────
   registerReportRoutes(app, backend)
+
+  // ─── Read-only SQL analysis over a snapshot ─────────────────
+  registerAnalysisRoutes(app, backend)
 
   // ─── Assistant: chat, config, pending actions ───────────────
   registerAssistantRoutes(app, backend)

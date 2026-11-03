@@ -28,6 +28,8 @@ const base = {
 const entries = [
   path.join(root, 'src/ipc/main.ts'),
   path.join(root, 'src/ipc/preload.ts'),
+  // Worker thread that keeps snapshot SQL off the Electron main process.
+  path.join(root, 'src/analysis/sql-worker.ts'),
 ]
 const opts = (entry) => ({ ...base, entryPoints: [entry], outExtension: { '.js': '.cjs' } })
 
