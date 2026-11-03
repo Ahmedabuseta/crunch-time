@@ -33,7 +33,9 @@ const REMOTE_PORT = 45231
 const TEMPORAL_PORT = 7457
 const base = `http://127.0.0.1:${REMOTE_PORT}`
 
-const ANSWER = 'مبيعات النهاردة ١٢٠ ج.م من ٣ طلبات.'
+// Deliberately number-free: the assistant now rejects a figure the tools did
+// not return, and this suite's fake provider answers from an empty database.
+const ANSWER = 'شوف تقرير مبيعات النهاردة في الكارت.'
 
 const bundleReady = existsSync(path.join(process.cwd(), 'dist-electron', 'workflows.cjs'))
 const binaryReady = existsSync(path.join(process.cwd(), 'build', 'temporal'))
@@ -242,6 +244,43 @@ suite('assistant chat over HTTP', () => {
     })
     expect(res.status).toBe(401)
   })
+
+  it('repairs an invented number before it reaches the chat', async () => {
+    // Step 1 calls a tool, step 2 invents 9999, step 3 is the forced repair.
+    // The invented text must never be published: persistence is the only place
+    // that writes to the SSE stream now.
+    const inventing = await startFakeOpenAI([
+      { kind: 'tool', name: 'sales_summary', args: {} },
+      {
+        kind: 'tool',
+        name: 'answer',
+        args: { text: 'مبيعات النهاردة 9999 ج.م.', cards: ['card-0'], followups: ['وإمبارح؟'] },
+      },
+      {
+        kind: 'tool',
+        name: 'answer',
+        args: { text: ANSWER, cards: ['card-0'], followups: ['وإمبارح؟'] },
+      },
+    ])
+    try {
+      expect(updateAiConfig({ baseUrl: inventing.url }).ok).toBe(true)
+
+      const events = await chat('بعت بكام النهاردة؟')
+      const streamed = events
+        .filter((event) => event.event === 'text')
+        .map((event) => JSON.parse(event.data).d as string)
+        .join('')
+
+      expect(streamed).not.toContain('9999')
+      expect(streamed).toBe(ANSWER)
+
+      const done = events.find((event) => event.event === 'done')
+      expect(done).toBeDefined()
+      expect(JSON.parse(done!.data).followups).toEqual(['وإمبارح؟'])
+    } finally {
+      await inventing.close()
+    }
+  }, 60_000)
 
   it('forces the answer tool when the model replies in prose', async () => {
     // The shape is enforced by the `answer` tool, not by parsing text. A model

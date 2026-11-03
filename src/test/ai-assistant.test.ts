@@ -18,6 +18,7 @@ const { runMigrations } = await import('../db/migrate')
 const { seedDatabase } = await import('../db/seed')
 const { getSqlite, closeSqlite } = await import('../db/client')
 const { getSavedReply } = await import('../ai/guard/replies')
+const { appendMessage, listMessages, removeLastAssistant } = await import('../ai/history')
 const { getUsageToday, recordUsage, withinBudget, todayKey } = await import('../ai/guard/budget')
 const { getAiConfig, getProviderKey, updateAiConfig } = await import('../ai/config')
 const { createAction, executeAction, expireAction, cancelAction, getAction } = await import('../ai/actions')
@@ -192,8 +193,8 @@ describe('tool registry', () => {
     expect(ANALYTICS_TOOLS).toHaveLength(1)
     expect(MANAGE_WRITE_TOOLS).toHaveLength(17)
     expect(ALIAS_TOOLS).toHaveLength(3)
-    expect(ALL_TOOLS.filter((tool) => tool.write)).toHaveLength(23)
-    expect(TOOLS.size).toBe(45)
+    expect(ALL_TOOLS.filter((tool) => tool.write)).toHaveLength(24)
+    expect(TOOLS.size).toBe(47)
   })
 
   it('gives every tool a description and a schema', () => {
@@ -461,6 +462,28 @@ describe('pending actions', () => {
     expect(result.ok).toBe(false)
     expect(getAction(action.id)?.status).toBe('proposed')
     expect(getAction(action.id)?.error).toBeTruthy()
+  })
+})
+
+describe('retry transcript', () => {
+  it('drops the newest assistant line and leaves the question in place', async () => {
+    const thread = `retry-${Date.now()}`
+    appendMessage(thread, 'user', 'السجق بكام؟')
+    await new Promise((resolve) => setTimeout(resolve, 2))
+    appendMessage(thread, 'assistant', 'السجق ٩٥ ج.م')
+    await new Promise((resolve) => setTimeout(resolve, 2))
+    appendMessage(thread, 'user', 'والكريب؟')
+    await new Promise((resolve) => setTimeout(resolve, 2))
+    appendMessage(thread, 'assistant', 'الكريب ٦٠ ج.م')
+
+    removeLastAssistant(thread)
+    const rows = listMessages(thread, 10)
+    expect(rows.map((row) => row.role)).toEqual(['user', 'assistant', 'user'])
+    expect(rows[rows.length - 1].content).toBe('والكريب؟')
+
+    // A failed turn with no answer yet is already retry-ready.
+    removeLastAssistant(thread)
+    expect(listMessages(thread, 10)).toHaveLength(3)
   })
 })
 

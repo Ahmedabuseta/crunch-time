@@ -5,7 +5,7 @@
 // only path to `backend.*`, and it lives in src/ai/actions.ts.
 import { z } from 'zod'
 import { money, percent, quantity, actionCard, marginPercent, packagesFor } from '../cards'
-import { createAction } from '../actions'
+import { createAction, getAction } from '../actions'
 import type { ToolOutput } from '../schemas'
 import { resolveIngredient, resolveProduct, siblingsOf } from './resolve'
 import { toolOutput, type ToolDef } from './types'
@@ -295,6 +295,65 @@ export const WRITE_TOOLS: ToolDef[] = [
       return toolOutput(
         { actionId: action.id, from: fromItem.name, to: toItem.name, newFrom, newTo },
         `جاهز أعمل المبادلة — مستني تأكيدك`,
+        [],
+      )
+    },
+  },
+
+  {
+    name: 'propose_actions',
+    description: 'تجميع أكتر من إجراء اتقترح في نفس الدور في خطة واحدة بتتأكد مرة واحدة. بترسل action_ids بالترتيب؛ الخطة بتقف عند أول خطأ.',
+    write: true,
+    schema: z.object({
+      title: z.string().min(3).max(80).describe('عنوان قصير للخطة، مثل «تعديل أسعار ٣ أصناف»'),
+      action_ids: z.array(z.string().min(1)).min(2).max(6).describe('ids الإجراءات اللي رجعت من أدوات التغيير، بالترتيب'),
+      note: z.string().max(200).optional(),
+    }),
+    async run(args, ctx): Promise<ToolOutput> {
+      const allowed = new Set(ctx.turnActionIds ?? [])
+      const ids: string[] = []
+      const children = []
+
+      for (const raw of args.action_ids) {
+        const id = String(raw ?? '').trim()
+        if (!id || ids.includes(id)) continue
+        if (!allowed.has(id)) {
+          return toolOutput(
+            { error: `الإجراء ${id} مش من الدور ده — استخدم ids الإجراءات اللي رجعتلك في نفس الرد` },
+            'الخطة لازم تجمّع إجراءات اتقترحت في نفس الرد',
+          )
+        }
+        const child = getAction(id)
+        if (!child) return toolOutput({ error: 'إجراء مش موجود' }, 'إجراء في الخطة مش موجود')
+        if (child.kind === 'plan') return toolOutput({ error: 'ممنوع خطة جوه خطة' }, 'ممنوع خطة جوه خطة')
+        if (child.status !== 'proposed') {
+          return toolOutput({ error: `الإجراء ${id} حالته ${child.status}` }, 'فيه إجراء في الخطة مش متاح للتأكيد')
+        }
+        ids.push(id)
+        children.push(child)
+      }
+
+      if (ids.length < 2) {
+        return toolOutput({ error: 'الخطة لازم تحتوي على خطوتين على الأقل' }, 'محتاج خطوتين على الأقل عشان أعمل خطة')
+      }
+
+      const preview = {
+        title: `خطة: ${args.title}`,
+        subject: `${ids.length} خطوات`,
+        rows: children.slice(0, 6).map((child) => ({
+          label: child.preview.title,
+          value: `${child.preview.subject} — ${child.preview.result}`.slice(0, 180),
+        })),
+        result: `هيتنفّذوا بالترتيب: ${children.map((child) => child.preview.title).join(' ← ')}. وهيقف عند أول خطأ.`,
+        warning: args.note ? String(args.note) : undefined,
+      }
+
+      const action = createAction('plan', { actionIds: ids }, preview)
+      ctx.cards.push(actionCard(action.id, 'proposed', preview))
+
+      return toolOutput(
+        { planId: action.id, steps: ids.length },
+        `جاهز أنفّذ ${ids.length} تغييرات بالترتيب — مستني تأكيدك`,
         [],
       )
     },

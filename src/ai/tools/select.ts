@@ -5,6 +5,7 @@
 // This is deterministic routing, not retrieval: the model still chooses the
 // tool and its arguments from the exposed schemas.
 import { normalizeArabic } from '../guard/arabic'
+import { MAX_EXTRA_TOOLS } from '../loop'
 import type { ToolDef } from './types'
 
 const CORE = [
@@ -13,10 +14,9 @@ const CORE = [
   'product_price',
   'product_list',
   'inventory_status',
+  // Always exposed: the only way to recover when the keyword groups miss.
+  'find_tools',
 ]
-
-/** Action turns need confirmation tools, not every report snapshot. */
-const ACTION_CORE = CORE
 
 const PRODUCT_READ = ['product_details']
 const PRODUCT_MARGIN = ['item_margins']
@@ -83,13 +83,14 @@ function add(target: Set<string>, names: string[]): void {
 }
 
 /**
- * The exposed tools for one user message. The returned names are a subset of
- * `all`; unknown names are ignored so a renamed tool cannot break the turn.
+ * The exposed tools for one user message, plus anything `find_tools` surfaced
+ * earlier in the same turn. The returned names are a subset of `all`; unknown
+ * names are ignored so a renamed tool cannot break the turn.
  */
-export function selectToolNames(message: string): string[] {
+export function selectToolNames(message: string, extra: readonly string[] = []): string[] {
   const text = normalizeArabic(String(message ?? ''))
   const action = ACTION.test(text)
-  const selected = new Set<string>(action ? ACTION_CORE : CORE)
+  const selected = new Set<string>(CORE)
 
   const product = PRODUCT.test(text)
   const price = PRODUCT_PRICE.test(text)
@@ -141,12 +142,16 @@ export function selectToolNames(message: string): string[] {
     }
   }
 
+  // Discovered tools are added last and capped: the router stays the primary
+  // selector, and a model cannot grow the schema list without bound.
+  for (const name of extra.slice(0, MAX_EXTRA_TOOLS)) selected.add(name)
+
   return [...selected]
 }
 
-export function selectTools(all: ToolDef[], message: string): ToolDef[] {
+export function selectTools(all: ToolDef[], message: string, extra: readonly string[] = []): ToolDef[] {
   const byName = new Map(all.map((tool) => [tool.name, tool]))
-  return selectToolNames(message)
+  return selectToolNames(message, extra)
     .map((name) => byName.get(name))
     .filter((tool): tool is ToolDef => Boolean(tool))
 }

@@ -11,8 +11,10 @@ import { getAiConfig, getProviderKey, keyHint, threadId, updateAiConfig, type Ai
 import { getSavedReply, type ReplyKey } from '../ai/guard/replies'
 import { isGreeting, words } from '../ai/guard/arabic'
 import { recordUsage, todaySnapshot, withinBudget } from '../ai/guard/budget'
-import { appendMessage, clearHistory, listMessages } from '../ai/history'
+import { appendMessage, clearHistory, listMessages, removeLastAssistant } from '../ai/history'
 import { cancelAction, executeAction, getAction } from '../ai/actions'
+import { createProvider } from '../ai/provider'
+import { readTrace } from '../ai/trace'
 import { closeTurn, subscribe, type TurnEvent } from '../ai/streams'
 import { ensureRuntime, getClient, runtimeStatus, TASK_QUEUE } from '../ai/runtime'
 import { createRateLimiter } from './ratelimit'
@@ -26,6 +28,8 @@ const RATE_KEY = 'owner'
 
 interface ChatBody {
   message?: string
+  /** Re-runs the last question: the stored answer is replaced, not appended to. */
+  retry?: boolean
 }
 
 interface TurnMessage {
@@ -78,14 +82,13 @@ export function registerAssistantRoutes(app: FastifyInstance, backend: Backend) 
     const started = Date.now()
     try {
       const { generateText } = await import('ai')
-      const { createOpenAICompatible } = await import('@ai-sdk/openai-compatible')
-      const provider = createOpenAICompatible({
-        name: config.provider || 'openai-compatible',
-        baseURL: config.baseUrl,
+      const model = createProvider({
+        provider: config.provider,
+        baseUrl: config.baseUrl,
         apiKey: getProviderKey() ?? '',
-      })
+      })(config.model)
       await generateText({
-        model: provider(config.model),
+        model,
         prompt: 'ping',
         maxOutputTokens: 1,
         temperature: 0,
@@ -153,21 +156,33 @@ export function registerAssistantRoutes(app: FastifyInstance, backend: Backend) 
     return { ok: true }
   })
 
+  // The per-turn execution trace: steps, tool calls with durations, tokens and
+  // the numbers the answer was told not to invent. Written as JSONL, so it is a
+  // debugging artifact rather than another table on the shop PC.
+  app.get('/assistant/trace/:turnId', async (req, reply) => {
+    const turnId = String((req.params as Record<string, unknown>).turnId ?? '')
+    if (!turnId) return reply.code(400).send({ ok: false, error: 'turnId مطلوب' })
+    const trace = await readTrace(turnId)
+    if (!trace) return reply.code(404).send({ ok: false, error: 'مفيش تتبع للدور ده' })
+    return { ok: true, trace }
+  })
+
   // ─── Chat ───────────────────────────────────────────────────
   app.post('/assistant/chat', async (req: FastifyRequest, reply: FastifyReply) => {
     const body = (req.body || {}) as ChatBody
     const message = String(body.message ?? '').trim()
+    const retry = Boolean(body.retry)
     const wantsStream = String((req.query as Record<string, unknown>)?.stream ?? '1') !== '0'
     const thread = threadId()
     const turnId = uuid()
 
     if (!wantsStream) {
-      const outcome = await prepareTurn(message, thread)
+      const outcome = await prepareTurn(message, thread, retry)
       if ('blocked' in outcome) {
         return { ok: true, blocked: outcome.blocked, message: outcome.message }
       }
       try {
-        return { ok: true, message: await runTurn(turnId, thread, message) }
+        return { ok: true, message: await runTurn(turnId, thread, message, retry) }
       } catch (err: any) {
         return reply.code(502).send({ ok: false, error: providerMessage(err) })
       }
@@ -224,12 +239,12 @@ export function registerAssistantRoutes(app: FastifyInstance, backend: Backend) 
     })
 
     try {
-      const outcome = await prepareTurn(message, thread)
+      const outcome = await prepareTurn(message, thread, retry)
       if ('blocked' in outcome) {
         send('text', { d: outcome.message })
         send('done', { messageId: null, cards: [], followups: [], blocked: outcome.blocked })
       } else {
-        const result = await runTurn(turnId, thread, message)
+        const result = await runTurn(turnId, thread, message, retry)
         send('done', {
           messageId: result.messageId,
           cards: result.cards,
@@ -267,28 +282,31 @@ export function registerAssistantRoutes(app: FastifyInstance, backend: Backend) 
    * a gate — the system prompt asks the model to decline politely, which keeps
    * the assistant reachable for any phrasing of a real question.
    */
-  async function prepareTurn(message: string, thread: string): Promise<Blocked | Ready> {
+  async function prepareTurn(message: string, thread: string, retry = false): Promise<Blocked | Ready> {
     const config = getAiConfig()
-    if (!config.enabled) return block(thread, message, 'disabled')
-    if (!config.hasKey) return block(thread, message, 'no_key')
+    if (!config.enabled) return block(thread, message, 'disabled', retry)
+    if (!config.hasKey) return block(thread, message, 'no_key', retry)
 
-    if (chatLimiter.retryAfter(RATE_KEY) !== null) return block(thread, message, 'rate_limited')
-    if (!withinBudget(config.dailyTokenLimit)) return block(thread, message, 'budget')
-    if (message.length < 2 || words(message).length === 0) return block(thread, message, 'empty')
-    if (isGreeting(message)) return block(thread, message, 'greeting')
+    if (chatLimiter.retryAfter(RATE_KEY) !== null) return block(thread, message, 'rate_limited', retry)
+    if (!withinBudget(config.dailyTokenLimit)) return block(thread, message, 'budget', retry)
+    if (message.length < 2 || words(message).length === 0) return block(thread, message, 'empty', retry)
+    if (isGreeting(message)) return block(thread, message, 'greeting', retry)
 
     const runtime = await ensureRuntime()
-    if (!runtime.ok) return block(thread, message, 'temporal_down')
+    if (!runtime.ok) return block(thread, message, 'temporal_down', retry)
 
     return { ok: true }
   }
 
   /** Records a refused turn so the transcript explains why nothing happened. */
-  function block(thread: string, message: string, key: ReplyKey): Blocked {
+  function block(thread: string, message: string, key: ReplyKey, retry = false): Blocked {
     chatLimiter.recordFailure(RATE_KEY)
     const text = getSavedReply(key)
     try {
-      appendMessage(thread, 'user', message)
+      // A retry must not duplicate the question that is already stored, and
+      // its refused answer replaces the previous one rather than stacking.
+      if (retry) removeLastAssistant(thread)
+      else appendMessage(thread, 'user', message)
       appendMessage(thread, 'assistant', text)
     } catch {
       // The transcript is best-effort; the reply still reaches the phone.
@@ -304,21 +322,9 @@ export function registerAssistantRoutes(app: FastifyInstance, backend: Backend) 
       return reply.code(409).send({ ok: false, status: action.status, error: 'الإجراء ده اتلغى أو انتهى' })
     }
 
-    // Prefer the workflow: it is what makes the confirm durable, and its
-    // validator rejects a malformed decision before anything is written.
-    if (action.workflowId) {
-      try {
-        const handle = getClient().workflow.getHandle(action.workflowId)
-        const result = await handle.executeUpdate<{ status: string; ok: boolean; error?: string }, [boolean]>('confirm', {
-          args: [approve],
-        })
-        return { ok: result.ok, status: result.status, error: result.error }
-      } catch {
-        // Fall through: a Temporal outage must not strand a write the owner
-        // has already agreed to.
-      }
-    }
-
+    // Confirm is idempotency-based: `executeAction` checks the row and applies
+    // it inside one transaction, so a double tap or a retried request can never
+    // write twice. A plan applies its children the same way, in order.
     const result = approve
       ? executeAction(id, 'المساعد')
       : cancelAction(id)
@@ -329,9 +335,13 @@ export function registerAssistantRoutes(app: FastifyInstance, backend: Backend) 
    * Persists the user turn, starts the workflow and waits for its result. The
    * workflow reads history itself, so the user row is written first — otherwise
    * the model would never see the question it is answering.
+   *
+   * On a retry the question is already stored: the old answer is dropped and
+   * the workflow re-reads the same transcript, so one question keeps one answer.
    */
-  async function runTurn(turnId: string, thread: string, message: string): Promise<TurnMessage> {
-    appendMessage(thread, 'user', message)
+  async function runTurn(turnId: string, thread: string, message: string, retry = false): Promise<TurnMessage> {
+    if (retry) removeLastAssistant(thread)
+    else appendMessage(thread, 'user', message)
     const client = getClient()
     const handle = await client.workflow.start('assistantTurn', {
       taskQueue: TASK_QUEUE,

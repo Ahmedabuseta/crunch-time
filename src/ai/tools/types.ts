@@ -11,6 +11,8 @@ export interface ToolContext {
   turnId: string
   /** Cards produced so far this turn, in call order. */
   cards: ChatCard[]
+  /** Action ids proposed earlier in this turn — the only ones a plan may group. */
+  turnActionIds?: string[]
   now: Date
 }
 

@@ -54,6 +54,22 @@ describe('tool router', () => {
     expect(has(names, 'profit_summary')).toBe(true)
     expect(names.some((name) => TOOLS.get(name)?.write)).toBe(false)
   })
+  it('always exposes find_tools', () => {
+    expect(has(selectToolNames('السجق بكام'), 'find_tools')).toBe(true)
+    expect(has(selectToolNames('حاجة غريبة خالص'), 'find_tools')).toBe(true)
+  })
+
+  it('exposes a tool discovered earlier in the turn', () => {
+    expect(has(selectToolNames('حاجة غريبة خالص', ['record_waste']), 'record_waste')).toBe(true)
+  })
+
+  it('discovers a tool from a description phrase', async () => {
+    const find = ALL_TOOLS.find((tool) => tool.name === 'find_tools')!
+    const out = await find.run({ query: 'تالف' }, { turnId: 't', cards: [], now: new Date() })
+    const names = (out.data as any).tools.map((tool: any) => tool.name) as string[]
+    expect(names).toContain('record_waste')
+  })
+
   it('never returns a name outside the registry', () => {
     for (const message of ['السجق بكام', 'ضيف منتج', 'ضيف وصفة', 'سحيق يعني سجق', 'ليه الربح قل']) {
       for (const name of selectToolNames(message)) {

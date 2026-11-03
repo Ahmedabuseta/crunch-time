@@ -4,14 +4,17 @@
 // tool run and every database write happens here, which is what lets Temporal
 // replay a turn deterministically and show it in the UI with real durations.
 import { Output, streamText, tool } from 'ai'
-import { createOpenAICompatible } from '@ai-sdk/openai-compatible'
 import { ApplicationFailure } from '@temporalio/activity'
 import { getAiConfigWithKey } from '../config'
-import { buildSystemPrompt } from '../prompt'
+import { buildSystemPrompt, PROMPT_VERSION, type TurnFacts } from '../prompt'
 import { ALL_TOOLS, getTool, redact } from '../tools'
 import { selectTools } from '../tools/select'
+import { buildTurnState, type ToolCall, type ToolExchange } from '../loop'
+import { createProvider, type ProviderFactory } from '../provider'
+import { appendTrace, type TurnTrace } from '../trace'
+import { unknownNumbers } from '../guard/numbers'
 import { resolveCards, AssistantReplySchema, ToolOutputSchema, type AssistantReply, type ChatCard } from '../schemas'
-import { appendMessage, modelHistory } from '../history'
+import { appendMessage, getSummary, modelHistory } from '../history'
 import { recordUsage } from '../guard/budget'
 import { getSavedReply } from '../guard/replies'
 import { publishStatus, publishText } from '../streams'
@@ -26,13 +29,17 @@ import {
 
 const { settings } = schema
 
+const READ_CONCURRENCY = 4
+
 export interface LoadContextInput {
   threadId: string
 }
 
 export interface LoadContextOutput {
-  system: string
+  facts: TurnFacts
   messages: { role: 'user' | 'assistant'; content: string }[]
+  /** ISO timestamp; the workflow cannot read a clock, so the trace gets it here. */
+  startedAt: string
 }
 
 export async function loadContext(input: LoadContextInput): Promise<LoadContextOutput> {
@@ -41,15 +48,28 @@ export async function loadContext(input: LoadContextInput): Promise<LoadContextO
     currency: settings.currencyLabel,
   }).from(settings).where(eq(settings.id, 'settings')).get()
 
-  const system = buildSystemPrompt({
-    restaurantName: row?.name || 'Crunch Time',
-    currencyLabel: row?.currency || 'ج.م',
-    today: new Date().toISOString().slice(0, 10),
-    cardsAvailable: 0,
-    followupAllowed: true,
-  })
+  const now = new Date()
+  const pad = (value: number) => String(value).padStart(2, '0')
+  const today = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`
 
-  return { system, messages: modelHistory(input.threadId) }
+  let conversationSummary: string | null = null
+  try {
+    conversationSummary = getSummary(input.threadId)
+  } catch {
+    // A thread row that has not been written yet is the normal first turn.
+  }
+
+  return {
+    facts: {
+      restaurantName: row?.name || 'Crunch Time',
+      currencyLabel: row?.currency || 'ج.م',
+      today,
+      weekday: now.toLocaleDateString('ar-EG', { weekday: 'long' }),
+      conversationSummary,
+    },
+    messages: modelHistory(input.threadId),
+    startedAt: now.toISOString(),
+  }
 }
 
 function safeConfig() {
@@ -62,50 +82,64 @@ function safeConfig() {
 
 export interface ModelStepInput {
   turnId: string
-  system: string
+  facts: TurnFacts
   /** Plain turns from the transcript, oldest first. */
   history: { role: 'user' | 'assistant'; content: string }[]
   /** Tool calls already run this turn, in order. */
-  exchanges: { id: string; name: string; args: unknown; data: unknown; summary?: string }[]
+  exchanges: ToolExchange[]
   /** Ids of cards produced so far, so the model can choose among them. */
   cardIds: string[]
   step: number
+  maxSteps: number
   /** The owner's current message, used to expose only relevant tool schemas. */
   message: string
+  /** Names `find_tools` surfaced earlier in this turn. */
+  extraTools?: string[]
   /** The last step of a turn must answer; data tools are no longer offered. */
   forceAnswer?: boolean
+  /** Numbers the previous answer invented, for the single repair round. */
+  repair?: string[]
+}
+
+export interface ModelStepCommon {
+  promptTokens: number
+  completionTokens: number
+  promptChars: number
+  promptVersion: string
 }
 
 export type ModelStepOutput =
-  | { kind: 'tool-calls'; calls: { id: string; name: string; args: unknown }[]; promptTokens: number; completionTokens: number }
-  | { kind: 'answer'; reply: AssistantReply; promptTokens: number; completionTokens: number; degraded: boolean }
+  | ({ kind: 'tool-calls'; calls: ToolCall[] } & ModelStepCommon)
+  | ({ kind: 'answer'; reply: AssistantReply; degraded: boolean } & ModelStepCommon)
 
 /**
- * One model round trip. Streams prose to the phone through the turn registry
- * and returns either the tool calls to run next or the validated answer.
+ * One model round trip. The prompt is rebuilt here, on every step, because
+ * this is the only layer that knows the live step budget and the exposed tools.
  */
 export async function modelStep(input: ModelStepInput): Promise<ModelStepOutput> {
+  return modelStepWith(input, createProvider)
+}
+
+/** Injectable form: tests pass their own factory, the workflow passes none. */
+export async function modelStepWith(input: ModelStepInput, factory: ProviderFactory): Promise<ModelStepOutput> {
   const config = safeConfig()
-  const provider = createOpenAICompatible({
-    name: config.provider || 'openai-compatible',
-    baseURL: config.baseUrl,
-    apiKey: config.apiKey,
-    // Ask for a real JSON schema rather than a bare "respond in JSON" hint. A
-    // provider that rejects it answers 400 and `run(false)` retries without the
-    // structured output, so this can only help.
-    supportsStructuredOutputs: true,
+  const model = factory(config)(config.model)
+
+  const exposed = input.forceAnswer ? [] : selectTools(ALL_TOOLS, input.message, input.extraTools ?? [])
+
+  const system = buildSystemPrompt({
+    facts: input.facts,
+    state: buildTurnState(input.step, input.maxSteps, input.exchanges, input.cardIds),
+    tools: exposed,
+    followupAllowed: true,
+    repair: input.repair,
   })
 
-  const system = input.cardIds.length
-    ? `${input.system}\n\nكروت متاحة في الرد ده: ${input.cardIds.join(', ')}`
-    : `${input.system}\n\nمفيش كروت متاحة في الرد ده.`
-
-  const exposedTools = input.forceAnswer ? [] : selectTools(ALL_TOOLS, input.message)
   const sdkTools = input.forceAnswer
     ? { [ANSWER_TOOL]: answerTool() }
     : {
         ...Object.fromEntries(
-          exposedTools.map((def) => [
+          exposed.map((def) => [
             def.name,
             tool({ description: def.description, inputSchema: def.schema }),
           ]),
@@ -117,6 +151,7 @@ export async function modelStep(input: ModelStepInput): Promise<ModelStepOutput>
   // workflow: the workflow stores plain JSON, and only this module knows the
   // SDK's message shape.
   const messages = buildMessages(input.history, input.exchanges)
+  const base = { promptChars: system.length, promptVersion: PROMPT_VERSION }
 
   const run = async (withOutput: boolean) => {
     // The SDK replaces a provider failure that happens before the first step
@@ -124,7 +159,7 @@ export async function modelStep(input: ModelStepInput): Promise<ModelStepOutput>
     // fallback in `readToolCalls`.
     let streamError: unknown
     const result = streamText({
-      model: provider(config.model),
+      model,
       system,
       messages,
       tools: sdkTools,
@@ -205,6 +240,7 @@ export async function modelStep(input: ModelStepInput): Promise<ModelStepOutput>
       kind: 'tool-calls',
       calls: dataCalls.map((call) => ({ id: call.toolCallId, name: call.toolName, args: call.input })),
       ...usage,
+      ...base,
     }
   }
 
@@ -218,7 +254,7 @@ export async function modelStep(input: ModelStepInput): Promise<ModelStepOutput>
    */
   const forceAnswer = async () => {
     const forced = streamText({
-      model: provider(config.model),
+      model,
       system: `${system}\n\nقدّم ردك الآن باستخدام أداة «${ANSWER_TOOL}» فقط، ومتكتبش نص حر.`,
       messages,
       tools: { [ANSWER_TOOL]: answerTool() },
@@ -263,12 +299,16 @@ export async function modelStep(input: ModelStepInput): Promise<ModelStepOutput>
     ? readAnswer(finalCall.input)
     : { text: getSavedReply('needs_context'), cards: [], followups: [] }
 
-  // The whole reply arrives inside the tool call, so the bubble is filled once
-  // instead of token by token. That is the cost of enforcement, and it is what
-  // stops a JSON payload ever reaching the chat.
-  publishText(input.turnId, reply.text)
-
-  return { kind: 'answer', reply, promptTokens, completionTokens, degraded: finalCall === null }
+  // The text is not published here: the workflow may still reject invented
+  // numbers and repair it. `persistTurn` publishes the single final answer.
+  return {
+    kind: 'answer',
+    reply,
+    promptTokens,
+    completionTokens,
+    degraded: finalCall === null,
+    ...base,
+  }
 }
 
 /**
@@ -278,7 +318,7 @@ export async function modelStep(input: ModelStepInput): Promise<ModelStepOutput>
  */
 function buildMessages(
   history: { role: 'user' | 'assistant'; content: string }[],
-  exchanges: { id: string; name: string; args: unknown; data: unknown; summary?: string }[],
+  exchanges: readonly ToolExchange[],
 ): any[] {
   const messages: any[] = history.map((turn) => ({ role: turn.role, content: turn.content }))
   for (const exchange of exchanges) {
@@ -367,6 +407,8 @@ export interface RunToolInput {
   turnId: string
   name: string
   args: unknown
+  /** Action ids proposed earlier in this turn — a plan may group only these. */
+  turnActionIds?: string[]
 }
 
 export interface RunToolOutput {
@@ -396,7 +438,12 @@ export async function runTool(input: RunToolInput): Promise<RunToolOutput> {
   }
 
   let raw: unknown
-  const ctx = { turnId: input.turnId, cards: [] as ChatCard[], now: new Date() }
+  const ctx = {
+    turnId: input.turnId,
+    cards: [] as ChatCard[],
+    turnActionIds: input.turnActionIds ?? [],
+    now: new Date(),
+  }
   try {
     raw = await def.run(parsedArgs.data, ctx)
   } catch (err: any) {
@@ -417,15 +464,71 @@ export async function runTool(input: RunToolInput): Promise<RunToolOutput> {
   }
 }
 
+// ─── Batch tool execution ──────────────────────────────────
+
+export interface BatchToolResult extends RunToolOutput {
+  id: string
+  name: string
+  ms: number
+}
+
+export interface RunToolsInput {
+  turnId: string
+  calls: ToolCall[]
+  turnActionIds?: string[]
+}
+
+export interface RunToolsOutput {
+  results: BatchToolResult[]
+}
+
+/**
+ * Runs one step's calls. Reads are independent, so they go in bounded batches;
+ * writes stay sequential and in the model's order, because their action ids and
+ * cards are what the next step and the confirm UI refer to.
+ */
+export async function runTools(input: RunToolsInput): Promise<RunToolsOutput> {
+  const results: BatchToolResult[] = new Array(input.calls.length)
+  const reads: number[] = []
+  const writes: number[] = []
+
+  input.calls.forEach((call, index) => {
+    if (getTool(call.name)?.write) writes.push(index)
+    else reads.push(index)
+  })
+
+  const runOne = async (index: number) => {
+    const call = input.calls[index]
+    const started = Date.now()
+    const output = await runTool({
+      turnId: input.turnId,
+      name: call.name,
+      args: call.args,
+      turnActionIds: input.turnActionIds,
+    })
+    results[index] = { id: call.id, name: call.name, ...output, ms: Date.now() - started }
+  }
+
+  for (let offset = 0; offset < reads.length; offset += READ_CONCURRENCY) {
+    await Promise.all(reads.slice(offset, offset + READ_CONCURRENCY).map(runOne))
+  }
+  for (const index of writes) await runOne(index)
+
+  return { results }
+}
+
 export interface ValidateReplyInput {
   turnId: string
   reply: AssistantReply
   producedCards: ChatCard[]
+  exchanges: ToolExchange[]
 }
 
 export interface ValidateReplyOutput {
   reply: AssistantReply
   cards: ChatCard[]
+  /** Numbers in the text that no tool returned. */
+  unknown: string[]
 }
 
 /**
@@ -449,10 +552,15 @@ export async function validateReply(input: ValidateReplyInput): Promise<Validate
       issues: parsed.error.flatten(),
     })
   }
-  return { reply: parsed.data, cards: resolveCards(parsed.data.cards, input.producedCards) }
+  return {
+    reply: parsed.data,
+    cards: resolveCards(parsed.data.cards, input.producedCards),
+    unknown: unknownNumbers(parsed.data.text, input.exchanges),
+  }
 }
 
 export interface PersistTurnInput {
+  turnId: string
   threadId: string
   user: string
   text: string
@@ -464,12 +572,28 @@ export interface PersistTurnInput {
 
 export async function persistTurn(input: PersistTurnInput): Promise<{ messageId: string }> {
   const message = appendMessage(input.threadId, 'assistant', input.text, input.cards, input.followups)
+  // The one publish of the turn: whatever is here is the validated answer, not
+  // a draft that a repair round or the number guard might replace.
+  publishText(input.turnId, input.text)
   try {
     recordUsage({ promptTokens: input.promptTokens, completionTokens: input.completionTokens })
   } catch {
     // Usage accounting must never fail a turn.
   }
   return { messageId: message.id }
+}
+
+export interface PersistTraceInput {
+  trace: TurnTrace
+}
+
+export async function persistTrace(input: PersistTraceInput): Promise<{ file: string | null }> {
+  const startedAt = input.trace.startedAt || new Date().toISOString()
+  // The workflow never reads a clock, so the duration is filled in here.
+  const durationMs = input.trace.durationMs > 0
+    ? input.trace.durationMs
+    : Math.max(0, Date.now() - Date.parse(startedAt))
+  return { file: await appendTrace({ ...input.trace, startedAt, durationMs }) }
 }
 
 // ─── Confirm-action activities ──────────────────────────────
@@ -495,8 +619,10 @@ export const activities = {
   loadContext,
   modelStep,
   runTool,
+  runTools,
   validateReply,
   persistTurn,
+  persistTrace,
   applyPendingAction,
   cancelPendingAction,
   expirePendingAction,

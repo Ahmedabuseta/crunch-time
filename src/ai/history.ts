@@ -6,7 +6,7 @@
 // written by the model itself — cheaper than replaying them and enough for
 // "وإمبارح؟" to still make sense.
 import { desc, eq } from 'drizzle-orm'
-import { getDb } from '../db/client'
+import { getDb, getSqlite } from '../db/client'
 import * as schema from '../db/schema'
 import { now, uuid } from '../backend/shared'
 import type { ChatCard } from './schemas'
@@ -92,8 +92,10 @@ function parseJson<T>(value: string | null | undefined, fallback: T): T {
 }
 
 /**
- * The turns to send to the model: the last `KEEP_TURNS`, oldest first, with the
- * stored summary (when there is one) as a leading assistant note.
+ * The turns to send to the model: the last `KEEP_TURNS`, oldest first. The
+ * stored summary is not a message: `loadContext` reads it separately and the
+ * prompt renders it as conversation context, so it costs one small section
+ * instead of a fake turn the model might answer.
  */
 export function modelHistory(threadId: string): { role: 'user' | 'assistant'; content: string }[] {
   const rows = listMessages(threadId, KEEP_TURNS)
@@ -116,6 +118,21 @@ export function saveSummary(threadId: string, summary: string, upto: string): vo
 export function needsSummary(threadId: string): boolean {
   const rows = getDb().select({ id: aiMessages.id }).from(aiMessages).where(eq(aiMessages.threadId, threadId)).all()
   return rows.length > SUMMARISE_AT
+}
+
+/**
+ * Drops the newest assistant line. A retry re-runs the same question, so the
+ * old answer has to go: otherwise the transcript (and every later history load)
+ * would show two answers to one question.
+ */
+export function removeLastAssistant(threadId: string): void {
+  // rowid, not createdAt: two lines written in the same millisecond must still
+  // have an unambiguous newest one, or a retry could delete the question.
+  const row = getSqlite()
+    .prepare('SELECT id, role FROM ai_messages WHERE thread_id = ? ORDER BY rowid DESC LIMIT 1')
+    .get(threadId) as { id: string; role: string } | undefined
+  if (!row || row.role !== 'assistant') return
+  getSqlite().prepare('DELETE FROM ai_messages WHERE id = ?').run(row.id)
 }
 
 export function clearHistory(threadId: string): void {

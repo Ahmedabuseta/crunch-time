@@ -10,6 +10,7 @@ import { MANAGE_WRITE_TOOLS } from './manage-write'
 import { ANALYTICS_TOOLS } from './analytics'
 import { SQL_TOOLS } from './sql'
 import { ALIAS_TOOLS } from './aliases'
+import { createDiscoverTool } from './discover'
 import type { ToolDef, ToolRegistry } from './types'
 
 export const ALL_TOOLS: ToolDef[] = [
@@ -20,6 +21,8 @@ export const ALL_TOOLS: ToolDef[] = [
   ...WRITE_TOOLS,
   ...MANAGE_WRITE_TOOLS,
   ...ALIAS_TOOLS,
+  // Last, and built from a getter: it reads the registry lazily.
+  createDiscoverTool(() => ALL_TOOLS),
 ]
 
 export const TOOLS: ToolRegistry = new Map(ALL_TOOLS.map((tool) => [tool.name, tool]))

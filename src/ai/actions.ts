@@ -45,6 +45,7 @@ export type ActionKind =
   | 'update_subrecipe_ingredient'
   | 'remove_subrecipe_ingredient'
   | 'learn_alias'
+  | 'plan'
 
 export type ActionStatus = 'proposed' | 'executed' | 'failed' | 'cancelled' | 'expired'
 
@@ -111,10 +112,6 @@ export function getAction(id: string): ActionRow | null {
   }
 }
 
-export function attachWorkflow(id: string, workflowId: string): void {
-  getDb().update(aiActions).set({ workflowId }).where(eq(aiActions.id, id)).run()
-}
-
 function safeJson<T = Record<string, unknown>>(value: string | null | undefined): T {
   try {
     return JSON.parse(String(value ?? '{}')) as T
@@ -141,6 +138,12 @@ export interface ExecuteResult {
  * `executed` and returns the stored result instead of applying again.
  */
 export function executeAction(id: string, deviceLabel?: string | null): ExecuteResult {
+  // A plan is not a write of its own: it is an ordered batch of pending actions.
+  // Running it here, outside the single-action transaction, means each child
+  // keeps its own exactly-once transaction and its own audit row.
+  const planned = getAction(id)
+  if (planned?.kind === 'plan') return executePlanAction(planned, deviceLabel)
+
   const sqlite = getSqlite()
   let outcome: ExecuteResult = { ok: false, status: 'proposed' }
 
@@ -204,6 +207,92 @@ export function executeAction(id: string, deviceLabel?: string | null): ExecuteR
     })
   }
   return outcome
+}
+
+const MAX_PLAN_STEPS = 6
+
+/** The child action ids of a plan row, cleaned and capped. */
+export function planActionIds(payload: Record<string, unknown>): string[] {
+  const raw = (payload as { actionIds?: unknown }).actionIds
+  if (!Array.isArray(raw)) return []
+  const ids: string[] = []
+  for (const entry of raw) {
+    const id = String(entry ?? '').trim()
+    if (!id || ids.includes(id)) continue
+    ids.push(id)
+    if (ids.length >= MAX_PLAN_STEPS) break
+  }
+  return ids
+}
+
+/**
+ * Applies the plan's children in order. Stops at the first refusal: the owner
+ * confirmed a batch, not an all-or-nothing transaction, and silently skipping a
+ * failed step would leave the world in a state no card describes. Everything
+ * already applied stays applied — these are audited business events, not a
+ * rollback-able unit.
+ */
+function executePlanAction(plan: ActionRow, deviceLabel?: string | null): ExecuteResult {
+  if (plan.status === 'executed') return { ok: true, status: 'executed' }
+  if (plan.status !== 'proposed') {
+    return { ok: false, status: plan.status, error: 'الخطة ده اتلغت أو انتهت صلاحيتها' }
+  }
+  if (plan.expiresAt < now()) {
+    setPlanStatus(plan.id, 'expired', 'انتهت صلاحية التأكيد — اعمل الطلب تاني')
+    return { ok: false, status: 'expired', error: 'انتهت صلاحية التأكيد — اعمل الطلب تاني' }
+  }
+
+  const ids = planActionIds(plan.payload)
+  if (ids.length < 2) {
+    return failPlan(plan.id, 'الخطة لازم تحتوي على خطوتين على الأقل')
+  }
+
+  for (let index = 0; index < ids.length; index += 1) {
+    const stepNumber = index + 1
+    const child = getAction(ids[index])
+    if (!child) return failPlan(plan.id, `خطوة ${stepNumber}: الإجراء مش موجود`)
+    if (child.kind === 'plan') return failPlan(plan.id, `خطوة ${stepNumber}: ممنوع خطة جوه خطة`)
+    if (child.status !== 'proposed') {
+      const reason = child.status === 'executed' ? 'اتنفّذت بالفعل' : `حالتها ${child.status}`
+      return failPlan(plan.id, `خطوة ${stepNumber} (${child.kind}): ${reason}`)
+    }
+
+    const result = executeAction(child.id, deviceLabel)
+    if (!result.ok) {
+      return failPlan(plan.id, `خطوة ${stepNumber} (${child.kind}): ${result.error || 'فشلت'}`)
+    }
+  }
+
+  setPlanStatus(plan.id, 'executed')
+  writeAudit({
+    action: 'assistant.plan',
+    entity: 'settings',
+    entityId: plan.id,
+    after: { confirmed: true, steps: ids.length },
+    deviceLabel: deviceLabel ?? 'المساعد',
+  })
+  return { ok: true, status: 'executed', applied: true, detail: { steps: ids.length } }
+}
+
+function failPlan(id: string, error: string): ExecuteResult {
+  setPlanStatus(id, 'failed', error)
+  return { ok: false, status: 'failed', error }
+}
+
+function setPlanStatus(id: string, status: ActionStatus, error?: string): void {
+  getDb().update(aiActions)
+    .set({ status, error: error ?? null, executedAt: status === 'executed' || status === 'failed' ? now() : null })
+    .where(eq(aiActions.id, id)).run()
+}
+
+/** Cancels or expires a plan's still-proposed children. */
+function cascadePlan(plan: ActionRow, status: 'cancelled' | 'expired'): void {
+  for (const id of planActionIds(plan.payload)) {
+    const child = getAction(id)
+    if (!child || child.kind === 'plan' || child.status !== 'proposed') continue
+    if (status === 'cancelled') cancelAction(id)
+    else expireAction(id)
+  }
 }
 
 function kindOf(id: string): string {
@@ -330,22 +419,24 @@ function recomputeSubRecipeProducts(subRecipeId: string): void {
 }
 
 export function cancelAction(id: string): { ok: boolean; status: ActionStatus; error?: string } {
-  const row = getDb().select().from(aiActions).where(eq(aiActions.id, id)).get()
+  const row = getAction(id)
   if (!row) return { ok: false, status: 'proposed', error: 'الإجراء غير موجود' }
   if (row.status === 'executed') return { ok: false, status: 'executed', error: 'الإجراء اتنفّذ بالفعل' }
-  if (row.status !== 'proposed') return { ok: true, status: row.status as ActionStatus }
+  if (row.status !== 'proposed') return { ok: true, status: row.status }
+  if (row.kind === 'plan') cascadePlan(row, 'cancelled')
   getDb().update(aiActions).set({ status: 'cancelled' }).where(eq(aiActions.id, id)).run()
   return { ok: true, status: 'cancelled' }
 }
 
 export function expireAction(id: string): { ok: boolean; status: ActionStatus } {
-  const row = getDb().select().from(aiActions).where(eq(aiActions.id, id)).get()
+  const row = getAction(id)
   if (!row) return { ok: false, status: 'expired' }
   if (row.status === 'proposed') {
+    if (row.kind === 'plan') cascadePlan(row, 'expired')
     getDb().update(aiActions).set({ status: 'expired' }).where(eq(aiActions.id, id)).run()
     return { ok: true, status: 'expired' }
   }
-  return { ok: true, status: row.status as ActionStatus }
+  return { ok: true, status: row.status }
 }
 
 /** Every action still waiting on an owner tap, newest first. */
