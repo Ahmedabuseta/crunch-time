@@ -1,9 +1,11 @@
 import type { ActionChatCard, ChatMessage } from '@/api/types';
 import { AskRail } from '@/components/app/AskRail';
+import { AssistantComposer } from '@/components/app/AssistantComposer';
 import { AssistantConfigSheet } from '@/components/app/AssistantConfigSheet';
 import { ChatBubble } from '@/components/app/ChatBubble';
 import { ChatCardView } from '@/components/app/ChatCardView';
 import { AvoidKeyboard } from '@/components/ui/avoid-keyboard';
+import { Skeleton } from '@/components/ui/skeleton';
 import { Spinner } from '@/components/ui/spinner';
 import { Text } from '@/components/ui/text';
 import { View } from '@/components/ui/view';
@@ -13,10 +15,24 @@ import { useHaptics } from '@/hooks/useHaptics';
 import { useKeyboardHeight } from '@/hooks/useKeyboardHeight';
 import { useVoice } from '@/hooks/useVoice';
 import { withOpacity } from '@/theme/colors';
-import { ArrowUp, ChevronLeft, Mic, Settings, Sparkles, Square, Trash2, Volume2 } from 'lucide-react-native';
+import {
+  AlertTriangle,
+  ChevronLeft,
+  PackageSearch,
+  RefreshCw,
+  Settings,
+  Sparkles,
+  Square,
+  Trash2,
+  TrendingUp,
+  Trophy,
+  Volume2,
+  Wallet,
+  X,
+} from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Alert, FlatList, Pressable, StyleSheet, TextInput } from 'react-native';
+import { Alert, FlatList, Pressable, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 /**
@@ -32,8 +48,17 @@ const SUGGESTIONS = [
   'كام طلب دليفري عندي؟',
 ];
 
-/** Four lines of 22pt plus the field's own padding; past that it scrolls. */
-const INPUT_MAX_HEIGHT = 4 * 22 + 18;
+/**
+ * The empty screen's four starting points. Each one is a real question, not a
+ * feature label: tapping it sends the question, so the first tap always shows
+ * an answer instead of a menu.
+ */
+const QUICK_STARTS = [
+  { label: 'مبيعات النهاردة', question: 'بعت بكام النهاردة؟', icon: TrendingUp },
+  { label: 'المخزون الناقص', question: 'إيه اللي ناقص في المخزون؟', icon: PackageSearch },
+  { label: 'أعلى صنف', question: 'أفضل صنف عندي إيه؟', icon: Trophy },
+  { label: 'أرباح الشهر', question: 'أرباح الشهر إيه؟', icon: Wallet },
+] as const;
 
 /**
  * The assistant lives outside the `(app)` tab navigator on purpose: this is a
@@ -54,7 +79,9 @@ export default function AssistantScreen() {
     error,
     loadingHistory,
     send,
+    retry,
     abort,
+    dismissError,
     confirm,
     cancel,
     clear,
@@ -114,13 +141,7 @@ export default function AssistantScreen() {
   const closeSheet = useCallback(() => setSheetOpen(false), []);
 
   const primary = useColor('primary');
-  const primaryForeground = useColor('primaryForeground');
-  const card = useColor('card');
-  const text = useColor('text');
   const muted = useColor('mutedForeground');
-  const border = useColor('border');
-  const secondary = useColor('secondary');
-  const red = useColor('red');
   const background = useColor('background');
 
   const submit = useCallback(() => {
@@ -141,6 +162,12 @@ export default function AssistantScreen() {
     [feedback, send, streaming]
   );
 
+  const retryLast = useCallback(() => {
+    if (streaming) return;
+    feedback('selection');
+    void retry();
+  }, [feedback, retry, streaming]);
+
   const confirmClear = useCallback(() => {
     Alert.alert('مسح المحادثة', 'كل الرسائل هتتمسح من الخادم كمان. متأكد؟', [
       { text: 'رجوع', style: 'cancel' },
@@ -149,18 +176,33 @@ export default function AssistantScreen() {
   }, [clear]);
 
   const renderMessage = useCallback(
-    ({ item }: { item: ChatMessage }) => (
+    ({ item, index }: { item: ChatMessage; index: number }) => (
       <MessageRow
         item={item}
+        isLast={index === messages.length - 1}
         onConfirm={confirm}
         onCancel={cancel}
+        onAsk={ask}
+        onRetry={retryLast}
         onPlay={playReply}
         onStopPlayback={stopPlayback}
         speaking={voice.playing && playingText === item.content}
       />
     ),
-    [cancel, confirm, playReply, playingText, stopPlayback, voice.playing]
+    [
+      ask,
+      cancel,
+      confirm,
+      messages.length,
+      playReply,
+      playingText,
+      retryLast,
+      stopPlayback,
+      voice.playing,
+    ]
   );
+
+  const canRetry = !streaming && messages.some((message) => message.role === 'user');
 
   return (
     <View style={{ flex: 1, backgroundColor: background }}>
@@ -189,9 +231,18 @@ export default function AssistantScreen() {
             <Text variant='subtitle' numberOfLines={1}>
               كرنش تايم
             </Text>
-            <Text variant='caption' numberOfLines={1} style={{ color: muted }}>
-              مساعدك في المحل — اسأل وأنا أجاوب
-            </Text>
+            {/* The subtitle doubles as the live status line, so the answer's
+                progress is readable even after the transcript has scrolled. */}
+            <View style={styles.subtitleRow}>
+              {streaming ? <View style={[styles.liveDot, { backgroundColor: primary }]} /> : null}
+              <Text
+                variant='caption'
+                numberOfLines={1}
+                style={{ color: streaming ? primary : muted, flexShrink: 1 }}
+              >
+                {streaming ? status ?? 'بيفكر…' : 'مساعدك في المحل — اسأل وأنا أجاوب'}
+              </Text>
+            </View>
           </View>
         </View>
 
@@ -223,6 +274,7 @@ export default function AssistantScreen() {
         style={{ flex: 1 }}
         contentContainerStyle={styles.list}
         keyboardShouldPersistTaps='handled'
+        keyboardDismissMode='interactive'
         // A chat reads from its newest line, but re-scrolling on every content
         // change is what stutters during streaming — this coalesces it.
         onContentSizeChange={scheduleScroll}
@@ -233,107 +285,56 @@ export default function AssistantScreen() {
         windowSize={9}
         updateCellsBatchingPeriod={50}
         ListEmptyComponent={
-          messages.length === 0 && !streaming ? <EmptyState loading={loadingHistory} /> : null
+          messages.length === 0 && !streaming ? (
+            <EmptyState loading={loadingHistory} onAsk={ask} disabled={streaming} />
+          ) : null
         }
         ListFooterComponent={streaming ? <PendingTurn partial={partial} status={status} /> : null}
       />
 
       {error ? (
-        <Text variant='caption' style={{ color: red, paddingHorizontal: 20, paddingBottom: 6 }}>
-          {error}
-        </Text>
+        <ErrorBar
+          message={error}
+          onRetry={canRetry ? retryLast : undefined}
+          onDismiss={dismissError}
+        />
       ) : null}
 
       {/* Always on screen, even mid-conversation: the owner should never have to
-          think of a question from a blank slate. Tapping one sends it. */}
-      <View style={styles.rail}>
-        <AskRail
-          items={SUGGESTIONS}
-          onAsk={ask}
-          disabled={streaming}
-          label='اقتراحات سريعة'
-          edgePadding={16}
-        />
-      </View>
+          think of a question from a blank slate. Hidden while typing, because
+          then the keyboard needs the height more than the suggestions do. */}
+      {!isKeyboardVisible ? (
+        <View style={styles.rail}>
+          <AskRail
+            items={SUGGESTIONS}
+            onAsk={ask}
+            disabled={streaming}
+            label='اقتراحات سريعة'
+            edgePadding={16}
+          />
+        </View>
+      ) : null}
 
       {/* The home-indicator inset only applies while the keyboard is down — once
           it is up, the keyboard covers that strip, so adding the inset again
           would float the composer above the keys. */}
-      <View
-        style={[
-          styles.composer,
-          { paddingBottom: (isKeyboardVisible ? 0 : insets.bottom) + 10 },
-        ]}
-      >
-        <View style={[styles.field, { backgroundColor: card, borderColor: border }]}>
-          <TextInput
-            value={draft}
-            onChangeText={setDraft}
-            placeholder='اكتب سؤالك لكرنش تايم…'
-            placeholderTextColor={muted}
-            multiline
-            editable={!streaming}
-            // Not the ui `Input`: that one fixes its height to `rows`, and this
-            // field has to grow with the line being typed.
-            style={[
-              styles.input,
-              {
-                color: text,
-                maxHeight: INPUT_MAX_HEIGHT,
-              },
-            ]}
-            accessibilityLabel='رسالتك لكرنش تايم'
-          />
-        </View>
-
-        {/* Push to talk. Hidden while an answer is streaming: that slot already
-            holds the stop control, and starting a recording mid-answer is not a
-            thing anyone means to do. */}
-        {!streaming ? (
-          <Pressable
-            onPress={() => (voice.recording ? void voice.stop() : void voice.start())}
-            disabled={voice.transcribing}
-            style={[styles.send, { backgroundColor: voice.recording ? red : secondary }]}
-            accessibilityRole='button'
-            accessibilityLabel={voice.recording ? 'وقف التسجيل' : 'اتكلم'}
-          >
-            {voice.transcribing ? (
-              <Spinner size='sm' color={muted} />
-            ) : voice.recording ? (
-              <Square size={14} color='#FFFFFF' />
-            ) : (
-              <Mic size={18} color={muted} />
-            )}
-          </Pressable>
-        ) : null}
-
-        {streaming ? (
-          <Pressable
-            onPress={abort}
-            style={[styles.send, { backgroundColor: red }]}
-            accessibilityRole='button'
-            accessibilityLabel='وقف'
-          >
-            <Square size={15} color='#FFFFFF' />
-          </Pressable>
-        ) : (
-          <Pressable
-            onPress={submit}
-            disabled={!draft.trim()}
-            style={({ pressed }) => [
-              styles.send,
-              {
-                backgroundColor: draft.trim() ? primary : secondary,
-                opacity: pressed && draft.trim() ? 0.85 : 1,
-              },
-            ]}
-            accessibilityRole='button'
-            accessibilityLabel='إرسال'
-          >
-            <ArrowUp size={20} color={draft.trim() ? primaryForeground : muted} />
-          </Pressable>
-        )}
-      </View>
+      <AssistantComposer
+        value={draft}
+        onChangeText={setDraft}
+        onSubmit={submit}
+        onStop={abort}
+        streaming={streaming}
+        bottomInset={isKeyboardVisible ? 0 : insets.bottom}
+        voice={{
+          recording: voice.recording,
+          transcribing: voice.transcribing,
+          seconds: voice.seconds,
+          error: voice.error,
+          onStart: () => void voice.start(),
+          onStop: () => void voice.stop(),
+          onClearError: voice.clearError,
+        }}
+      />
 
       {/* Zero height until the keyboard is up, then exactly its height, which
           lifts the composer to sit on top of it. */}
@@ -349,22 +350,29 @@ export default function AssistantScreen() {
 }
 
 /**
- * One transcript line with its cards and follow-ups.
+ * One transcript line with its cards, its controls and its follow-ups.
  *
  * Memoised because the screen re-renders whenever the streaming partial
  * changes: without this, every flush re-lays-out the whole visible transcript.
  */
 const MessageRow = React.memo(function MessageRow({
   item,
+  isLast,
   onConfirm,
   onCancel,
+  onAsk,
+  onRetry,
   onPlay,
   onStopPlayback,
   speaking,
 }: {
   item: ChatMessage;
+  /** Only the newest answer carries retry and its follow-up questions. */
+  isLast: boolean;
   onConfirm: (card: ActionChatCard) => Promise<void>;
   onCancel: (card: ActionChatCard) => Promise<void>;
+  onAsk: (question: string) => void;
+  onRetry: () => void;
   onPlay: (text: string) => void;
   onStopPlayback: () => void;
   /** True when this row's answer is the one currently being read aloud. */
@@ -372,7 +380,11 @@ const MessageRow = React.memo(function MessageRow({
 }) {
   const muted = useColor('mutedForeground');
   const primary = useColor('primary');
-  const canSpeak = item.role === 'assistant' && Boolean(item.content.trim());
+
+  const isAssistant = item.role === 'assistant';
+  const canSpeak = isAssistant && Boolean(item.content.trim());
+  const showActions = canSpeak || (isLast && isAssistant);
+  const followups = isLast && isAssistant ? item.followups ?? [] : [];
 
   return (
     <View style={{ gap: 8 }}>
@@ -385,25 +397,46 @@ const MessageRow = React.memo(function MessageRow({
           onCancel={onCancel}
         />
       ))}
-      {canSpeak ? (
-        <Pressable
-          // Left-aligned under the assistant's bubble, which is where the answer
-          // ends: the control belongs to the answer, not to the screen.
-          onPress={() => (speaking ? onStopPlayback() : onPlay(item.content))}
-          hitSlop={8}
-          style={styles.speak}
-          accessibilityRole='button'
-          accessibilityLabel={speaking ? 'وقف القراءة' : 'اسمع الرد'}
-        >
-          {speaking ? (
-            <Square size={12} color={primary} />
-          ) : (
-            <Volume2 size={14} color={muted} />
-          )}
-          <Text variant='caption' style={{ color: speaking ? primary : muted, fontSize: 12 }}>
-            {speaking ? 'وقف' : 'اسمع'}
-          </Text>
-        </Pressable>
+
+      {showActions ? (
+        <View style={styles.actions}>
+          {canSpeak ? (
+            <Pressable
+              // Sits under the assistant's bubble, which is where the answer
+              // ends: the control belongs to the answer, not to the screen.
+              onPress={() => (speaking ? onStopPlayback() : onPlay(item.content))}
+              hitSlop={8}
+              style={styles.actionButton}
+              accessibilityRole='button'
+              accessibilityLabel={speaking ? 'وقف القراءة' : 'اسمع الرد'}
+            >
+              {speaking ? (
+                <Square size={13} color={primary} />
+              ) : (
+                <Volume2 size={15} color={muted} />
+              )}
+            </Pressable>
+          ) : null}
+
+          {isLast && isAssistant ? (
+            <Pressable
+              onPress={onRetry}
+              hitSlop={8}
+              style={styles.actionButton}
+              accessibilityRole='button'
+              accessibilityLabel='جرّب الإجابة تاني'
+            >
+              <RefreshCw size={14} color={muted} />
+            </Pressable>
+          ) : null}
+        </View>
+      ) : null}
+
+      {/* The server already sends 2–3 follow-ups with every answer. They were
+          stored and never drawn; under the newest answer they are one tap from
+          the next question. */}
+      {followups.length > 0 ? (
+        <AskRail items={followups} onAsk={onAsk} edgePadding={0} />
       ) : null}
     </View>
   );
@@ -416,8 +449,8 @@ function PendingTurn({ partial, status }: { partial: string; status: string | nu
   if (partial) return <ChatBubble message={{ role: 'assistant', content: partial }} />;
 
   return (
-    <View style={styles.pending}>
-      <Spinner size='sm' color={muted} />
+    <View style={styles.pending} accessibilityLiveRegion='polite'>
+      <Spinner size='sm' variant='dots' color={muted} />
       <Text variant='caption' style={{ color: muted }}>
         {status ?? 'بيفكر…'}
       </Text>
@@ -425,14 +458,79 @@ function PendingTurn({ partial, status }: { partial: string; status: string | nu
   );
 }
 
-function EmptyState({ loading }: { loading: boolean }) {
-  const primary = useColor('primary');
+/**
+ * A refused or failed turn. Dismissible, and retryable when there is a question
+ * to retry — a dead-end red line is worse than no line at all.
+ */
+function ErrorBar({
+  message,
+  onRetry,
+  onDismiss,
+}: {
+  message: string;
+  onRetry?: () => void;
+  onDismiss: () => void;
+}) {
+  const red = useColor('red');
   const muted = useColor('mutedForeground');
 
+  return (
+    <View
+      style={[
+        styles.errorBar,
+        { backgroundColor: withOpacity(red, 0.1), borderColor: withOpacity(red, 0.3) },
+      ]}
+      accessibilityLiveRegion='polite'
+    >
+      <AlertTriangle size={16} color={red} />
+      <Text variant='caption' style={[styles.errorText, { color: red }]} numberOfLines={3}>
+        {message}
+      </Text>
+      {onRetry ? (
+        <Pressable
+          onPress={onRetry}
+          hitSlop={8}
+          style={styles.errorAction}
+          accessibilityRole='button'
+          accessibilityLabel='جرّب تاني'
+        >
+          <RefreshCw size={16} color={red} />
+        </Pressable>
+      ) : null}
+      <Pressable
+        onPress={onDismiss}
+        hitSlop={8}
+        style={styles.errorAction}
+        accessibilityRole='button'
+        accessibilityLabel='قفل التنبيه'
+      >
+        <X size={16} color={muted} />
+      </Pressable>
+    </View>
+  );
+}
+
+function EmptyState({
+  loading,
+  onAsk,
+  disabled,
+}: {
+  loading: boolean;
+  onAsk: (question: string) => void;
+  disabled: boolean;
+}) {
+  const primary = useColor('primary');
+  const foreground = useColor('foreground');
+  const muted = useColor('mutedForeground');
+
+  // History is still coming: draw the shape of a conversation instead of a
+  // lone spinner, so the screen never looks empty while it loads.
   if (loading) {
     return (
       <View style={styles.empty}>
-        <Spinner size='sm' color={muted} />
+        <Skeleton width='74%' height={54} variant='rounded' style={{ alignSelf: 'flex-end' }} />
+        <Skeleton width='52%' height={38} variant='rounded' style={{ alignSelf: 'flex-start' }} />
+        <Skeleton width='86%' height={92} variant='rounded' style={{ alignSelf: 'flex-end' }} />
       </View>
     );
   }
@@ -454,6 +552,31 @@ function EmptyState({ loading }: { loading: boolean }) {
         مساعدك في المحل. مبيعات، أرباح، مخزون، موظفين — ولو محتاج تعديل، هجهزلك كارت
         تأكيد قبل ما ينفّذ.
       </Text>
+
+      <View style={styles.quickGrid}>
+        {QUICK_STARTS.map(({ label, question, icon: Icon }) => (
+          <Pressable
+            key={label}
+            onPress={() => onAsk(question)}
+            disabled={disabled}
+            style={({ pressed }) => [
+              styles.quickTile,
+              {
+                borderColor: withOpacity(primary, 0.22),
+                backgroundColor: withOpacity(primary, pressed ? 0.16 : 0.08),
+                opacity: disabled ? 0.5 : 1,
+              },
+            ]}
+            accessibilityRole='button'
+            accessibilityLabel={question}
+          >
+            <Icon size={16} color={primary} />
+            <Text variant='caption' style={{ color: foreground, fontSize: 13 }}>
+              {label}
+            </Text>
+          </Pressable>
+        ))}
+      </View>
     </View>
   );
 }
@@ -467,15 +590,6 @@ const styles = StyleSheet.create({
     paddingBottom: 12,
   },
   iconButton: { padding: 8 },
-  /** Sits under an assistant bubble, aligned with the text it reads aloud. */
-  speak: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    alignSelf: 'flex-start',
-    paddingVertical: 4,
-    paddingHorizontal: 8,
-  },
   identity: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10 },
   avatar: {
     width: 38,
@@ -486,44 +600,28 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   identityText: { flex: 1, gap: 1 },
+  subtitleRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  liveDot: { width: 6, height: 6, borderRadius: 3 },
   list: { paddingHorizontal: 16, paddingTop: 4, paddingBottom: 16, gap: 14 },
   pending: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 8 },
-  rail: { paddingTop: 10 },
-  composer: {
+  /** The compact control strip under one answer: listen, and retry on the last. */
+  actions: { flexDirection: 'row', alignItems: 'center', gap: 2, alignSelf: 'flex-start' },
+  actionButton: { padding: 6, borderRadius: 999 },
+  errorBar: {
     flexDirection: 'row',
-    alignItems: 'flex-end',
-    gap: 10,
-    paddingHorizontal: 16,
-    paddingTop: 8,
-  },
-  field: {
-    flex: 1,
-    borderWidth: 1,
-    borderRadius: 24,
-    paddingHorizontal: 6,
-    paddingVertical: 4,
-    minHeight: 48,
-  },
-  input: {
-    flex: 1,
-    minHeight: 40,
-    paddingHorizontal: 10,
-    paddingTop: 9,
-    paddingBottom: 9,
-    fontSize: 16,
-    lineHeight: 22,
-    textAlignVertical: 'top',
-    textAlign: 'left',
-    writingDirection: 'rtl',
-  },
-  send: {
-    width: 46,
-    height: 46,
-    borderRadius: 23,
     alignItems: 'center',
-    justifyContent: 'center',
+    gap: 8,
+    marginHorizontal: 16,
+    marginBottom: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderWidth: 1,
+    borderRadius: 14,
   },
-  empty: { alignItems: 'center', gap: 10, paddingTop: 56, paddingHorizontal: 12 },
+  errorText: { flex: 1, textAlign: 'right', writingDirection: 'rtl' },
+  errorAction: { padding: 4 },
+  rail: { paddingTop: 10 },
+  empty: { alignItems: 'center', gap: 10, paddingTop: 48, paddingHorizontal: 12, width: '100%' },
   heroAvatar: {
     width: 64,
     height: 64,
@@ -534,4 +632,22 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   centred: { textAlign: 'center' },
+  quickGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 6,
+    width: '100%',
+  },
+  quickTile: {
+    flexBasis: '47%',
+    flexGrow: 1,
+    minHeight: 44,
+    borderWidth: 1,
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
 });

@@ -6,7 +6,7 @@ import { Text } from '@/components/ui/text';
 import { View } from '@/components/ui/view';
 import type { ActionChatCard } from '@/api/types';
 import { useColor } from '@/hooks/useColor';
-import { ArrowLeft, Check } from 'lucide-react-native';
+import { AlertTriangle, ArrowLeft, Check } from 'lucide-react-native';
 import React, { useState } from 'react';
 import { StyleSheet } from 'react-native';
 
@@ -116,8 +116,12 @@ export function ConfirmActionCard({
 
       {card.warning ? (
         <View style={[styles.warning, { backgroundColor: `${orange}22`, borderColor: `${orange}55` }]}>
-          <Text variant='caption' style={{ color: orange }}>
-            ⚠ {card.warning}
+          <AlertTriangle size={14} color={orange} />
+          <Text
+            variant='caption'
+            style={{ color: orange, flex: 1, textAlign: 'right', writingDirection: 'rtl' }}
+          >
+            {card.warning}
           </Text>
         </View>
       ) : null}
@@ -158,7 +162,15 @@ export function ConfirmActionCard({
 const styles = StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
   values: { flexDirection: 'row', alignItems: 'center', gap: 6, flexShrink: 1 },
-  warning: { borderWidth: 1, borderRadius: 12, paddingVertical: 8, paddingHorizontal: 12 },
+  warning: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 6,
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+  },
   busy: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 10 },
   status: { textAlign: 'center', fontWeight: '700', paddingVertical: 10 },
   // The card is Arabic; its own text keeps the right edge even where the row

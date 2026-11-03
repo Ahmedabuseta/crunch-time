@@ -73,6 +73,7 @@ function MetricsCard({
   const red = useColor('red');
   const muted = useColor('mutedForeground');
   const primary = useColor('primary');
+  const border = useColor('border');
 
   const toneColor = { green, orange, red, primary };
 
@@ -85,8 +86,18 @@ function MetricsCard({
       ) : null}
       <View style={{ gap: 8 }}>
         {items.map((item, index) => (
-          <View key={index} style={styles.row}>
-            <Text variant='caption' style={{ color: muted }}>
+          <View
+            key={index}
+            style={[
+              styles.row,
+              index > 0 && {
+                borderTopWidth: StyleSheet.hairlineWidth,
+                borderTopColor: border,
+                paddingTop: 8,
+              },
+            ]}
+          >
+            <Text variant='caption' style={{ color: muted, flexShrink: 1 }}>
               {item.label}
             </Text>
             <Text style={{ fontWeight: '700', color: item.tone ? toneColor[METRIC_TONE[item.tone]] : primary }}>

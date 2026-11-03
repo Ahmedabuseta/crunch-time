@@ -28,6 +28,8 @@ const STREAM_FLUSH_MS = 90;
  * prose, so the wording stays the phone's.
  */
 const TOOL_STATUS: Record<string, string> = {
+  // Reports and analytics
+  query_metrics: 'بيحلل الأرقام…',
   sales_summary: 'بيراجع المبيعات…',
   profit_summary: 'بيحسب الأرباح…',
   top_items: 'بيشوف الأكثر مبيعاً…',
@@ -36,11 +38,50 @@ const TOOL_STATUS: Record<string, string> = {
   recipe_costs: 'بيراجع تكلفة المكونات…',
   staff_performance: 'بيراجع أداء الموظفين…',
   orders_search: 'بيدوّر في الطلبات…',
+  query_database: 'بيبص في البيانات…',
+  // Catalogue and inventory reads
+  product_list: 'بيدوّر في الأصناف…',
+  product_price: 'بيشوف سعر الصنف…',
+  product_details: 'بيقرا تفاصيل الصنف…',
+  ingredient_list: 'بيدوّر في المواد…',
+  ingredient_details: 'بيقرا تفاصيل المادة…',
+  subrecipe_list: 'بيشوف الوصفات الفرعية…',
+  subrecipe_details: 'بيقرا الوصفة الفرعية…',
+  category_list: 'بيشوف الأقسام…',
+  addon_list: 'بيشوف الإضافات…',
+  modifier_group_list: 'بيشوف الخيارات…',
+  // Discovery and aliases
+  find_tools: 'بيدوّر على الأداة المناسبة…',
+  unresolved_queries: 'بيراجع الأسئلة اللي مش اتطابقت…',
+  list_aliases: 'بيراجع الأسماء البديلة…',
+  learn_alias: 'بيتعلم الاسم البديل…',
+  // Products
   set_product_price: 'بيجهّز تعديل السعر…',
+  create_product: 'بيجهّز إضافة صنف…',
+  update_product: 'بيجهّز تعديل الصنف…',
+  delete_product: 'بيجهّز تعطيل الصنف…',
+  set_product_addons: 'بيجهّز إضافات الصنف…',
+  set_product_modifiers: 'بيجهّز خيارات الصنف…',
+  // Stock and purchases
   restock: 'بيجهّز الاستلام…',
   adjust_stock: 'بيجهّز تسوية المخزون…',
   record_waste: 'بيجهّز تسجيل التالف…',
   exchange_brand: 'بيجهّز المبادلة…',
+  create_ingredient: 'بيجهّز إضافة مادة…',
+  update_ingredient: 'بيجهّز تعديل المادة…',
+  delete_ingredient: 'بيجهّز تعطيل المادة…',
+  // Recipes
+  add_recipe_line: 'بيجهّز إضافة مكون…',
+  update_recipe_line: 'بيجهّز تعديل المكون…',
+  remove_recipe_line: 'بيجهّز حذف المكون…',
+  create_subrecipe: 'بيجهّز وصفة فرعية…',
+  update_subrecipe: 'بيجهّز تعديل الوصفة…',
+  delete_subrecipe: 'بيجهّز تعطيل الوصفة…',
+  add_subrecipe_ingredient: 'بيجهّز مكون الوصفة…',
+  update_subrecipe_ingredient: 'بيجهّز تعديل المكون…',
+  remove_subrecipe_ingredient: 'بيجهّز حذف المكون…',
+  // Batched writes
+  propose_actions: 'بيجهّز خطة التعديل…',
 };
 
 const DEFAULT_STATUS = 'بيفكر…';
@@ -80,22 +121,26 @@ export function useAssistantChat() {
   // a state value captured in a callback can be one render behind.
   const activeRef = useRef<AbortController | null>(null);
 
-  const send = useCallback(async (raw: string) => {
-    const text = raw.trim();
-    if (!text || activeRef.current) return;
-
+  /**
+   * One turn. `echoUser` is false for a retry: the question is already in the
+   * transcript, and a retry must replace the answer rather than stack a second
+   * copy of the question under it.
+   */
+  const run = useCallback(async (text: string, echoUser: boolean, isRetry = false) => {
     const controller = new AbortController();
     activeRef.current = controller;
 
-    setMessages((prev) => [
-      ...prev,
-      {
-        id: localId('user'),
-        role: 'user',
-        content: text,
-        createdAt: new Date().toISOString(),
-      },
-    ]);
+    if (echoUser) {
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: localId('user'),
+          role: 'user',
+          content: text,
+          createdAt: new Date().toISOString(),
+        },
+      ]);
+    }
     setStreaming(true);
     setPartial('');
     setStatus(null);
@@ -113,6 +158,7 @@ export function useAssistantChat() {
           baseUrl: getApiBaseUrl(),
           token: getToken() ?? '',
           message: text,
+          retry: isRetry,
           signal: controller.signal,
         },
         {
@@ -169,12 +215,45 @@ export function useAssistantChat() {
           },
         ]);
       }
-      activeRef.current = null;
-      setStreaming(false);
-      setStatus(null);
-      setPartial('');
+      // Only the turn that still owns the slot may clear it. `clear()` aborts
+      // and frees the slot for a new message, and that new turn must not be
+      // stopped by the old one's cleanup.
+      if (activeRef.current === controller) {
+        activeRef.current = null;
+        setStreaming(false);
+        setStatus(null);
+        setPartial('');
+      }
     }
   }, []);
+
+  const send = useCallback(
+    async (raw: string) => {
+      const text = raw.trim();
+      if (!text || activeRef.current) return;
+      await run(text, true, false);
+    },
+    [run]
+  );
+
+  /**
+   * Retries the last question. The trailing answer is dropped first, so the
+   * transcript ends at the question and the new answer lands in its place —
+   * without a second user bubble.
+   */
+  const retry = useCallback(async () => {
+    if (activeRef.current) return;
+    const lastUser = [...messages].reverse().find((message) => message.role === 'user');
+    if (!lastUser) return;
+    setError(null);
+    setMessages((prev) => {
+      const index = prev.findIndex((message) => message.id === lastUser.id);
+      return index >= 0 ? prev.slice(0, index + 1) : prev;
+    });
+    await run(lastUser.content, false, true);
+  }, [messages, run]);
+
+  const dismissError = useCallback(() => setError(null), []);
 
   const abort = useCallback(() => {
     activeRef.current?.abort();
@@ -271,12 +350,23 @@ export function useAssistantChat() {
     [replaceAction]
   );
 
-  /** Empties the thread here and on the server, so a reopen stays empty. */
+  /**
+   * Empties the thread here and on the server. An in-flight turn is aborted
+   * first: otherwise its `done` handler would append an answer to the thread
+   * the owner just cleared.
+   */
   const clear = useCallback(async () => {
+    const controller = activeRef.current;
+    activeRef.current = null;
+    controller?.abort();
+    // The aborted turn will not touch these (it no longer owns the slot), so
+    // the screen is reset here.
+    setStreaming(false);
+    setPartial('');
+    setStatus(null);
     try {
       await api.assistant.clearHistory();
       setMessages([]);
-      setPartial('');
       setError(null);
     } catch (err) {
       setError(messageOf(err));
@@ -291,7 +381,9 @@ export function useAssistantChat() {
     error,
     loadingHistory,
     send,
+    retry,
     abort,
+    dismissError,
     confirm,
     cancel,
     clear,

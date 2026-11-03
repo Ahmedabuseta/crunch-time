@@ -12,6 +12,13 @@ import { StyleSheet } from 'react-native';
 const BLOCKED_LABELS: Record<string, string> = {
   off_topic: 'خارج نطاق المساعد',
   budget: 'الحد اليومي للاستخدام خلص',
+  disabled: 'المساعد متوقف',
+  no_key: 'مفتاح API مش محدد',
+  needs_context: 'محتاج توضيح أكتر',
+  empty: 'الرسالة فاضية',
+  error: 'حصل خطأ وأنا بجهّز الرد',
+  rate_limited: 'استنى شوية قبل ما تبعت تاني',
+  temporal_down: 'خدمة التشغيل متوقفة',
 };
 
 /**

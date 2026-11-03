@@ -9,6 +9,7 @@ import { Switch } from '@/components/ui/switch';
 import { Text } from '@/components/ui/text';
 import { View } from '@/components/ui/view';
 import { useColor } from '@/hooks/useColor';
+import { Check } from 'lucide-react-native';
 import React, { useEffect, useState } from 'react';
 import { Alert, Pressable, StyleSheet } from 'react-native';
 
@@ -294,7 +295,7 @@ export function AssistantConfigSheet({
             secureTextEntry
           />
           <Text variant='caption' style={{ color: muted }}>
-            {config?.hasKey ? `محدد ✓${config.keyHint ? ` (${config.keyHint})` : ''}` : 'غير محدد'}
+            {config?.hasKey ? `محدد${config.keyHint ? ` (${config.keyHint})` : ''}` : 'غير محدد'}
           </Text>
 
           <Input
@@ -318,10 +319,13 @@ export function AssistantConfigSheet({
           </Button>
           {testing ? null : testResult ? (
             testResult.ok ? (
-              <Text variant='caption' style={{ color: green }}>
-                ✔ {testResult.model ?? form.model}
-                {typeof testResult.latencyMs === 'number' ? ` · ${testResult.latencyMs}ms` : ''}
-              </Text>
+              <View style={styles.inlineStatus}>
+                <Check size={14} color={green} />
+                <Text variant='caption' style={{ color: green }}>
+                  {testResult.model ?? form.model}
+                  {typeof testResult.latencyMs === 'number' ? ` · ${testResult.latencyMs}ms` : ''}
+                </Text>
+              </View>
             ) : (
               <Text variant='caption' style={{ color: red }}>
                 {testResult.error ?? 'الاختبار فشل'}
@@ -347,7 +351,7 @@ export function AssistantConfigSheet({
             onPress={() => void save()}
             disabled={saving}
           >
-            {saved ? 'اتحفظ ✓' : 'حفظ'}
+            {saved ? 'اتحفظ' : 'حفظ'}
           </Button>
 
           <Separator />
@@ -369,4 +373,5 @@ const styles = StyleSheet.create({
   footnote: { textAlign: 'center', marginTop: 4, fontSize: 12 },
   presets: { flexDirection: 'row', gap: 8 },
   preset: { flex: 1, borderWidth: 1, borderRadius: 999, paddingVertical: 8, alignItems: 'center' },
+  inlineStatus: { flexDirection: 'row', alignItems: 'center', gap: 6 },
 });

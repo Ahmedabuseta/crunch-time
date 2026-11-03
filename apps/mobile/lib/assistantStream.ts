@@ -32,6 +32,8 @@ export interface StreamArgs {
   baseUrl: string;
   token: string;
   message: string;
+  /** Re-runs the last question: the server replaces its stored answer. */
+  retry?: boolean;
   signal?: AbortSignal;
 }
 
@@ -73,7 +75,10 @@ export async function streamChat(args: StreamArgs, handlers: StreamHandlers): Pr
     Accept: 'text/event-stream',
     'Content-Type': 'application/json',
   };
-  const body = JSON.stringify({ message: args.message });
+  const body = JSON.stringify({
+    message: args.message,
+    ...(args.retry ? { retry: true } : {}),
+  });
 
   const response = await expoFetch(`${baseUrl}/assistant/chat?stream=1`, {
     method: 'POST',
@@ -164,7 +169,10 @@ async function readBuffered(
   const response = await expoFetch(`${baseUrl}/assistant/chat?stream=0`, {
     method: 'POST',
     headers: { ...headers, Accept: 'application/json' },
-    body: JSON.stringify({ message: args.message }),
+    body: JSON.stringify({
+      message: args.message,
+      ...(args.retry ? { retry: true } : {}),
+    }),
     signal: args.signal ?? null,
   });
 
