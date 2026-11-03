@@ -4,12 +4,13 @@
 // server are covered by one path. The acting user comes from the desktop
 // session (null for phone actions); the device label is set per request by the
 // server via withDeviceLabel().
-import { desc, eq, and, gte, lte } from 'drizzle-orm'
+import { desc, eq, and, gte, lt } from 'drizzle-orm'
 import type { SQL } from 'drizzle-orm'
 import { getDb, getSqlite } from '../db/client'
 import * as schema from '../db/schema'
 import { getUser } from './session'
 import { now, uuid } from './shared'
+import { localDayEnd, localDayStart } from './day-range'
 
 const { auditLog } = schema
 
@@ -80,8 +81,8 @@ export function listAudit(filters?: {
   if (filters?.entity) conditions.push(eq(auditLog.entity, filters.entity))
   if (filters?.entityId) conditions.push(eq(auditLog.entityId, filters.entityId))
   if (filters?.action) conditions.push(eq(auditLog.action, filters.action))
-  if (filters?.from) conditions.push(gte(auditLog.createdAt, filters.from))
-  if (filters?.to) conditions.push(lte(auditLog.createdAt, filters.to + '￿'))
+  if (filters?.from) conditions.push(gte(auditLog.createdAt, localDayStart(filters.from)))
+  if (filters?.to) conditions.push(lt(auditLog.createdAt, localDayEnd(filters.to)))
   const limit = Math.min(Math.max(filters?.limit ?? 100, 1), 1000)
   const query = conditions.length > 0
     ? db.select().from(auditLog).where(and(...conditions))

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, type ViewStyle } from 'react-native';
 import {
   AlertTriangle,
@@ -16,6 +16,7 @@ import {
 } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 
+import { FilterSelect } from '@/components/app/FilterSelect';
 import { Text } from '@/components/ui/text';
 import { View } from '@/components/ui/view';
 import { useColor } from '@/hooks/useColor';
@@ -45,9 +46,18 @@ interface ProfitSummary {
   from: string;
   to: string;
   revenue: number;
+  netSales: number;
   costOfGoods: number;
   grossProfit: number;
   totalExpenses: number;
+  fixedMonthlyExpenses: number;
+  oneTimeExpenses: number;
+  /** Stable ratio from the menu + last month's mix — not from today's sales. */
+  contributionRatio: number;
+  breakEvenBasis: 'mix' | 'menu';
+  breakEvenRevenue: number;
+  breakEvenProgress: number;
+  breakEvenRemaining: number;
   netProfit: number;
 }
 
@@ -64,12 +74,40 @@ interface HourlyRow {
   revenue: number;
 }
 
+interface HourBlock {
+  startHour: number;
+  endHour: number;
+  orderCount: number;
+  revenue: number;
+}
+
+interface HourlyReport {
+  hourly: HourlyRow[];
+  blocks: HourBlock[];
+}
+
 interface TurnoverRow {
   ingredientId: string;
   name: string;
   unit: string;
   consumptionUnits: number;
   cogsPeriod?: number;
+}
+
+interface ProductCostRow {
+  productId: string;
+  name: string;
+  emoji: string;
+  quantity: number;
+  unitCost: number;
+  totalCost: number;
+}
+
+interface ProductCostReport {
+  from: string | null;
+  to: string | null;
+  totalCost: number;
+  rows: ProductCostRow[];
 }
 
 interface TurnoverReport {
@@ -116,6 +154,25 @@ type IconType = React.ComponentType<{ size?: number; color?: string }>;
 
 const WEEKDAYS = ['الأحد', 'الاتنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
 
+const PERIOD_OPTIONS = [
+  { value: '30', label: 'آخر 30 يوم' },
+  { value: '90', label: 'آخر 90 يوم' },
+  { value: 'month', label: 'من أول الشهر' },
+];
+
+const BLOCK_OPTIONS = [
+  { value: '2', label: 'كل ساعتين' },
+  { value: '4', label: 'كل 4 ساعات' },
+  { value: '6', label: 'كل 6 ساعات' },
+  { value: '12', label: 'كل 12 ساعة' },
+];
+
+const PERIOD_LABELS: Record<string, string> = {
+  '30': 'آخر 30 يوم',
+  '90': 'آخر 90 يوم',
+  month: 'من أول الشهر',
+};
+
 /** Isolates a value so digits, units and currency keep the Arabic order even
  * when the surrounding Text has no explicit base direction. */
 const rtl = (text: string) => `\u2067${text}\u2069`;
@@ -123,7 +180,10 @@ const rtl = (text: string) => `\u2067${text}\u2069`;
 const money = (value: number | null | undefined) =>
   value === null || value === undefined ? '—' : rtl(`${fmtMoneyInt(value)} ج.م`);
 
-const hourLabel = (hour: number) => rtl(`${hour % 12 || 12} ${hour < 12 ? 'ص' : 'م'}`);
+const hourText = (hour: number) => `${hour % 12 || 12} ${hour < 12 ? 'ص' : 'م'}`;
+
+const blockRange = (block: HourBlock) =>
+  rtl(`من ${hourText(block.startHour)} إلى ${hourText(block.endHour)}`);
 
 export function HomeDashboard() {
   const router = useRouter();
@@ -141,9 +201,22 @@ export function HomeDashboard() {
   const secondary = useColor('secondary');
   const border = useColor('border');
 
+  const [peakPeriod, setPeakPeriod] = useState('30');
+  const [peakBlock, setPeakBlock] = useState('4');
+
   const today = ymd(new Date());
   const monthStart = startOfMonth();
   const weekStart = ymd(daysBefore(6));
+
+  // One filter drives the whole peak-period group: the days cards and the
+  // hour cards all read from the same window and the same block size.
+  const peakFrom =
+    peakPeriod === 'month' ? monthStart : ymd(daysBefore(Number(peakPeriod) - 1));
+  const peakDays =
+    peakPeriod === 'month'
+      ? Math.max(7, Number(today.slice(8, 10)))
+      : Number(peakPeriod);
+  const periodLabel = PERIOD_LABELS[peakPeriod] ?? PERIOD_LABELS['30'];
 
   const daily = useDailySummary(today);
   const week = useReport<PeriodSummary>('period', { from: weekStart, to: today });
@@ -151,12 +224,11 @@ export function HomeDashboard() {
   const profit = useReport<ProfitSummary>('profit', { to: today });
   const top = useReport<TopItem[]>('top-items', { limit: 5, from: monthStart, to: today });
   const turnover = useReport<TurnoverReport>('inventory-turnover', { from: monthStart, to: today });
-  const dailyTurnover = useReport<TurnoverReport>('inventory-turnover', { from: today, to: today });
+  const productCosts = useReport<ProductCostReport>('product-costs', { from: today, to: today, limit: 5 });
   const ingredients = useIngredients();
-  const hourlyToday = useReport<HourlyRow[]>('hourly', { date: today });
-  const hourlyWeek = useReport<HourlyRow[]>('hourly', { from: weekStart, to: today });
+  const hourly = useReport<HourlyReport>('hourly', { from: peakFrom, to: today, block: peakBlock });
   const alerts = useReport<IngredientAlert[]>('inventory-alerts');
-  const trend = useReport<RevenuePoint[]>('revenue-trend', { days: 60 });
+  const trend = useReport<RevenuePoint[]>('revenue-trend', { days: peakDays });
   const shift = useZReport();
   const payments = useReport<PaymentRow[]>('payment-methods', { from: monthStart, to: today });
   const orderTypes = useReport<OrderTypeSplit>('order-type-split', { from: monthStart, to: today });
@@ -167,10 +239,14 @@ export function HomeDashboard() {
   const monthReport = month.data?.report;
   const profitReport = profit.data?.report;
   const topItems = (top.data?.report ?? []).slice(0, 5);
+  // Rank by cost, not raw quantity: grams and pieces are not comparable, and
+  // the cost is the number the owner is actually spending.
   const consumedItems = [...(turnover.data?.report?.rows ?? [])]
     .filter((row) => row.consumptionUnits > 0)
-    .sort((a, b) => b.consumptionUnits - a.consumptionUnits)
+    .sort((a, b) => (b.cogsPeriod ?? 0) - (a.cogsPeriod ?? 0))
     .slice(0, 7);
+  const productCostReport = productCosts.data?.report;
+  const productCostRows = productCostReport?.rows ?? [];
   const lowStock = alerts.data?.report ?? [];
   const inventoryRows = ingredients.data?.ingredients ?? [];
   const stockValue = inventoryRows.reduce(
@@ -190,10 +266,6 @@ export function HomeDashboard() {
     }))
     .sort((a, b) => b.stockValue - a.stockValue)
     .slice(0, 5);
-  const dailyConsumptionCost =
-    dailyTurnover.data?.report?.totalCogs ??
-    (dailyTurnover.data?.report?.rows ?? []).reduce((sum, row) => sum + (row.cogsPeriod ?? 0), 0);
-
   const paymentRows = payments.data?.report ?? [];
   const orderTypeReport = orderTypes.data?.report;
   const orderTypeRows = orderTypeReport
@@ -205,18 +277,28 @@ export function HomeDashboard() {
     : [];
   const voidReport = voids.data?.report;
 
-  const topHour = (rows: HourlyRow[]) =>
-    rows.reduce<HourlyRow | null>((best, row) => {
-      if (!best) return row;
-      return row.revenue > best.revenue ? row : best;
-    }, null);
-  const todayHour = topHour(hourlyToday.data?.report ?? []);
-  const weekHour = topHour(hourlyWeek.data?.report ?? []);
-  const hasHour = (row: HourlyRow | null): row is HourlyRow =>
-    Boolean(row && (row.revenue > 0 || row.orderCount > 0));
-  const z = shift.data?.report ?? null;
+  // Hour blocks: best and slowest block of the selected window, plus how the
+  // best block compares with everything else in the day.
+  const blocks = hourly.data?.report?.blocks ?? [];
+  const soldBlocks = blocks.filter((block) => block.orderCount > 0 || block.revenue > 0);
+  const sortedBlocks = [...soldBlocks].sort((a, b) => b.revenue - a.revenue);
+  const bestBlock = sortedBlocks[0] ?? null;
+  const leastBlock = soldBlocks.length > 1 ? sortedBlocks[sortedBlocks.length - 1] : null;
+  const totalBlockRevenue = blocks.reduce((sum, block) => sum + block.revenue, 0);
+  const bestShare =
+    bestBlock && totalBlockRevenue > 0 ? bestBlock.revenue / totalBlockRevenue : 0;
+  const otherBlocks = bestBlock
+    ? soldBlocks.filter((block) => block !== bestBlock && block.revenue > 0)
+    : [];
+  const otherMean =
+    otherBlocks.length > 0
+      ? otherBlocks.reduce((sum, block) => sum + block.revenue, 0) / otherBlocks.length
+      : 0;
+  const bestRatio = otherMean > 0 ? (bestBlock ? bestBlock.revenue / otherMean : 0) : 0;
 
-  const trendRows = trend.data?.report ?? [];
+  // Today is still in progress, so it must not drag its weekday's average down
+  // — the cards compare complete days over the selected period.
+  const trendRows = (trend.data?.report ?? []).filter((row) => row.date !== today);
   const weekdayStats = WEEKDAYS.map((name, weekday) => {
     const points = trendRows.filter((row) => new Date(`${row.date}T12:00:00`).getDay() === weekday);
     return {
@@ -224,29 +306,29 @@ export function HomeDashboard() {
       avg: points.length > 0 ? points.reduce((sum, row) => sum + row.revenue, 0) / points.length : 0,
     };
   });
-  const bestDays = [...weekdayStats].sort((a, b) => b.avg - a.avg).slice(0, 3);
+  const sortedWeekdays = [...weekdayStats].sort((a, b) => b.avg - a.avg);
+  const bestDays = sortedWeekdays.slice(0, 3);
+  const leastDays = [...sortedWeekdays].reverse().slice(0, 3);
   const maxDay = bestDays[0]?.avg ?? 0;
-  const hasBestDays = bestDays.some((day) => day.avg > 0);
+  const hasWeekdayData = weekdayStats.some((day) => day.avg > 0);
 
+  const z = shift.data?.report ?? null;
   const revenue = profitReport?.revenue ?? 0;
-  const fixed = profitReport?.totalExpenses ?? 0;
+  // Fixed monthly only, and the ratio is the stable one from the backend (menu
+  // + last month's mix). Nothing here depends on today's orders, so the target
+  // no longer moves with every sale.
+  const fixed = profitReport?.fixedMonthlyExpenses ?? 0;
   const gross = profitReport?.grossProfit ?? 0;
-  const margin = revenue > 0 ? gross / revenue : 0;
-  const breakEven = margin > 0 ? fixed / margin : 0;
-  const remaining = Math.max(0, breakEven - revenue);
-  const progress = !profitReport
-    ? 0
-    : fixed === 0
-      ? 100
-      : breakEven > 0
-        ? Math.min(100, (revenue / breakEven) * 100)
-        : 0;
+  const margin = profitReport?.contributionRatio ?? 0;
+  const breakEven = profitReport?.breakEvenRevenue ?? 0;
+  const remaining = profitReport?.breakEvenRemaining ?? 0;
+  const progress = profitReport?.breakEvenProgress ?? 0;
   const breakMessage = !profitReport
     ? '—'
     : fixed === 0
       ? 'مفيش مصروفات ثابتة'
       : margin <= 0
-        ? 'الهامش مش موجب'
+        ? 'التسعير مش بيغطي التكلفة'
         : remaining <= 0
           ? 'وصلت للتعادل'
           : `فاضل ${money(remaining)}`;
@@ -260,10 +342,9 @@ export function HomeDashboard() {
     profit,
     top,
     turnover,
-    dailyTurnover,
+    productCosts,
     ingredients,
-    hourlyToday,
-    hourlyWeek,
+    hourly,
     alerts,
     trend,
     payments,
@@ -324,37 +405,59 @@ export function HomeDashboard() {
             consumedItems.map((row, index) => (
               <View key={row.ingredientId} style={styles.listRow}>
                 <Text style={[styles.rank, { color: muted }]}>{index + 1}</Text>
-                <Text style={[styles.consumedName, { color: text }]} numberOfLines={1}>
-                  {row.name}
-                </Text>
-                <Text style={[styles.listQty, { color: text }]}>
-                  {rtl(`${fmtQty(row.consumptionUnits)} ${UNIT_LABELS[row.unit] || row.unit}`)}
-                </Text>
+                <View style={styles.listMain}>
+                  <Text style={[styles.consumedName, { color: text }]} numberOfLines={1}>
+                    {row.name}
+                  </Text>
+                  <Text variant='caption' style={styles.listSub}>
+                    {rtl(`${fmtQty(row.consumptionUnits)} ${UNIT_LABELS[row.unit] || row.unit}`)}
+                  </Text>
+                </View>
+                <Text style={[styles.listQty, { color: text }]}>{money(row.cogsPeriod)}</Text>
               </View>
             ))
           )}
         </BentoCard>
       </View>
 
-      <BentoCard title='أعلى ساعة بيع' icon={Clock} tint={purple} style={styles.full}>
-        {hourlyToday.isLoading || hourlyWeek.isLoading ? (
+      <BentoCard title='تكلفة مبيعات النهاردة' icon={Wallet} tint={orange} style={styles.full}>
+        {productCosts.isLoading ? (
           <CardLoading color={muted} />
         ) : (
-          <View style={styles.hourSplit}>
-            <HourStat label='النهاردة' row={hasHour(todayHour) ? todayHour : null} near={text} far={muted} />
-            <HourStat label='آخر 7 أيام' row={hasHour(weekHour) ? weekHour : null} near={text} far={muted} />
-          </View>
+          <>
+            <Text variant='caption' style={styles.sub}>
+              كمية المبيعات × تكلفة كل منتج من شاشة المنتجات
+            </Text>
+            <Text style={[styles.hero, { color: text }]}>{money(productCostReport?.totalCost)}</Text>
+            {productCostRows.length === 0 ? (
+              <Empty text='لسه مفيش مبيعات النهاردة' />
+            ) : (
+              productCostRows.map((row) => (
+                <View key={row.productId} style={styles.listRow}>
+                  <View style={styles.listMain}>
+                    <Text style={[styles.listName, { color: text }]} numberOfLines={1}>
+                      {row.emoji} {row.name}
+                    </Text>
+                    <Text variant='caption' style={styles.listSub}>
+                      {rtl(`${fmtQty(row.quantity)} × ${money(row.unitCost)}`)}
+                    </Text>
+                  </View>
+                  <Text style={[styles.listQty, { color: text }]}>{money(row.totalCost)}</Text>
+                </View>
+              ))
+            )}
+          </>
         )}
       </BentoCard>
 
       <BentoCard
-        title='جرد واستهلاك النهاردة'
+        title='جرد المخزون النهاردة'
         icon={ClipboardList}
         tint={indigo}
         style={styles.full}
         onPress={() => router.push('/inventory')}
       >
-        {ingredients.isLoading || dailyTurnover.isLoading ? (
+        {ingredients.isLoading ? (
           <CardLoading color={muted} />
         ) : inventoryRows.length === 0 ? (
           <Empty text='لسه مفيش مواد' />
@@ -362,7 +465,7 @@ export function HomeDashboard() {
           <>
             <View style={styles.salesSplit}>
               <MiniStat label='قيمة المخزون (بالتكلفة)' value={money(stockValue)} />
-              <MiniStat label='استهلاك النهاردة' value={money(dailyConsumptionCost)} />
+              <MiniStat label='منتجات مبيعة النهاردة' value={String(productCostRows.length)} />
             </View>
             {inventoryValueRows.map((row) => (
               <View key={row.id} style={styles.listRow}>
@@ -506,34 +609,149 @@ export function HomeDashboard() {
         </BentoCard>
       </View>
 
-      <BentoCard title='أكتر أيام مبيعًا' icon={CalendarDays} tint={teal} style={styles.full}>
-        {trend.isLoading ? (
+      <View style={styles.filterRow}>
+        <FilterSelect label='الفترة' value={peakPeriod} options={PERIOD_OPTIONS} onChange={setPeakPeriod} />
+        <FilterSelect label='الساعات' value={peakBlock} options={BLOCK_OPTIONS} onChange={setPeakBlock} />
+      </View>
+
+      <BentoCard title='أقوى فترة في اليوم' icon={Flame} tint={warning} style={styles.full}>
+        {hourly.isLoading ? (
           <CardLoading color={muted} />
-        ) : !hasBestDays ? (
-          <Empty text='لسه مفيش بيانات كفاية' />
+        ) : !bestBlock ? (
+          <Empty text='لسه مفيش مبيعات في الفترة دي' />
         ) : (
-          bestDays.map((day, index) => (
-            <View key={day.name} style={styles.dayRow}>
-              <Text style={[styles.rank, { color: muted }]}>{index + 1}</Text>
-              <Text style={[styles.dayName, { color: text }]}>{day.name}</Text>
-              <View style={[styles.dayTrack, { backgroundColor: secondary }]}>
-                <View
-                  style={[
-                    styles.dayFill,
-                    {
-                      backgroundColor: teal,
-                      width: `${day.avg > 0 && maxDay > 0 ? Math.max(6, (day.avg / maxDay) * 100) : 0}%`,
-                    },
-                  ]}
-                />
-              </View>
-              <Text style={[styles.dayValue, { color: muted }]}>{money(day.avg)}</Text>
+          <>
+            <Text variant='caption' style={styles.label}>{blockRange(bestBlock)}</Text>
+            <Text style={[styles.heroSmall, { color: text }]}>{money(bestBlock.revenue)}</Text>
+            <Text variant='caption' style={styles.sub}>
+              {rtl(`${bestBlock.orderCount} طلب · ${periodLabel}`)}
+            </Text>
+            <View style={[styles.track, { backgroundColor: secondary }]}>
+              <View
+                style={[
+                  styles.fill,
+                  {
+                    backgroundColor: warning,
+                    width: `${Math.max(4, Math.min(100, bestShare * 100))}%`,
+                  },
+                ]}
+              />
             </View>
-          ))
+            <View style={styles.metricsRow}>
+              <MiniStat
+                label='نسبة من مبيعات الفترة'
+                value={rtl(`${Math.round(bestShare * 100)}%`)}
+                tone={warning}
+              />
+              <MiniStat
+                label='مقارنة بالفترات التانية'
+                value={
+                  otherMean > 0
+                    ? rtl(`أعلى بـ ×${bestRatio.toFixed(1)}`)
+                    : 'الفترة الوحيدة اللي فيها مبيعات'
+                }
+              />
+            </View>
+          </>
         )}
       </BentoCard>
 
+      <View style={styles.row}>
+        <BentoCard title='أعلى فترة بيع' icon={Clock} tint={purple} style={styles.half}>
+          {hourly.isLoading ? (
+            <CardLoading color={muted} />
+          ) : bestBlock ? (
+            <HourStat
+              label={periodLabel}
+              value={blockRange(bestBlock)}
+              sub={rtl(`${bestBlock.orderCount} طلب · ${money(bestBlock.revenue)}`)}
+              near={text}
+              far={muted}
+            />
+          ) : (
+            <Empty text='مفيش مبيعات' />
+          )}
+        </BentoCard>
+
+        <BentoCard title='أقل فترة بيع' icon={Clock} tint={indigo} style={styles.half}>
+          {hourly.isLoading ? (
+            <CardLoading color={muted} />
+          ) : leastBlock ? (
+            <HourStat
+              label={periodLabel}
+              value={blockRange(leastBlock)}
+              sub={rtl(`${leastBlock.orderCount} طلب · ${money(leastBlock.revenue)}`)}
+              near={text}
+              far={muted}
+            />
+          ) : (
+            <Empty text='مفيش مبيعات' />
+          )}
+        </BentoCard>
+      </View>
+
+      <View style={styles.row}>
+        <BentoCard title='أكتر أيام مبيعًا' icon={CalendarDays} tint={teal} style={styles.half}>
+          <Text variant='caption' style={styles.sub}>{periodLabel}</Text>
+          {trend.isLoading ? (
+            <CardLoading color={muted} />
+          ) : !hasWeekdayData ? (
+            <Empty text='لسه مفيش بيانات كفاية' />
+          ) : (
+            bestDays.map((day, index) => (
+              <View key={day.name} style={styles.dayRow}>
+                <Text style={[styles.rank, { color: muted }]}>{index + 1}</Text>
+                <Text style={[styles.dayName, { color: text }]}>{day.name}</Text>
+                <View style={[styles.dayTrack, { backgroundColor: secondary }]}>
+                  <View
+                    style={[
+                      styles.dayFill,
+                      {
+                        backgroundColor: teal,
+                        width: `${day.avg > 0 && maxDay > 0 ? Math.max(6, (day.avg / maxDay) * 100) : 0}%`,
+                      },
+                    ]}
+                  />
+                </View>
+                <Text style={[styles.dayValue, { color: muted }]}>{fmtMoneyInt(day.avg)}</Text>
+              </View>
+            ))
+          )}
+        </BentoCard>
+
+        <BentoCard title='أقل أيام مبيعًا' icon={CalendarDays} tint={orange} style={styles.half}>
+          <Text variant='caption' style={styles.sub}>{periodLabel}</Text>
+          {trend.isLoading ? (
+            <CardLoading color={muted} />
+          ) : !hasWeekdayData ? (
+            <Empty text='لسه مفيش بيانات كفاية' />
+          ) : (
+            leastDays.map((day, index) => (
+              <View key={day.name} style={styles.dayRow}>
+                <Text style={[styles.rank, { color: muted }]}>{index + 1}</Text>
+                <Text style={[styles.dayName, { color: text }]}>{day.name}</Text>
+                <View style={[styles.dayTrack, { backgroundColor: secondary }]}>
+                  <View
+                    style={[
+                      styles.dayFill,
+                      {
+                        backgroundColor: orange,
+                        width: `${day.avg > 0 && maxDay > 0 ? Math.max(6, (day.avg / maxDay) * 100) : 0}%`,
+                      },
+                    ]}
+                  />
+                </View>
+                <Text style={[styles.dayValue, { color: muted }]}>{fmtMoneyInt(day.avg)}</Text>
+              </View>
+            ))
+          )}
+        </BentoCard>
+      </View>
+
       <BentoCard title='نقطة التعادل' icon={Target} tint={green} style={styles.full}>
+        <Text variant='caption' style={styles.sub}>
+          {`هدف ثابت — بيتغير بس مع المصروفات الشهرية أو أسعار/تكاليف المنتجات (${profitReport?.breakEvenBasis === 'mix' ? 'مزيج مبيعات الشهر السابق' : 'أسعار المنيو'})`}
+        </Text>
         <View style={styles.breakTop}>
           <View style={{ flex: 1, minWidth: 0 }}>
             <Text variant='caption' style={styles.label}>المتبقي للتعادل</Text>
@@ -557,7 +775,7 @@ export function HomeDashboard() {
           />
         </View>
         <View style={styles.metricsRow}>
-          <MiniStat label='المصروفات الثابتة' value={money(profitReport?.totalExpenses)} />
+          <MiniStat label='المصروفات الشهرية' value={money(fixed)} />
           <MiniStat label='هدف التعادل' value={breakEven > 0 ? money(breakEven) : '—'} />
         </View>
         {profitReport && fixed > 0 && margin <= 0 ? (
@@ -657,22 +875,22 @@ function MiniStat({
 
 function HourStat({
   label,
-  row,
+  value,
+  sub,
   near,
   far,
 }: {
   label: string;
-  row: HourlyRow | null;
+  value: string;
+  sub: string;
   near: string;
   far: string;
 }) {
   return (
     <View style={styles.hourCol}>
       <Text variant='caption' style={styles.hourLabel}>{label}</Text>
-      <Text style={[styles.heroSmall, { color: near }]}>{row ? hourLabel(row.hour) : '—'}</Text>
-      <Text variant='caption' style={[styles.sub, { color: far }]}>
-        {row ? rtl(`${row.orderCount} طلب · ${money(row.revenue)}`) : 'مفيش مبيعات'}
-      </Text>
+      <Text style={[styles.hourRange, { color: near }]}>{value}</Text>
+      <Text variant='caption' style={[styles.sub, { color: far }]}>{sub}</Text>
     </View>
   );
 }
@@ -714,11 +932,12 @@ const styles = StyleSheet.create({
   stockNameLine: { fontSize: 10, fontWeight: '600', textAlign: 'right', writingDirection: 'rtl' },
   stockValue: { fontSize: 9, textAlign: 'left', writingDirection: 'ltr' },
   more: { fontSize: 9, textAlign: 'right', writingDirection: 'rtl' },
-  dayRow: { flexDirection: 'row', direction: 'rtl', alignItems: 'center', gap: 7, paddingVertical: 3 },
-  dayName: { width: 52, fontSize: 11, fontWeight: '700', textAlign: 'right', writingDirection: 'rtl' },
+  dayRow: { flexDirection: 'row', direction: 'rtl', alignItems: 'center', gap: 6, paddingVertical: 3 },
+  dayName: { width: 46, fontSize: 10, fontWeight: '700', textAlign: 'right', writingDirection: 'rtl' },
   dayTrack: { flex: 1, height: 6, borderRadius: 999, overflow: 'hidden', direction: 'rtl' },
   dayFill: { height: 6, borderRadius: 999 },
-  dayValue: { width: 78, fontSize: 10, fontWeight: '700', textAlign: 'left', writingDirection: 'ltr' },
+  dayValue: { width: 54, fontSize: 10, fontWeight: '700', textAlign: 'left', writingDirection: 'ltr' },
+  filterRow: { flexDirection: 'row', direction: 'rtl', gap: 8, alignItems: 'center' },
   breakTop: { flexDirection: 'row', direction: 'rtl', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
   breakValue: { fontSize: 18, fontWeight: '800', textAlign: 'right', writingDirection: 'rtl' },
   pct: { fontSize: 18, fontWeight: '800', textAlign: 'left', writingDirection: 'ltr' },
@@ -727,9 +946,9 @@ const styles = StyleSheet.create({
   metricsRow: { flexDirection: 'row', direction: 'rtl', gap: 8, marginTop: 2 },
   metricsGrid: { flexDirection: 'row', direction: 'rtl', flexWrap: 'wrap', gap: 8, marginTop: 4 },
   metric: { width: '47%' },
-  hourSplit: { flexDirection: 'row', direction: 'rtl', gap: 10, marginTop: 2 },
   hourCol: { flex: 1, minWidth: 0, gap: 1 },
   hourLabel: { fontSize: 9, textAlign: 'right', writingDirection: 'rtl' },
+  hourRange: { fontSize: 15, fontWeight: '800', textAlign: 'right', writingDirection: 'rtl' },
   mixGrid: { flexDirection: 'row', direction: 'rtl', gap: 12, marginTop: 2 },
   mixCol: { flex: 1, minWidth: 0, gap: 2 },
   hint: { fontSize: 9, textAlign: 'right', writingDirection: 'rtl', marginTop: 2 },

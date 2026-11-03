@@ -12,6 +12,7 @@
 import { getSqlite } from '../db/client'
 import { requireAdmin } from './session'
 import { r2 } from './shared'
+import { localDayEnd, localDayStart } from './day-range'
 
 export type Metric =
   | 'revenue'
@@ -139,9 +140,6 @@ const PAYMENT_LABELS: Record<string, string> = {
 
 const DEFAULT_LIMIT = 20
 const MAX_LIMIT = 100
-
-/** Upper bound for an inclusive day: any timestamp inside `to` sorts below it. */
-const DAY_END = '\uffff'
 
 // ─── Dates ─────────────────────────────────────────────────────
 
@@ -493,7 +491,9 @@ export function queryMetrics(input: QueryMetricsInput): QueryMetricsResult {
   const limit = readLimit(raw.limit)
   const level = levelFor(dimension)
   const filters = buildFilters(raw.filters, level)
-  const between: SqlFilter = { sql: 'o.created_at >= ? AND o.created_at <= ?', params: [from, `${to}${DAY_END}`] }
+  // Half-open local-midnight bounds: the timestamps are UTC, the days are the
+  // owner's.
+  const between: SqlFilter = { sql: 'o.created_at >= ? AND o.created_at < ?', params: [localDayStart(from), localDayEnd(to)] }
   const where = [between, ...filters]
 
   const sqlite = getSqlite()
@@ -545,7 +545,7 @@ export function queryMetrics(input: QueryMetricsInput): QueryMetricsResult {
     // The window immediately before this one, same number of calendar days.
     const span = dayCount(from, to)
     const previousWhere: SqlFilter[] = [
-      { sql: 'o.created_at >= ? AND o.created_at <= ?', params: [addDays(from, -span), `${addDays(from, -1)}${DAY_END}`] },
+      { sql: 'o.created_at >= ? AND o.created_at < ?', params: [localDayStart(addDays(from, -span)), localDayEnd(addDays(from, -1))] },
       ...filters,
     ]
     // No dimension: one scalar, aggregated at the same level as the rows above

@@ -31,7 +31,9 @@ export function registerReportRoutes(app: FastifyInstance, backend: Backend) {
     const q = (req.query || {}) as any
     const date = s(q.date)
     return {
-      report: await asOwner(() => backend.reports.hourlyBreakdown(s(q.from) || date, s(q.to) || date)),
+      report: await asOwner(() =>
+        backend.reports.hourlyReport(s(q.from) || date, s(q.to) || date, n(q.block))
+      ),
     }
   })
 
@@ -105,6 +107,11 @@ export function registerReportRoutes(app: FastifyInstance, backend: Backend) {
   app.get('/reports/abc-xyz', async (req) => {
     const q = (req.query || {}) as any
     return { report: await asOwner(() => backend.reports.abcXyz(s(q.from), s(q.to))) }
+  })
+
+  app.get('/reports/product-costs', async (req) => {
+    const q = (req.query || {}) as any
+    return { report: await asOwner(() => backend.reports.productCostBreakdown(s(q.from), s(q.to), n(q.limit))) }
   })
 
   app.get('/reports/inventory-turnover', async (req) => {

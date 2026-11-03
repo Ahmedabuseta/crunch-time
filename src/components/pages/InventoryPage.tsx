@@ -5,7 +5,8 @@ import { useInventoryStore } from '@/services/inventory/inventory.store'
 import type { InventoryLedger } from '@/services/inventory/inventory.types'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { Plus, Package, AlertTriangle, Pencil, X, History, TrendingDown, TrendingUp, ShieldAlert, Power, PowerOff, Trash2, HelpCircle, Repeat } from 'lucide-react'
+import { Plus, Package, AlertTriangle, Pencil, X, History, TrendingDown, TrendingUp, ShieldAlert, Power, PowerOff, Trash2, HelpCircle, Repeat, Printer } from 'lucide-react'
+import { buildInventorySheetHtml } from '@/lib/inventory-sheet'
 import { cn } from '@/lib/utils'
 import { monthStart, today } from '@/lib/dates'
 import { fmtMoney } from '@/lib/format'
@@ -108,6 +109,49 @@ export function InventoryPage() {
   const inactiveCount = ingredients.length - activeIngredients.length
   const linkedBaseProducts = linkedProducts.filter((p) => p.inBase)
   const linkedOptionalProducts = linkedProducts.filter((p) => !p.inBase)
+
+  const proteinCount = activeIngredients.filter((ing) => itemCategory(ing) === 'protein').length
+
+  // Thermal stocktake sheet: system quantity + a blank column to write the
+  // counted quantity, grouped by storage so it can be carried around.
+  const printInventory = async (scope: 'protein' | 'all') => {
+    const rows = activeIngredients
+      .filter((ing) => scope === 'all' || itemCategory(ing) === 'protein')
+      .map((ing) => ({
+        id: ing.id,
+        name: ing.name,
+        unit: ing.unit,
+        storage: storageLabel(itemStorage(ing)),
+        stock: Number(ing.stockQuantity) || 0,
+        cost: Number(ing.costPerUnit) || 0,
+        minStock: Number(ing.minStock) || 0,
+      }))
+    if (rows.length === 0) {
+      toast({ title: 'مفيش مواد في القسم ده', variant: 'error' })
+      return
+    }
+    try {
+      const s: any = await window.api.settings.get()
+      const html = buildInventorySheetHtml({
+        restaurant: s?.restaurantName || 'المخزون',
+        title: scope === 'protein' ? 'جرد لحوم وبروتين' : 'جرد كل الأقسام',
+        currency: s?.currencyLabel || s?.currency || 'ج.م',
+        items: rows,
+      })
+      const res = await window.api.printer.printHtml(html, {
+        deviceName: s?.receiptPrinter || undefined,
+        copies: 1,
+        paperWidth: s?.receiptWidth || '80mm',
+      })
+      if (res?.ok) {
+        toast({ title: 'تمت طباعة الجرد', description: `${rows.length} مادة`, variant: 'success' })
+      } else {
+        toast({ title: 'فشلت الطباعة', description: res?.error, variant: 'error' })
+      }
+    } catch (err: any) {
+      toast({ title: 'فشلت الطباعة', description: err?.message, variant: 'error' })
+    }
+  }
 
   const alertIds = new Set(alerts.map(a => a.id))
   const highStockIds = new Set(
@@ -395,6 +439,16 @@ export function InventoryPage() {
         </div>
         {invTab === 'ingredients' && (
           <div className="flex gap-2">
+            <Select value="" onValueChange={(v) => void printInventory(v as 'protein' | 'all')}>
+              <SelectTrigger className="h-9 w-auto gap-1.5 rounded-xl px-3 text-xs font-bold" title="طباعة الجرد">
+                <Printer className="h-3.5 w-3.5" />
+                <SelectValue placeholder="طباعة الجرد" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="protein">لحوم وبروتين ({proteinCount})</SelectItem>
+                <SelectItem value="all">كل الأقسام ({activeIngredients.length})</SelectItem>
+              </SelectContent>
+            </Select>
             <Button size="sm" className="gap-1.5 rounded-xl" onClick={() => setIngDialog({ ingredient: null })}>
               <Plus className="h-4 w-4" /> إضافة مادة
             </Button>

@@ -23,19 +23,6 @@ import {
 import React, { useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, type ViewStyle } from 'react-native';
 
-interface TurnoverRow {
-  ingredientId: string;
-  name: string;
-  unit: string;
-  consumptionUnits: number;
-  cogsPeriod?: number;
-}
-
-interface TurnoverReport {
-  rows: TurnoverRow[];
-  totalCogs?: number;
-}
-
 type SortKey = 'name' | 'stock' | 'min' | 'value';
 type SortDir = 'asc' | 'desc';
 type ViewMode = 'table' | 'cards';
@@ -81,7 +68,8 @@ export default function InventoryCountScreen() {
 
   const today = ymd(new Date());
   const ingredients = useIngredients();
-  const dailyTurnover = useReport<TurnoverReport>('inventory-turnover', { from: today, to: today });
+  // Product cost × quantity sold — the same number the home card shows.
+  const productCosts = useReport<{ totalCost: number }>('product-costs', { from: today, to: today, limit: 1 });
   const [refreshing, setRefreshing] = useState(false);
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState('');
@@ -98,9 +86,7 @@ export default function InventoryCountScreen() {
     (row) => Number(row.stockQuantity) > 0 && Number(row.stockQuantity) <= Number(row.minStock)
   ).length;
   const outOfStock = rows.filter((row) => Number(row.stockQuantity) <= 0).length;
-  const dailyConsumptionCost =
-    dailyTurnover.data?.report?.totalCogs ??
-    (dailyTurnover.data?.report?.rows ?? []).reduce((sum, row) => sum + (row.cogsPeriod ?? 0), 0);
+  const dailyConsumptionCost = productCosts.data?.report?.totalCost ?? 0;
 
   const unitOptions = [
     { value: '', label: 'كل الوحدات' },
@@ -180,7 +166,7 @@ export default function InventoryCountScreen() {
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await Promise.all([ingredients.refetch(), dailyTurnover.refetch()]);
+    await Promise.all([ingredients.refetch(), productCosts.refetch()]);
     setRefreshing(false);
   };
 
@@ -210,7 +196,7 @@ export default function InventoryCountScreen() {
         </View>
         <View style={[styles.statRow, styles.statDivider, { borderColor: border }]}>
           <Stat
-            label='استهلاك النهاردة'
+            label='تكلفة مبيعات النهاردة'
             value={`${fmtMoneyInt(dailyConsumptionCost)} ج.م`}
             color={primary}
             muted={muted}

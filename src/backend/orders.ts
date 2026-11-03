@@ -1,10 +1,11 @@
 // Orders — creation, listing, status workflow, driver assignment, delete.
-import { and, asc, desc, eq, gte, inArray, isNull, like, lte, or, sql } from 'drizzle-orm'
+import { and, asc, desc, eq, gte, inArray, isNull, like, lt, or, sql } from 'drizzle-orm'
 import { getDb, getSqlite } from '../db/client'
 import * as schema from '../db/schema'
 import { getOpenShiftId, now, rollbackInventory, rollbackInventoryPartial, uuid } from './shared'
 import { requireAdmin } from './session'
 import { writeAudit } from './audit'
+import { localDayEnd, localDayStart } from './day-range'
 
 const { orders, orderItems, payments, cashMovements, shifts, products, addons, customers, deliveryZones, deliveryProfiles } = schema
 
@@ -172,8 +173,10 @@ function orderConditions(filters?: any) {
       like(orders.cashierName, term),
     ))
   }
-  if (filters?.from) conditions.push(gte(orders.createdAt, filters.from))
-  if (filters?.to) conditions.push(lte(orders.createdAt, filters.to + '￿'))
+  // Local calendar days: the board's "today" must include orders placed after
+  // midnight, which are stored (UTC) on the previous date.
+  if (filters?.from) conditions.push(gte(orders.createdAt, localDayStart(filters.from)))
+  if (filters?.to) conditions.push(lt(orders.createdAt, localDayEnd(filters.to)))
   // The board's driver tab. 'NONE' is the "no driver assigned yet" sentinel it
   // already uses, and it has to be a server filter now that the list pages —
   // narrowing one page of results is not the same as filtering the orders.

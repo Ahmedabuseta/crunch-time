@@ -5,6 +5,15 @@ import * as schema from '../db/schema'
 import { abcClass, expandRecipes, r2, supplierConcentration, xyzClass } from './shared'
 import { requireAdmin } from './session'
 import { allocateNetRevenue } from '../lib/net-revenue'
+import {
+  inLocalDayRange,
+  localDateOf,
+  localDatesBetween,
+  localDayEnd,
+  localDayStart,
+  localDaysBefore,
+  localToday,
+} from './day-range'
 
 const {
   orders, orderItems, products, addons, categories, payments,
@@ -43,14 +52,19 @@ function netRevenueByItem(
 
 export function dailySummary(date?: string) {
   requireAdmin()
-  const targetDate = date || new Date().toISOString().slice(0, 10)
+  const targetDate = date || localToday()
   const s = getSqlite()
   const all = s.prepare('SELECT * FROM orders').all() as any[]
-  const dayOrders = all.filter(o => o.created_at?.startsWith(targetDate) && o.status !== 'CANCELLED')
-  const cancelled = all.filter(o => o.created_at?.startsWith(targetDate) && o.status === 'CANCELLED')
-  const refunded = all.filter(o => o.created_at?.startsWith(targetDate) && o.status === 'REFUNDED')
+  const inDay = all.filter(o => inLocalDayRange(o.created_at, targetDate, targetDate))
+  const dayOrders = inDay.filter(o => o.status !== 'CANCELLED')
+  const cancelled = inDay.filter(o => o.status === 'CANCELLED')
+  const refunded = inDay.filter(o => o.status === 'REFUNDED')
   const totalRefunded = refunded.reduce((sum, o) => sum + (o.refunded_amount || 0), 0)
   const revenue = dayOrders.reduce((sum, o) => sum + o.total, 0) - totalRefunded
+  // A fully refunded order contributes no revenue, so it must not drag the
+  // average ticket down either.
+  const payingOrders = dayOrders.filter(o => o.status !== 'REFUNDED' || Number(o.refunded_amount || 0) < Number(o.total))
+  const avgOrderValue = payingOrders.length > 0 ? revenue / payingOrders.length : 0
 
   const costOfGoods = dayOrders.reduce((sum, o) => {
     const items = s.prepare('SELECT * FROM order_items WHERE order_id = ?').all(o.id) as any[]
@@ -64,7 +78,7 @@ export function dailySummary(date?: string) {
     date: targetDate,
     totalOrders: dayOrders.length,
     totalRevenue: revenue,
-    avgOrderValue: dayOrders.length > 0 ? revenue / dayOrders.length : 0,
+    avgOrderValue,
     cancelledOrders: cancelled.length,
     refundedOrders: refunded.length,
     totalRefunded,
@@ -78,11 +92,7 @@ export function periodSummary(from?: string, to?: string) {
   requireAdmin()
   const s = getSqlite()
   const allOrders = s.prepare('SELECT * FROM orders').all() as any[]
-  const inRange = (o: any) => {
-    if (from && o.created_at < from) return false
-    if (to && o.created_at > to + '￿') return false
-    return true
-  }
+  const inRange = (o: any) => inLocalDayRange(o.created_at, from, to)
   const active = allOrders.filter(o => o.status !== 'CANCELLED' && inRange(o))
   const cancelled = allOrders.filter(o => o.status === 'CANCELLED' && inRange(o))
   const refunded = active.filter(o => o.status === 'REFUNDED')
@@ -111,23 +121,74 @@ export function periodSummary(from?: string, to?: string) {
   }
 }
 
+/**
+ * The contribution ratio the break-even target is built on.
+ *
+ * Deliberately NOT computed from the reporting period's own sales: doing that
+ * makes the target move with every single sale (a good afternoon lowers the
+ * margin, a cheap order raises it), which is not what a target means. Instead
+ * the ratio is the previous complete month's sales mix applied to today's menu
+ * prices and costs — it only changes when prices/costs change or when the
+ * month rolls over. A brand-new database falls back to equal weights, i.e. the
+ * menu itself.
+ */
+function structuralContributionRatio(
+  db: ReturnType<typeof getDb>,
+  s: ReturnType<typeof getSqlite>,
+  toDate: string,
+): { ratio: number; basis: 'mix' | 'menu' } {
+  const menuProducts = db.select().from(products).where(eq(products.active, true)).all()
+    .filter(p => Number(p.price) > 0)
+  if (menuProducts.length === 0) return { ratio: 0, basis: 'menu' }
+
+  const monthStart = `${toDate.slice(0, 7)}-01`
+  const previousDay = localDaysBefore(1, monthStart)
+  const previousStart = `${previousDay.slice(0, 7)}-01`
+  const previousMix = s.prepare(`
+    SELECT oi.product_id AS productId, SUM(oi.quantity) AS qty
+    FROM order_items oi JOIN orders o ON o.id = oi.order_id
+    WHERE o.status <> 'CANCELLED' AND o.created_at >= ? AND o.created_at < ?
+    GROUP BY oi.product_id
+  `).all(localDayStart(previousStart), localDayEnd(previousDay)) as { productId: string; qty: number }[]
+  const sold = new Map(previousMix.map(row => [row.productId, Number(row.qty) || 0]))
+  const basis: 'mix' | 'menu' = previousMix.length > 0 ? 'mix' : 'menu'
+
+  let margin = 0
+  let sales = 0
+  for (const p of menuProducts) {
+    const weight = basis === 'mix' ? (sold.get(p.id) || 0) : 1
+    if (weight <= 0) continue
+    const price = Number(p.price) || 0
+    const cost = Number(p.costPrice) || 0
+    margin += weight * (price - cost)
+    sales += weight * price
+  }
+  return { ratio: sales > 0 ? margin / sales : 0, basis }
+}
+
 export function profitSummary(_from?: string, to?: string) {
   requireAdmin()
   const s = getSqlite()
+  const db = getDb()
   // Fixed expenses are monthly and are charged from the 1st, so the profit
   // window always opens there — picking "today" or a rolling week must not
   // charge a whole month's rent against a few days of revenue.
-  const toDate = (to || new Date().toISOString().slice(0, 10)).slice(0, 10)
+  const toDate = (to || localToday()).slice(0, 10)
   const fromDate = `${toDate.slice(0, 7)}-01`
   const all = (s.prepare('SELECT * FROM orders').all() as any[]).filter(o => {
     if (o.status === 'CANCELLED') return false
-    if (o.created_at < fromDate) return false
-    if (o.created_at > toDate + '￿') return false
-    return true
+    return inLocalDayRange(o.created_at, fromDate, toDate)
   })
   const refunded = all.filter(o => o.status === 'REFUNDED')
   const totalRefunded = refunded.reduce((sum, o) => sum + (o.refunded_amount || 0), 0)
   const revenue = all.reduce((sum, o) => sum + o.total, 0) - totalRefunded
+  // Tax is money owed to the state and delivery fees are not product income;
+  // the break-even target is expressed in the same net terms.
+  const netSales = all.reduce(
+    (sum, o) => sum + (Number(o.total) || 0) - (Number(o.tax) || 0) - (Number(o.delivery_fee) || 0)
+      - (o.status === 'REFUNDED' ? Number(o.refunded_amount) || 0 : 0),
+    0,
+  )
 
   const costOfGoods = all.reduce((sum, o) => {
     const items = s.prepare('SELECT * FROM order_items WHERE order_id = ?').all(o.id) as any[]
@@ -137,19 +198,42 @@ export function profitSummary(_from?: string, to?: string) {
     }, 0)
   }, 0)
 
-  const totalExpenses = (s.prepare('SELECT amount FROM expenses WHERE active = 1').all() as any[])
-    .reduce((sum, e) => sum + e.amount, 0)
+  const expenseRows = s.prepare('SELECT amount, type FROM expenses WHERE active = 1').all() as any[]
+  const totalExpenses = expenseRows.reduce((sum, e) => sum + (Number(e.amount) || 0), 0)
+  // Only recurring expenses belong in the break-even base; a one-off repair
+  // must not raise the monthly target forever.
+  const fixedMonthlyExpenses = expenseRows
+    .filter(e => (e.type || 'monthly') === 'monthly')
+    .reduce((sum, e) => sum + (Number(e.amount) || 0), 0)
+  const oneTimeExpenses = totalExpenses - fixedMonthlyExpenses
   const deliveryFees = all.filter(o => o.order_type === 'delivery').reduce((sum, o) => sum + (o.delivery_fee || 0), 0)
   const discounts = all.reduce((sum, o) => sum + (o.discount_amount || 0), 0)
   const taxCollected = all.reduce((sum, o) => sum + o.tax, 0)
+
+  // A stable target: the ratio comes from the menu and last month's mix, not
+  // from this month's sales, so the number no longer moves with every order.
+  const { ratio, basis } = structuralContributionRatio(db, s, toDate)
+  const breakEvenRevenue = ratio > 0 ? fixedMonthlyExpenses / ratio : 0
+  const breakEvenProgress = breakEvenRevenue > 0
+    ? Math.max(0, Math.min(100, (netSales / breakEvenRevenue) * 100))
+    : (fixedMonthlyExpenses === 0 ? 100 : 0)
+  const breakEvenRemaining = Math.max(0, breakEvenRevenue - netSales)
 
   return {
     from: fromDate,
     to: toDate,
     revenue,
+    netSales,
     costOfGoods,
     grossProfit: revenue - costOfGoods,
     totalExpenses,
+    fixedMonthlyExpenses,
+    oneTimeExpenses,
+    contributionRatio: ratio,
+    breakEvenBasis: basis,
+    breakEvenRevenue,
+    breakEvenProgress,
+    breakEvenRemaining,
     deliveryFees,
     discounts,
     taxCollected,
@@ -160,14 +244,16 @@ export function profitSummary(_from?: string, to?: string) {
 
 export function hourlyBreakdown(from?: string, to?: string) {
   requireAdmin()
-  const fromDate = (from || new Date().toISOString().slice(0, 10)).slice(0, 10)
+  const fromDate = (from || localToday()).slice(0, 10)
   const toDate = (to || fromDate).slice(0, 10)
   const db = getDb()
   const all = db.select().from(orders).all()
-  const dayOrders = all.filter(o => {
-    const day = o.createdAt.slice(0, 10)
-    return day >= fromDate && day <= toDate && o.status !== 'CANCELLED'
-  })
+  // The hour itself is the machine's local hour (below), so the day filter has
+  // to be local too — otherwise the last two hours of the day land in the
+  // next day's bucket.
+  const dayOrders = all.filter(o =>
+    o.status !== 'CANCELLED' && inLocalDayRange(o.createdAt, fromDate, toDate)
+  )
   const hours: Record<number, { orderCount: number; revenue: number }> = {}
   for (let h = 0; h < 24; h++) hours[h] = { orderCount: 0, revenue: 0 }
   for (const o of dayOrders) {
@@ -178,15 +264,47 @@ export function hourlyBreakdown(from?: string, to?: string) {
   return Object.entries(hours).map(([hour, data]) => ({ hour: Number(hour), ...data }))
 }
 
+export interface HourBlock {
+  startHour: number
+  endHour: number
+  orderCount: number
+  revenue: number
+}
+
+const HOUR_BLOCK_SIZES = [1, 2, 3, 4, 6, 12]
+
+/**
+ * The hourly report plus the same 24 hours folded into contiguous blocks
+ * (e.g. every 4 hours: من 2م إلى 6م). `endHour` is exclusive so the last
+ * block of the day ends at 24. Desktop keeps reading `hourlyBreakdown`
+ * directly; this shape is what `/reports/hourly` serves to the phone.
+ */
+export function hourlyReport(from?: string, to?: string, blockHours?: number) {
+  const hourly = hourlyBreakdown(from, to)
+  const size = HOUR_BLOCK_SIZES.includes(blockHours ?? 1) ? (blockHours ?? 1) : 1
+  const blocks: HourBlock[] = []
+  if (size <= 1) {
+    return { hourly, blocks: hourly.map(b => ({ startHour: b.hour, endHour: b.hour + 1, orderCount: b.orderCount, revenue: b.revenue })) }
+  }
+  for (let start = 0; start < 24; start += size) {
+    const slice = hourly.slice(start, start + size)
+    blocks.push({
+      startHour: start,
+      endHour: start + size,
+      orderCount: slice.reduce((sum, b) => sum + b.orderCount, 0),
+      revenue: slice.reduce((sum, b) => sum + b.revenue, 0),
+    })
+  }
+  return { hourly, blocks }
+}
+
 export function topItems(limit = 10, from?: string, to?: string) {
   requireAdmin()
   const db = getDb()
   const orderMap = new Map(
     db.select().from(orders).all().filter(o => {
       if (o.status === 'CANCELLED') return false
-      if (from && o.createdAt < from) return false
-      if (to && o.createdAt > to + '￿') return false
-      return true
+      return inLocalDayRange(o.createdAt, from, to)
     }).map(o => [o.id, o])
   )
   const productMap = new Map(db.select().from(products).all().map(p => [p.id, p]))
@@ -220,9 +338,7 @@ export function categoryRevenue(from?: string, to?: string) {
   const orderMap = new Map(
     db.select().from(orders).all().filter(o => {
       if (o.status === 'CANCELLED') return false
-      if (from && o.createdAt < from) return false
-      if (to && o.createdAt > to + '￿') return false
-      return true
+      return inLocalDayRange(o.createdAt, from, to)
     }).map(o => [o.id, o])
   )
   const productMap = new Map(db.select().from(products).all().map(p => [p.id, p]))
@@ -259,9 +375,7 @@ export function addonStats(from?: string, to?: string) {
   const orderMap = new Map(
     db.select().from(orders).all().filter(o => {
       if (o.status === 'CANCELLED') return false
-      if (from && o.createdAt < from) return false
-      if (to && o.createdAt > to + '￿') return false
-      return true
+      return inLocalDayRange(o.createdAt, from, to)
     }).map(o => [o.id, o])
   )
   const addonMap = new Map(db.select().from(addons).all().map(a => [a.id, a]))
@@ -296,9 +410,7 @@ export function ticketDistribution(from?: string, to?: string) {
   const db = getDb()
   const allOrders = db.select().from(orders).all().filter(o => {
     if (o.status === 'CANCELLED') return false
-    if (from && o.createdAt < from) return false
-    if (to && o.createdAt > to + '￿') return false
-    return true
+    return inLocalDayRange(o.createdAt, from, to)
   })
   const ranges = [
     { range: '< 50', min: 0, max: 50 },
@@ -319,9 +431,7 @@ export function orderTypeSplit(from?: string, to?: string) {
   const db = getDb()
   const allOrders = db.select().from(orders).all().filter(o => {
     if (o.status === 'CANCELLED') return false
-    if (from && o.createdAt < from) return false
-    if (to && o.createdAt > to + '￿') return false
-    return true
+    return inLocalDayRange(o.createdAt, from, to)
   })
   const delivery = allOrders.filter(o => o.orderType === 'delivery')
   const dineIn = allOrders.filter(o => o.orderType === 'dine-in')
@@ -547,11 +657,7 @@ export function shiftSummary(from?: string, to?: string) {
 export function laborSummary(from?: string, to?: string) {
   requireAdmin()
   const db = getDb()
-  const inRange = (ts: string) => {
-    if (from && ts < from) return false
-    if (to && ts > to + '￿') return false
-    return true
-  }
+  const inRange = (ts: string) => inLocalDayRange(ts, from, to)
   const allUsers = db.select().from(users).where(eq(users.active, true)).all()
   const allShifts = db.select().from(shifts).all().filter(x => inRange(x.startedAt))
   const allOrders = db.select().from(orders).all().filter(o => o.status !== 'CANCELLED' && inRange(o.createdAt))
@@ -611,11 +717,7 @@ export function laborSummary(from?: string, to?: string) {
 export function voidSummary(from?: string, to?: string) {
   requireAdmin()
   const db = getDb()
-  const inRange = (ts: string) => {
-    if (from && ts < from) return false
-    if (to && ts > to + '￿') return false
-    return true
-  }
+  const inRange = (ts: string) => inLocalDayRange(ts, from, to)
   const allOrders = db.select().from(orders).all().filter(o => inRange(o.createdAt))
   const cancelled = allOrders.filter(o => o.status === 'CANCELLED')
   const refunded = allOrders.filter(o => o.status === 'REFUNDED')
@@ -674,12 +776,12 @@ export function voidSummary(from?: string, to?: string) {
 export function driverSummary(opts?: { from?: string; to?: string }) {
   requireAdmin()
   const db = getDb()
-  const from = (opts?.from || new Date().toISOString().slice(0, 10)).slice(0, 10)
+  const from = (opts?.from || localToday()).slice(0, 10)
   const to = (opts?.to || from).slice(0, 10)
   const rows = db.select().from(orders).where(and(
     eq(orders.orderType, 'delivery'),
-    gte(orders.createdAt, from),
-    lte(orders.createdAt, to + '￿'),
+    gte(orders.createdAt, localDayStart(from)),
+    lte(orders.createdAt, localDayEnd(to)),
     sql`${orders.status} NOT IN ('CANCELLED', 'REFUNDED')`,
   )).all()
   const profiles = db.select().from(deliveryProfiles).all()
@@ -746,14 +848,65 @@ export function driverSummary(opts?: { from?: string; to?: string }) {
 export function revenueTrend(days = 7) {
   requireAdmin()
   const db = getDb()
+  const to = localToday()
+  const dates = localDatesBetween(localDaysBefore(days - 1, to), to)
+  const buckets = new Map(dates.map(date => [date, { date, revenue: 0, orderCount: 0 }]))
+  // Same revenue definition as dailySummary: refunds come off the day they
+  // happened, so two cards can never disagree about the same date.
   const allOrders = db.select().from(orders).all().filter(o => o.status !== 'CANCELLED')
-  const result: { date: string; revenue: number; orderCount: number }[] = []
-  for (let d = days - 1; d >= 0; d--) {
-    const date = new Date(Date.now() - d * 86400000).toISOString().slice(0, 10)
-    const dayOrders = allOrders.filter(o => o.createdAt.startsWith(date))
-    result.push({ date, revenue: dayOrders.reduce((s, o) => s + o.total, 0), orderCount: dayOrders.length })
+  for (const o of allOrders) {
+    const bucket = buckets.get(localDateOf(o.createdAt))
+    if (!bucket) continue
+    bucket.revenue += Number(o.total || 0) - (o.status === 'REFUNDED' ? Number(o.refundedAmount || 0) : 0)
+    bucket.orderCount++
   }
-  return result
+  return dates.map(date => buckets.get(date)!)
+}
+
+/**
+ * What the period's sales cost, per product: quantity × that product's own
+ * cost price. Same definition as `costOfGoods` in daily/profit, but itemised so
+ * the phone can show where the number comes from.
+ */
+export function productCostBreakdown(from?: string, to?: string, limit = 50) {
+  requireAdmin()
+  const db = getDb()
+  const orderIds = new Set(
+    db.select().from(orders).all()
+      .filter(o => o.status !== 'CANCELLED' && inLocalDayRange(o.createdAt, from, to))
+      .map(o => o.id),
+  )
+  const productMap = new Map(db.select().from(products).all().map(p => [p.id, p]))
+  const rows = new Map<string, { productId: string; name: string; emoji: string; quantity: number; unitCost: number; totalCost: number }>()
+  for (const item of db.select().from(orderItems).all()) {
+    if (!orderIds.has(item.orderId)) continue
+    const product = productMap.get(item.productId)
+    const unitCost = Number(product?.costPrice) || 0
+    const quantity = Number(item.quantity) || 0
+    const row = rows.get(item.productId) || {
+      productId: item.productId,
+      name: product?.name || '—',
+      emoji: product?.emoji || '',
+      quantity: 0,
+      unitCost,
+      totalCost: 0,
+    }
+    row.quantity += quantity
+    row.totalCost += unitCost * quantity
+    rows.set(item.productId, row)
+  }
+  const list = [...rows.values()].sort((a, b) => b.totalCost - a.totalCost)
+  return {
+    from: from || null,
+    to: to || null,
+    totalCost: r2(list.reduce((sum, row) => sum + row.totalCost, 0)),
+    rows: list.slice(0, Math.max(1, Math.min(limit, 100))).map(row => ({
+      ...row,
+      quantity: r2(row.quantity),
+      unitCost: r2(row.unitCost),
+      totalCost: r2(row.totalCost),
+    })),
+  }
 }
 
 export function inventoryAlerts() {
@@ -769,9 +922,7 @@ export function paymentMethodBreakdown(from?: string, to?: string) {
   const db = getDb()
   const allOrders = db.select().from(orders).all().filter(o => {
     if (o.status === 'CANCELLED') return false
-    if (from && o.createdAt < from) return false
-    if (to && o.createdAt > to + '￿') return false
-    return true
+    return inLocalDayRange(o.createdAt, from, to)
   })
   const validOrderIds = new Set(allOrders.map(o => o.id))
   const allPayments = db.select().from(payments).all().filter(p => validOrderIds.has(p.orderId))
@@ -789,9 +940,7 @@ export function discountSummary(from?: string, to?: string) {
   const db = getDb()
   const allOrders = db.select().from(orders).all().filter(o => {
     if (o.status === 'CANCELLED') return false
-    if (from && o.createdAt < from) return false
-    if (to && o.createdAt > to + '￿') return false
-    return true
+    return inLocalDayRange(o.createdAt, from, to)
   })
   const byCode: Record<string, { code: string; count: number; totalDiscount: number; totalRevenue: number }> = {}
   const noDiscountOrders: typeof allOrders = []
@@ -860,9 +1009,7 @@ export function abcXyz(from?: string, to?: string) {
   const db = getDb()
   const allOrders = db.select().from(orders).all().filter(o => {
     if (o.status === 'CANCELLED') return false
-    if (from && o.createdAt < from) return false
-    if (to && o.createdAt > to + '￿') return false
-    return true
+    return inLocalDayRange(o.createdAt, from, to)
   })
   const orderMap = new Map(allOrders.map(o => [o.id, o]))
   const itemsByOrder = new Map<string, ReportItem[]>()
@@ -896,22 +1043,22 @@ export function abcXyz(from?: string, to?: string) {
     return { ...row, revenue: r2(row.revenue), share: r2(share), cumShare: r2(cum), abc: abcClass(cum) }
   })
 
-  // XYZ: coefficient of variation of daily qty over the last 90 days
+  // XYZ: coefficient of variation of daily qty over the last 90 local days
   const lookback = 90
-  const cutoff = new Date(Date.now() - lookback * 86400000).toISOString().slice(0, 10)
+  const cutoff = localDayStart(localDaysBefore(lookback - 1))
   const histOrders = db.select().from(orders).all()
   const histValid = new Set(histOrders.filter(o => o.status !== 'CANCELLED' && o.createdAt >= cutoff).map(o => o.id))
   const histOrderMap = new Map(histOrders.map(o => [o.id, o]))
   const dailyQty: Record<string, Record<string, number>> = {}
   for (const item of db.select().from(orderItems).all()) {
     if (!histValid.has(item.orderId)) continue
-    const date = histOrderMap.get(item.orderId)?.createdAt.slice(0, 10)
+    const created = histOrderMap.get(item.orderId)?.createdAt
+    const date = created ? localDateOf(created) : null
     if (!date) continue
     if (!dailyQty[item.productId]) dailyQty[item.productId] = {}
     dailyQty[item.productId][date] = (dailyQty[item.productId][date] || 0) + item.quantity
   }
-  const dayList: string[] = []
-  for (let d = lookback - 1; d >= 0; d--) dayList.push(new Date(Date.now() - d * 86400000).toISOString().slice(0, 10))
+  const dayList = localDatesBetween(localDaysBefore(lookback - 1), localToday())
   const xyzMap: Record<string, { xyz: string; cv: number }> = {}
   for (const pid of Object.keys(agg)) {
     const values = dayList.map(dd => dailyQty[pid]?.[dd] || 0)
@@ -949,9 +1096,7 @@ export function inventoryTurnover(from?: string, to?: string) {
   const db = getDb()
   const allOrders = db.select().from(orders).all().filter(o => {
     if (o.status === 'CANCELLED') return false
-    if (from && o.createdAt < from) return false
-    if (to && o.createdAt > to + '￿') return false
-    return true
+    return inLocalDayRange(o.createdAt, from, to)
   })
   const validOrderIds = new Set(allOrders.map(o => o.id))
   const items = db.select().from(orderItems).all().filter(i => validOrderIds.has(i.orderId))
@@ -983,11 +1128,13 @@ export function inventoryTurnover(from?: string, to?: string) {
   const totalTx: Record<string, number> = {}
   const txBeforeStart: Record<string, number> = {}
   const txUpToEnd: Record<string, number> = {}
+  const startBound = from ? localDayStart(from) : null
+  const endBound = to ? localDayEnd(to) : null
   for (const t of txRows) {
     const q = Number(t.quantity) || 0
     totalTx[t.ingredient_id] = (totalTx[t.ingredient_id] || 0) + q
-    if (from && t.created_at < from) txBeforeStart[t.ingredient_id] = (txBeforeStart[t.ingredient_id] || 0) + q
-    if (to && t.created_at <= to + '￿') txUpToEnd[t.ingredient_id] = (txUpToEnd[t.ingredient_id] || 0) + q
+    if (startBound && t.created_at < startBound) txBeforeStart[t.ingredient_id] = (txBeforeStart[t.ingredient_id] || 0) + q
+    if (endBound && t.created_at < endBound) txUpToEnd[t.ingredient_id] = (txUpToEnd[t.ingredient_id] || 0) + q
   }
 
   const active = db.select().from(ingredients).where(eq(ingredients.active, true)).all()
@@ -1110,19 +1257,17 @@ export function salesTrend(opts?: { days?: number; forecastDays?: number }) {
   // 60-row history silently repeats the 60-day figure. REFUNDED money went back
   // to the customer, so like every other report here it never counts as revenue.
   const statDays = 90
-  const cutoff = new Date(Date.now() - Math.max(days, statDays) * 86400000).toISOString().slice(0, 10)
+  const cutoff = localDayStart(localDaysBefore(Math.max(days, statDays) - 1))
   const allOrders = db.select().from(orders).all().filter(o => o.status !== 'CANCELLED' && o.status !== 'REFUNDED' && o.createdAt >= cutoff)
-  const dayList: string[] = []
-  for (let d = days - 1; d >= 0; d--) dayList.push(new Date(Date.now() - d * 86400000).toISOString().slice(0, 10))
+  const dayList = localDatesBetween(localDaysBefore(days - 1), localToday())
   const daySet = new Set(dayList)
-  const statList: string[] = []
-  for (let d = statDays - 1; d >= 0; d--) statList.push(new Date(Date.now() - d * 86400000).toISOString().slice(0, 10))
+  const statList = localDatesBetween(localDaysBefore(statDays - 1), localToday())
   const statSet = new Set(statList)
 
   const daily = new Map<string, { revenue: number; orderCount: number; qty: number }>()
   const orderMap = new Map(allOrders.map(o => [o.id, o]))
   for (const o of allOrders) {
-    const d = o.createdAt.slice(0, 10)
+    const d = localDateOf(o.createdAt)
     if (!statSet.has(d)) continue
     if (!daily.has(d)) daily.set(d, { revenue: 0, orderCount: 0, qty: 0 })
     const rec = daily.get(d)!
@@ -1187,9 +1332,10 @@ export function salesTrend(opts?: { days?: number; forecastDays?: number }) {
   })
 
   const forecast: { date: string; revenue: number; factor: number }[] = []
+  const today = new Date()
   for (let f = 1; f <= forecastDays; f++) {
-    const d = new Date(Date.now() + f * 86400000)
-    const dateStr = d.toISOString().slice(0, 10)
+    const d = new Date(today.getFullYear(), today.getMonth(), today.getDate() + f, 12)
+    const dateStr = localDateOf(d.toISOString())
     const wd = d.getDay()
     const factor = weekdayFactors[wd].factor
     forecast.push({ date: dateStr, revenue: r2(baseDailyRevenue * factor), factor })
@@ -1238,7 +1384,7 @@ export function daysOnHand() {
   const s = getSqlite()
   const db = getDb()
   const active = db.select().from(ingredients).where(eq(ingredients.active, true)).all()
-  const cutoff = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10)
+  const cutoff = localDayStart(localDaysBefore(29))
   const consumptionRows = s.prepare("SELECT ingredient_id, quantity FROM inventory_transactions WHERE type = 'CONSUMPTION' AND created_at >= ?").all(cutoff) as any[]
   const used: Record<string, number> = {}
   for (const r of consumptionRows) {

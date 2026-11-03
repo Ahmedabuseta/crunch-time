@@ -4,6 +4,7 @@ import { getDb, getSqlite } from '../db/client'
 import * as schema from '../db/schema'
 import { deductInventory, expandRecipes, listRecipeRows, now, recomputeProductCost, r2, uuid } from './shared'
 import { hardDelete } from './shared'
+import { localDayEnd, localDayStart } from './day-range'
 import { requireAdmin } from './session'
 import { defaultStorageForCategory, normalizeCategory, normalizeStorage } from '../lib/inventory-taxonomy'
 
@@ -494,8 +495,8 @@ export function consumptionSummary(opts?: { from?: string; to?: string }) {
   const to = opts?.to || null
   const conds = ["t.type IN ('CONSUMPTION', 'WASTE', 'ADJUSTMENT')"]
   const params: any[] = []
-  if (from) { conds.push('t.created_at >= ?'); params.push(from) }
-  if (to) { conds.push('t.created_at <= ?'); params.push(to + '￿') }
+  if (from) { conds.push('t.created_at >= ?'); params.push(localDayStart(from)) }
+  if (to) { conds.push('t.created_at < ?'); params.push(localDayEnd(to)) }
 
   const rows = s.prepare(`
     SELECT i.id AS ingredientId, i.name, i.unit, i.stock_quantity AS stock,
@@ -592,8 +593,8 @@ export function backfillConsumption(opts?: {
   const statuses = opts?.statuses?.length ? opts.statuses : ['COMPLETED']
   const params: any[] = [...statuses]
   const conds = [`o.status IN (${statuses.map(() => '?').join(', ')})`]
-  if (opts?.from) { conds.push('o.created_at >= ?'); params.push(opts.from) }
-  if (opts?.to) { conds.push('o.created_at <= ?'); params.push(opts.to + '￿') }
+  if (opts?.from) { conds.push('o.created_at >= ?'); params.push(localDayStart(opts.from)) }
+  if (opts?.to) { conds.push('o.created_at < ?'); params.push(localDayEnd(opts.to)) }
   if (opts?.orderType) { conds.push('o.order_type = ?'); params.push(opts.orderType) }
 
   const orders = s.prepare(`
@@ -702,8 +703,8 @@ export function listTransactions(ingredientId: string, filters?: { type?: string
   const conds = ['t.ingredient_id = ?']
   const params: any[] = [ingredientId]
   if (filters?.type) { conds.push('t.type = ?'); params.push(filters.type) }
-  if (filters?.from) { conds.push('t.created_at >= ?'); params.push(filters.from) }
-  if (filters?.to) { conds.push('t.created_at <= ?'); params.push(filters.to + '￿') }
+  if (filters?.from) { conds.push('t.created_at >= ?'); params.push(localDayStart(filters.from)) }
+  if (filters?.to) { conds.push('t.created_at < ?'); params.push(localDayEnd(filters.to)) }
   const where = `WHERE ${conds.join(' AND ')}`
   const total = (s.prepare(`SELECT COUNT(*) as c FROM inventory_transactions t ${where}`).get(...params) as any).c
   const pageSize = Math.min(Math.max(filters?.pageSize || 20, 5), 100)
