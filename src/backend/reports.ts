@@ -845,11 +845,19 @@ export function driverSummary(opts?: { from?: string; to?: string }) {
   }
 }
 
-export function revenueTrend(days = 7) {
+export function revenueTrend(days = 7, from?: string, to?: string) {
   requireAdmin()
   const db = getDb()
-  const to = localToday()
-  const dates = localDatesBetween(localDaysBefore(days - 1, to), to)
+  const today = localToday()
+  // An explicit [from, to] window wins when it is well-formed and not in the
+  // future; otherwise the classic trailing `days` window anchored at today.
+  const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
+  const end = to && DATE_RE.test(to) && to <= today ? to : today
+  const start =
+    from && DATE_RE.test(from) && from <= end
+      ? from
+      : localDaysBefore(Math.max(1, Math.trunc(days)) - 1, end)
+  const dates = localDatesBetween(start, end)
   const buckets = new Map(dates.map(date => [date, { date, revenue: 0, orderCount: 0 }]))
   // Same revenue definition as dailySummary: refunds come off the day they
   // happened, so two cards can never disagree about the same date.

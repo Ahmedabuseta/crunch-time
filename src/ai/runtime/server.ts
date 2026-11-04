@@ -30,8 +30,12 @@ export function findBinary(): string | null {
   const resourcesPath = (process as any).resourcesPath as string | undefined
   const candidates = [
     process.env.TEMPORAL_CLI_PATH,
+    // Windows ships the PE with its extension; the extension-less name is the
+    // Linux/macOS binary and is also what older packages carried.
+    resourcesPath ? path.join(resourcesPath, 'temporal.exe') : null,
     resourcesPath ? path.join(resourcesPath, 'temporal') : null,
     // repository build output, used by `npm run dev` and by tests
+    path.join(process.cwd(), 'build', 'temporal.exe'),
     path.join(process.cwd(), 'build', 'temporal'),
   ].filter(Boolean) as string[]
 
@@ -56,7 +60,9 @@ function dataDir(): string {
 export function temporalStatus(): TemporalRuntimeStatus {
   const binaryPath = findBinary()
   return {
-    running: child !== null && boundPort !== null,
+    // `boundPort` alone: a dev server left running by a previous app process is
+    // reused, and it is just as usable as one this process spawned.
+    running: boundPort !== null,
     port: boundPort,
     uiPort: boundPort !== null ? boundPort + 1000 : null,
     error: lastError,
@@ -65,23 +71,36 @@ export function temporalStatus(): TemporalRuntimeStatus {
   }
 }
 
-/** Polls a TCP port until it accepts a connection or the deadline passes. */
-async function waitForPort(port: number, timeoutMs: number): Promise<boolean> {
+/** One TCP probe. */
+async function probePort(port: number, timeoutMs = 750): Promise<boolean> {
+  return new Promise<boolean>((resolve) => {
+    const socket = createConnection({ host: '127.0.0.1', port })
+    const done = (result: boolean) => {
+      socket.removeAllListeners()
+      socket.destroy()
+      resolve(result)
+    }
+    socket.setTimeout(timeoutMs)
+    socket.once('connect', () => done(true))
+    socket.once('timeout', () => done(false))
+    socket.once('error', () => done(false))
+  })
+}
+
+/**
+ * Polls a TCP port until it accepts a connection, the deadline passes, or the
+ * child we spawned is already dead. Without the abort a wrong-platform binary
+ * made the owner wait 25 seconds before hearing that nothing started.
+ */
+async function waitForPort(
+  port: number,
+  timeoutMs: number,
+  aborted?: () => boolean,
+): Promise<boolean> {
   const deadline = Date.now() + timeoutMs
   while (Date.now() < deadline) {
-    const ok = await new Promise<boolean>((resolve) => {
-      const socket = createConnection({ host: '127.0.0.1', port })
-      const done = (result: boolean) => {
-        socket.removeAllListeners()
-        socket.destroy()
-        resolve(result)
-      }
-      socket.setTimeout(750)
-      socket.once('connect', () => done(true))
-      socket.once('timeout', () => done(false))
-      socket.once('error', () => done(false))
-    })
-    if (ok) return true
+    if (aborted?.()) return false
+    if (await probePort(port)) return true
     await new Promise((resolve) => setTimeout(resolve, 250))
   }
   return false
@@ -94,6 +113,18 @@ async function waitForPort(port: number, timeoutMs: number): Promise<boolean> {
 export async function startTemporal(port: number): Promise<{ ok: boolean; error?: string }> {
   if (child && boundPort === port) return { ok: true }
   if (child) await stopTemporal()
+
+  // A dev server left behind by a previous app process (or the app's own
+  // restart) already owns the port. Reuse it: spawning a second one makes it
+  // exit with EADDRINUSE, and `waitForPort` would then mistake the existing
+  // listener for the child — the exact state that reported
+  // "خدمة التشغيل وقفت (1)" while the port was healthy.
+  if (await probePort(port)) {
+    child = null
+    boundPort = port
+    lastError = null
+    return { ok: true }
+  }
 
   const binaryPath = findBinary()
   if (!binaryPath) {
@@ -120,25 +151,37 @@ export async function startTemporal(port: number): Promise<{ ok: boolean; error?
     child = proc
     boundPort = port
     lastError = null
+    let exited = false
 
     proc.on('exit', (code) => {
+      exited = true
       if (child === proc) {
         child = null
         boundPort = null
-        if (code !== 0) lastError = `خدمة التشغيل وقفت (${code})`
+        // A wrong-platform binary exits here with ENOEXEC/216; keep the code so
+        // the start path can report it instead of waiting out the port timer.
+        lastError = `خدمة التشغيل وقفت (${code ?? 'signal'})`
       }
     })
     proc.on('error', (err) => {
+      exited = true
       lastError = err.message
       child = null
       boundPort = null
     })
 
-    const ready = await waitForPort(port, 25_000)
+    const ready = await waitForPort(port, 25_000, () => exited)
     if (!ready) {
-      lastError = 'خدمة التشغيل مبتفتحش البورت — جرّب بورت تاني'
+      lastError = lastError ?? 'خدمة التشغيل مبتفتحش البورت — جرّب بورت تاني'
       await stopTemporal()
-      return { ok: false, error: lastError ?? undefined }
+      return { ok: false, error: lastError }
+    }
+    if (child !== proc) {
+      // The child died while we waited. An earlier build treated the still-open
+      // port as success and left the owner with a "down" runtime that nothing
+      // could restart. Report the exit instead.
+      await stopTemporal()
+      return { ok: false, error: lastError ?? 'خدمة التشغيل وقفت قبل ما تجهز' }
     }
     return { ok: true }
   } catch (err: any) {

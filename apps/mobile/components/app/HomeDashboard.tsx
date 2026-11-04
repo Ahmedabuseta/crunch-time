@@ -16,6 +16,7 @@ import {
 } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 
+import { DatePicker } from '@/components/app/DatePicker';
 import { FilterSelect } from '@/components/app/FilterSelect';
 import { Text } from '@/components/ui/text';
 import { View } from '@/components/ui/view';
@@ -154,11 +155,13 @@ type IconType = React.ComponentType<{ size?: number; color?: string }>;
 
 const WEEKDAYS = ['الأحد', 'الاتنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
 
-const PERIOD_OPTIONS = [
-  { value: '30', label: 'آخر 30 يوم' },
-  { value: '90', label: 'آخر 90 يوم' },
-  { value: 'month', label: 'من أول الشهر' },
-];
+// The dashboard mounts at launch and renders server report payloads directly.
+// A desktop build older than this one can answer 200 with a different
+// envelope, so every report list is coerced to an array — a shape mismatch
+// degrades to an empty card instead of a TypeError crash loop.
+function asRows<T>(value: unknown): T[] {
+  return Array.isArray(value) ? (value as T[]) : [];
+}
 
 const BLOCK_OPTIONS = [
   { value: '2', label: 'كل ساعتين' },
@@ -166,12 +169,6 @@ const BLOCK_OPTIONS = [
   { value: '6', label: 'كل 6 ساعات' },
   { value: '12', label: 'كل 12 ساعة' },
 ];
-
-const PERIOD_LABELS: Record<string, string> = {
-  '30': 'آخر 30 يوم',
-  '90': 'آخر 90 يوم',
-  month: 'من أول الشهر',
-};
 
 /** Isolates a value so digits, units and currency keep the Arabic order even
  * when the surrounding Text has no explicit base direction. */
@@ -184,6 +181,12 @@ const hourText = (hour: number) => `${hour % 12 || 12} ${hour < 12 ? 'ص' : 'م'
 
 const blockRange = (block: HourBlock) =>
   rtl(`من ${hourText(block.startHour)} إلى ${hourText(block.endHour)}`);
+
+/** Days from `from` to `to` inclusive, for label math only — the trend query
+ * now takes the window itself. */
+function rangeLabel(from: string, to: string): string {
+  return rtl(`${from} إلى ${to}`);
+}
 
 export function HomeDashboard() {
   const router = useRouter();
@@ -201,22 +204,31 @@ export function HomeDashboard() {
   const secondary = useColor('secondary');
   const border = useColor('border');
 
-  const [peakPeriod, setPeakPeriod] = useState('30');
-  const [peakBlock, setPeakBlock] = useState('4');
-
   const today = ymd(new Date());
   const monthStart = startOfMonth();
   const weekStart = ymd(daysBefore(6));
 
-  // One filter drives the whole peak-period group: the days cards and the
-  // hour cards all read from the same window and the same block size.
-  const peakFrom =
-    peakPeriod === 'month' ? monthStart : ymd(daysBefore(Number(peakPeriod) - 1));
-  const peakDays =
-    peakPeriod === 'month'
-      ? Math.max(7, Number(today.slice(8, 10)))
-      : Number(peakPeriod);
-  const periodLabel = PERIOD_LABELS[peakPeriod] ?? PERIOD_LABELS['30'];
+  // One filter pair drives the whole peak-period group: the days cards and the
+  // hour cards all read from the same window and the same block size. The
+  // owner picks any day range; the cap on the future is enforced by the
+  // pickers (max = today) and clamped here in case the states drift apart.
+  const [rawFrom, setRawFrom] = useState(() => ymd(daysBefore(29)));
+  const [rawTo, setRawTo] = useState(() => ymd(new Date()));
+  const [peakBlock, setPeakBlock] = useState('4');
+  const peakFrom = rawFrom > rawTo ? rawTo : rawFrom;
+  const peakTo = rawFrom > rawTo ? rawFrom : rawTo;
+  const setPeakFrom = (date: string) => setRawFrom(date);
+  const setPeakTo = (date: string) => setRawTo(date);
+  const periodLabel = rangeLabel(peakFrom, peakTo);
+  // Trailing-window fallback for a desktop build that doesn't understand
+  // from/to yet — it degrades to "N days ending today" instead of empty cards.
+  const spanDays = Math.max(
+    1,
+    Math.min(
+      366,
+      Math.round((Date.parse(peakTo) - Date.parse(peakFrom)) / 86_400_000) + 1,
+    ),
+  );
 
   const daily = useDailySummary(today);
   const week = useReport<PeriodSummary>('period', { from: weekStart, to: today });
@@ -226,9 +238,9 @@ export function HomeDashboard() {
   const turnover = useReport<TurnoverReport>('inventory-turnover', { from: monthStart, to: today });
   const productCosts = useReport<ProductCostReport>('product-costs', { from: today, to: today, limit: 5 });
   const ingredients = useIngredients();
-  const hourly = useReport<HourlyReport>('hourly', { from: peakFrom, to: today, block: peakBlock });
+  const hourly = useReport<HourlyReport>('hourly', { from: peakFrom, to: peakTo, block: peakBlock });
   const alerts = useReport<IngredientAlert[]>('inventory-alerts');
-  const trend = useReport<RevenuePoint[]>('revenue-trend', { days: peakDays });
+  const trend = useReport<RevenuePoint[]>('revenue-trend', { from: peakFrom, to: peakTo, days: spanDays });
   const shift = useZReport();
   const payments = useReport<PaymentRow[]>('payment-methods', { from: monthStart, to: today });
   const orderTypes = useReport<OrderTypeSplit>('order-type-split', { from: monthStart, to: today });
@@ -238,16 +250,16 @@ export function HomeDashboard() {
   const weekReport = week.data?.report;
   const monthReport = month.data?.report;
   const profitReport = profit.data?.report;
-  const topItems = (top.data?.report ?? []).slice(0, 5);
+  const topItems = asRows<TopItem>(top.data?.report).slice(0, 5);
   // Rank by cost, not raw quantity: grams and pieces are not comparable, and
   // the cost is the number the owner is actually spending.
-  const consumedItems = [...(turnover.data?.report?.rows ?? [])]
+  const consumedItems = asRows<TurnoverRow>(turnover.data?.report?.rows)
     .filter((row) => row.consumptionUnits > 0)
     .sort((a, b) => (b.cogsPeriod ?? 0) - (a.cogsPeriod ?? 0))
     .slice(0, 7);
   const productCostReport = productCosts.data?.report;
-  const productCostRows = productCostReport?.rows ?? [];
-  const lowStock = alerts.data?.report ?? [];
+  const productCostRows = asRows<ProductCostRow>(productCostReport?.rows);
+  const lowStock = asRows<IngredientAlert>(alerts.data?.report);
   const inventoryRows = ingredients.data?.ingredients ?? [];
   const stockValue = inventoryRows.reduce(
     (sum, row) => sum + Math.max(0, Number(row.stockQuantity) || 0) * (Number(row.costPerUnit) || 0),
@@ -266,7 +278,7 @@ export function HomeDashboard() {
     }))
     .sort((a, b) => b.stockValue - a.stockValue)
     .slice(0, 5);
-  const paymentRows = payments.data?.report ?? [];
+  const paymentRows = asRows<PaymentRow>(payments.data?.report);
   const orderTypeReport = orderTypes.data?.report;
   const orderTypeRows = orderTypeReport
     ? [
@@ -279,7 +291,7 @@ export function HomeDashboard() {
 
   // Hour blocks: best and slowest block of the selected window, plus how the
   // best block compares with everything else in the day.
-  const blocks = hourly.data?.report?.blocks ?? [];
+  const blocks = asRows<HourBlock>(hourly.data?.report?.blocks);
   const soldBlocks = blocks.filter((block) => block.orderCount > 0 || block.revenue > 0);
   const sortedBlocks = [...soldBlocks].sort((a, b) => b.revenue - a.revenue);
   const bestBlock = sortedBlocks[0] ?? null;
@@ -298,7 +310,7 @@ export function HomeDashboard() {
 
   // Today is still in progress, so it must not drag its weekday's average down
   // — the cards compare complete days over the selected period.
-  const trendRows = (trend.data?.report ?? []).filter((row) => row.date !== today);
+  const trendRows = asRows<RevenuePoint>(trend.data?.report).filter((row) => row.date !== today);
   const weekdayStats = WEEKDAYS.map((name, weekday) => {
     const points = trendRows.filter((row) => new Date(`${row.date}T12:00:00`).getDay() === weekday);
     return {
@@ -610,7 +622,8 @@ export function HomeDashboard() {
       </View>
 
       <View style={styles.filterRow}>
-        <FilterSelect label='الفترة' value={peakPeriod} options={PERIOD_OPTIONS} onChange={setPeakPeriod} />
+        <DatePicker label='من تاريخ' value={peakFrom} onChange={setPeakFrom} maxDate={today} />
+        <DatePicker label='إلى تاريخ' value={peakTo} onChange={setPeakTo} maxDate={today} />
         <FilterSelect label='الساعات' value={peakBlock} options={BLOCK_OPTIONS} onChange={setPeakBlock} />
       </View>
 

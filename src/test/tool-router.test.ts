@@ -54,6 +54,22 @@ describe('tool router', () => {
     expect(has(names, 'profit_summary')).toBe(true)
     expect(names.some((name) => TOOLS.get(name)?.write)).toBe(false)
   })
+  it('routes a shortage question to the stock audit', () => {
+    const names = selectToolNames('عندي عجز في الاستربس')
+    expect(has(names, 'stock_audit')).toBe(true)
+    expect(has(names, 'ingredient_list')).toBe(true)
+  })
+
+  it('routes a physical count to record_stocktake', () => {
+    const names = selectToolNames('سجل جرد الاستربس 9 كيلو')
+    expect(has(names, 'record_stocktake')).toBe(true)
+    expect(has(names, 'stock_audit')).toBe(true)
+  })
+
+  it('answers the last-count question from the core audit', () => {
+    expect(has(selectToolNames('آخر جرد كان امتى؟'), 'stock_audit')).toBe(true)
+  })
+
   it('always exposes find_tools', () => {
     expect(has(selectToolNames('السجق بكام'), 'find_tools')).toBe(true)
     expect(has(selectToolNames('حاجة غريبة خالص'), 'find_tools')).toBe(true)

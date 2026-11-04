@@ -7,7 +7,14 @@ export const qk = {
   productOptions: (productId: string) => ['menu', 'products', productId, 'options'] as const,
   categories: ['categories'] as const,
   products: (categoryId?: string) => ['products', { categoryId: categoryId ?? null }] as const,
-  addons: ['addons'] as const,
+  allProducts: ['products', 'all'] as const,
+  addons: (includeInactive = false) => ['addons', { includeInactive }] as const,
+  addonProducts: (id: string) => ['addons', id, 'products'] as const,
+  modifierGroups: (includeInactive = false) => ['modifier-groups', { includeInactive }] as const,
+  modifierGroup: (id: string) => ['modifier-groups', id] as const,
+  modifierGroupModifiers: (id: string, includeInactive = false) =>
+    ['modifier-groups', id, 'modifiers', { includeInactive }] as const,
+  modifierGroupProducts: (id: string) => ['modifier-groups', id, 'products'] as const,
   productRecipes: (productId: string) => ['products', productId, 'recipes'] as const,
   subRecipes: ['sub-recipes'] as const,
 
@@ -65,6 +72,7 @@ export const qkPrefix = {
   menu: () => ['menu'] as const,
   categories: () => ['categories'] as const,
   addons: () => ['addons'] as const,
+  modifierGroups: () => ['modifier-groups'] as const,
   users: () => ['users'] as const,
   ingredients: () => ['ingredients'] as const,
   inventory: () => ['inventory'] as const,

@@ -10,6 +10,11 @@ const hardOpt = (req: FastifyRequest) => {
   return { hard: q.hard === '1' || q.hard === 'true' }
 }
 
+const includeInactive = (req: FastifyRequest) => {
+  const q = (req.query || {}) as any
+  return q.includeInactive === '1' || q.includeInactive === 'true'
+}
+
 export function registerCatalogRoutes(app: FastifyInstance, backend: Backend) {
   // ─── Categories ─────────────────────────────────────────────
   app.get('/categories', async (req) => {
@@ -77,9 +82,12 @@ export function registerCatalogRoutes(app: FastifyInstance, backend: Backend) {
   app.delete('/products/:id', async (req) =>
     mutate(req, { action: 'product.delete', entity: 'product', entityId: (req.params as any).id }, () =>
       backend.catalog.deleteProduct((req.params as any).id, hardOpt(req))))
+  app.post('/products/:id/duplicate', async (req) =>
+    mutate(req, { action: 'product.duplicate', entity: 'product', entityId: (req.params as any).id }, () =>
+      backend.catalog.duplicateProduct((req.params as any).id)))
 
   // ─── Addons ─────────────────────────────────────────────────
-  app.get('/addons', async () => ({ addons: await backend.addons.listAddons() }))
+  app.get('/addons', async (req) => ({ addons: await backend.addons.listAddons(includeInactive(req)) }))
   app.post('/addons', async (req) =>
     mutate(req, { action: 'addon.create', entity: 'addon' }, () => backend.addons.createAddon(req.body)))
   app.put('/addons/:id', async (req) =>
@@ -88,10 +96,19 @@ export function registerCatalogRoutes(app: FastifyInstance, backend: Backend) {
   app.delete('/addons/:id', async (req) =>
     mutate(req, { action: 'addon.delete', entity: 'addon', entityId: (req.params as any).id }, () =>
       backend.addons.deleteAddon((req.params as any).id, hardOpt(req))))
+  app.get('/addons/:id', async (req, reply) => {
+    const addon = await backend.addons.getAddonById((req.params as any).id)
+    if (!addon) return reply.code(404).send({ ok: false, error: 'الإضافة غير موجودة' })
+    return { addon }
+  })
   app.get('/products/:id/addons', async (req) => ({ addons: await backend.addons.listAddonsByProduct((req.params as any).id) }))
   app.put('/products/:id/addons', async (req) =>
     mutate(req, { action: 'product.addons.set', entity: 'product', entityId: (req.params as any).id }, () =>
       backend.addons.setAddonLinks((req.params as any).id, (req.body as any)?.addonIds || [])))
+  app.get('/addons/:id/products', async (req) => ({ products: await backend.addons.listAddonProducts((req.params as any).id) }))
+  app.put('/addons/:id/products', async (req) =>
+    mutate(req, { action: 'addon.products.set', entity: 'addon', entityId: (req.params as any).id }, () =>
+      backend.addons.setAddonProducts((req.params as any).id, (req.body as any)?.productIds || [])))
   app.get('/addons/:id/recipes', async (req) => ({ recipes: await backend.addons.listAddonRecipes((req.params as any).id) }))
   app.post('/addons/recipes', async (req) =>
     mutate(req, { action: 'addon.recipe.upsert', entity: 'addon_recipe' }, () => backend.addons.upsertAddonRecipe(req.body)))
@@ -100,7 +117,12 @@ export function registerCatalogRoutes(app: FastifyInstance, backend: Backend) {
       backend.addons.deleteAddonRecipe((req.params as any).id)))
 
   // ─── Modifiers ──────────────────────────────────────────────
-  app.get('/modifier-groups', async () => ({ groups: await backend.modifiers.listModifierGroups() }))
+  app.get('/modifier-groups', async (req) => ({ groups: await backend.modifiers.listModifierGroups(includeInactive(req)) }))
+  app.get('/modifier-groups/:id', async (req, reply) => {
+    const group = await backend.modifiers.getModifierGroupById((req.params as any).id)
+    if (!group) return reply.code(404).send({ ok: false, error: 'مجموعة الخيارات غير موجودة' })
+    return { group }
+  })
   app.post('/modifier-groups', async (req) =>
     mutate(req, { action: 'modifierGroup.create', entity: 'modifier_group' }, () => backend.modifiers.createModifierGroup(req.body)))
   app.put('/modifier-groups/:id', async (req) =>
@@ -109,7 +131,23 @@ export function registerCatalogRoutes(app: FastifyInstance, backend: Backend) {
   app.delete('/modifier-groups/:id', async (req) =>
     mutate(req, { action: 'modifierGroup.delete', entity: 'modifier_group', entityId: (req.params as any).id }, () =>
       backend.modifiers.deleteModifierGroup((req.params as any).id, hardOpt(req))))
-  app.get('/modifier-groups/:id/modifiers', async (req) => ({ modifiers: await backend.modifiers.listModifiersByGroup((req.params as any).id) }))
+  app.post('/modifier-groups/reorder', async (req) =>
+    mutate(req, { action: 'modifierGroup.reorder', entity: 'modifier_group', afterFrom: () => ({ ids: (req.body as any)?.ids }) }, () =>
+      backend.modifiers.reorderModifierGroups((req.body as any)?.ids || [])))
+  app.get('/modifier-groups/:id/modifiers', async (req) => ({
+    modifiers: await backend.modifiers.listModifiersByGroup((req.params as any).id, includeInactive(req)),
+  }))
+  app.get('/modifier-groups/:id/products', async (req) => ({
+    products: await backend.modifiers.listModifierGroupProducts((req.params as any).id),
+  }))
+  app.put('/modifier-groups/:id/products', async (req) =>
+    mutate(req, { action: 'modifierGroup.products.set', entity: 'modifier_group', entityId: (req.params as any).id }, () =>
+      backend.modifiers.setModifierGroupProducts((req.params as any).id, (req.body as any)?.productIds || [])))
+  app.get('/modifiers/:id', async (req, reply) => {
+    const modifier = await backend.modifiers.getModifierById((req.params as any).id)
+    if (!modifier) return reply.code(404).send({ ok: false, error: 'الخيار غير موجود' })
+    return { modifier }
+  })
   app.post('/modifiers', async (req) =>
     mutate(req, { action: 'modifier.create', entity: 'modifier' }, () => backend.modifiers.createModifier(req.body)))
   app.put('/modifiers/:id', async (req) =>
@@ -118,6 +156,9 @@ export function registerCatalogRoutes(app: FastifyInstance, backend: Backend) {
   app.delete('/modifiers/:id', async (req) =>
     mutate(req, { action: 'modifier.delete', entity: 'modifier', entityId: (req.params as any).id }, () =>
       backend.modifiers.deleteModifier((req.params as any).id, hardOpt(req))))
+  app.post('/modifiers/reorder', async (req) =>
+    mutate(req, { action: 'modifier.reorder', entity: 'modifier', afterFrom: () => ({ ids: (req.body as any)?.ids }) }, () =>
+      backend.modifiers.reorderModifiers((req.body as any)?.ids || [])))
   app.get('/products/:id/modifiers', async (req) => ({ groups: await backend.modifiers.listModifiersByProduct((req.params as any).id) }))
   app.put('/products/:id/modifiers', async (req) =>
     mutate(req, { action: 'product.modifiers.set', entity: 'product', entityId: (req.params as any).id }, () =>

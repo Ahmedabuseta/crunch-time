@@ -88,9 +88,12 @@ export function registerReportRoutes(app: FastifyInstance, backend: Backend) {
     return { report: await asOwner(() => backend.reports.driverSummary({ from: s(q.from), to: s(q.to) })) }
   })
 
-  app.get('/reports/revenue-trend', async (req) => ({
-    report: await asOwner(() => backend.reports.revenueTrend(n((req.query as any)?.days))),
-  }))
+  app.get('/reports/revenue-trend', async (req) => {
+    const q = (req.query || {}) as any
+    return {
+      report: await asOwner(() => backend.reports.revenueTrend(n(q.days), s(q.from), s(q.to))),
+    }
+  })
 
   app.get('/reports/inventory-alerts', async () => ({ report: await asOwner(() => backend.reports.inventoryAlerts()) }))
 

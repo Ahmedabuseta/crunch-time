@@ -363,6 +363,11 @@ export function AssistantConfigSheet({
           <Text variant='caption' style={[styles.footnote, { color: muted }]}>
             المنفذ المحلي {config?.temporalPort ?? '—'} · {config?.temporalRunning ? 'شغال' : 'واقف'}
           </Text>
+          {!config?.temporalRunning && config?.temporalError ? (
+            <Text variant='caption' style={[styles.footnote, { color: red }]}>
+              {config.temporalError}
+            </Text>
+          ) : null}
         </View>
       )}
     </BottomSheet>

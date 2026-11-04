@@ -6,6 +6,7 @@ export default function ManageLayout() {
   return (
     <Stack screenOptions={{ headerShown: false }}>
       <Stack.Screen name='product' options={{ presentation: 'modal' }} />
+      <Stack.Screen name='modifier-group' options={{ presentation: 'modal' }} />
       <Stack.Screen name='recipe' options={{ presentation: 'modal' }} />
       <Stack.Screen name='category' options={{ presentation: 'modal' }} />
       <Stack.Screen name='ingredient' options={{ presentation: 'modal' }} />

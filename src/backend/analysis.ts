@@ -81,6 +81,7 @@ export async function ask(question: string): Promise<AskResult> {
         model: provider(withKey.model),
         maxRows: 100,
         maxSteps: 5,
+        dataAsOf: snapshot.createdAt,
       }),
     )
     try {

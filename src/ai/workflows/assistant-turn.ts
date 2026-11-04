@@ -219,8 +219,14 @@ export async function assistantTurn(input: TurnInput): Promise<TurnResult> {
 
     // Still wrong (or no step left to fix it): keep the data cards and answer
     // from the tools' own summaries. An invented figure never reaches the chat.
-    const text = unknown.length > 0 ? fallbackAnswer(exchanges) : validated.reply.text
+    //
+    // A provider that fails to call `answer` after a real tool run is the same
+    // situation: the canned "needs context" line would hide data the turn
+    // actually fetched, so the summary is the answer.
+    const useFallback = unknown.length > 0 || (out.degraded && exchanges.length > 0)
+    const text = useFallback ? fallbackAnswer(exchanges) : validated.reply.text
     const cards = unknown.length > 0 ? produced.slice(-3) : validated.cards
+    const followups = useFallback ? [] : validated.reply.followups
     const degraded = out.degraded || unknown.length > 0
 
     const saved = await acts.persistTurn({
@@ -229,7 +235,7 @@ export async function assistantTurn(input: TurnInput): Promise<TurnResult> {
       user: input.message,
       text,
       cards,
-      followups: unknown.length > 0 ? [] : validated.reply.followups,
+      followups,
       promptTokens,
       completionTokens,
     })
@@ -240,7 +246,7 @@ export async function assistantTurn(input: TurnInput): Promise<TurnResult> {
       messageId: saved.messageId,
       text,
       cards,
-      followups: unknown.length > 0 ? [] : validated.reply.followups,
+      followups,
       promptTokens,
       completionTokens,
       degraded,

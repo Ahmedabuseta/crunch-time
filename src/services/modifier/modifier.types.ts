@@ -4,6 +4,8 @@ export interface ModifierGroup {
   type: 'single-select' | 'multi-select'
   sortOrder: number
   active: boolean
+  /** Products currently offering this group. */
+  productCount?: number
 }
 
 export interface Modifier {
@@ -23,6 +25,14 @@ export interface CreateModifierGroupInput {
   name: string
   type: 'single-select' | 'multi-select'
   sortOrder?: number
+  active?: boolean
+}
+
+export interface UpdateModifierGroupInput {
+  name?: string
+  type?: 'single-select' | 'multi-select'
+  sortOrder?: number
+  active?: boolean
 }
 
 export interface CreateModifierInput {
@@ -30,10 +40,12 @@ export interface CreateModifierInput {
   name: string
   priceAdjustment?: number
   sortOrder?: number
+  active?: boolean
 }
 
 export interface UpdateModifierInput {
   name?: string
   priceAdjustment?: number
   sortOrder?: number
+  active?: boolean
 }

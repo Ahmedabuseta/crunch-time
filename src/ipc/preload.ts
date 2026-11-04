@@ -148,6 +148,7 @@ contextBridge.exposeInMainWorld('api', {
     create: (data: unknown) => invoke('product:create', data),
     update: (id: string, data: unknown) => invoke('product:update', id, data),
     delete: (id: string, opts?: DeleteOpts) => invoke('product:delete', id, opts),
+    duplicate: (id: string) => invoke('product:duplicate', id),
   },
 
   // ─── Menu document export ─────────────────────────────────
@@ -157,11 +158,14 @@ contextBridge.exposeInMainWorld('api', {
 
   // ─── Addons ───────────────────────────────────────────────
   addon: {
-    list: () => invoke('addon:list'),
+    list: (includeInactive?: boolean) => invoke('addon:list', includeInactive),
+    getById: (id: string) => invoke('addon:getById', id),
     create: (data: unknown) => invoke('addon:create', data),
     update: (id: string, data: unknown) => invoke('addon:update', id, data),
     delete: (id: string, opts?: DeleteOpts) => invoke('addon:delete', id, opts),
     listByProduct: (productId: string) => invoke('addon:listByProduct', productId),
+    listProducts: (addonId: string) => invoke('addon:listProducts', addonId),
+    setProducts: (addonId: string, productIds: string[]) => invoke('addon:setProducts', addonId, productIds),
     linkToProduct: (productId: string, addonId: string) => invoke('addon:linkToProduct', productId, addonId),
     setProductLinks: (productId: string, addonIds: string[]) => invoke('addon:setProductLinks', productId, addonIds),
     listRecipes: (addonId: string) => invoke('addon:listRecipes', addonId),
@@ -171,15 +175,21 @@ contextBridge.exposeInMainWorld('api', {
 
   // ─── Modifiers ────────────────────────────────────────────
   modifier: {
-    listGroups: () => invoke('modifier:listGroups'),
+    listGroups: (includeInactive?: boolean) => invoke('modifier:listGroups', includeInactive),
+    getGroupById: (id: string) => invoke('modifier:getGroupById', id),
     createGroup: (data: unknown) => invoke('modifier:createGroup', data),
     updateGroup: (id: string, data: unknown) => invoke('modifier:updateGroup', id, data),
     deleteGroup: (id: string, opts?: DeleteOpts) => invoke('modifier:deleteGroup', id, opts),
-    listByGroup: (groupId: string) => invoke('modifier:listByGroup', groupId),
+    reorderGroups: (ids: string[]) => invoke('modifier:reorderGroups', ids),
+    listByGroup: (groupId: string, includeInactive?: boolean) => invoke('modifier:listByGroup', groupId, includeInactive),
+    getById: (id: string) => invoke('modifier:getById', id),
     createModifier: (data: unknown) => invoke('modifier:createModifier', data),
     updateModifier: (id: string, data: unknown) => invoke('modifier:updateModifier', id, data),
     deleteModifier: (id: string, opts?: DeleteOpts) => invoke('modifier:deleteModifier', id, opts),
+    reorderModifiers: (ids: string[]) => invoke('modifier:reorderModifiers', ids),
     listByProduct: (productId: string) => invoke('modifier:listByProduct', productId),
+    listProducts: (groupId: string) => invoke('modifier:listProducts', groupId),
+    setProducts: (groupId: string, productIds: string[]) => invoke('modifier:setProducts', groupId, productIds),
     linkToProduct: (productId: string, groupId: string) => invoke('modifier:linkToProduct', productId, groupId),
     setProductLinks: (productId: string, groupIds: string[]) => invoke('modifier:setProductLinks', productId, groupIds),
     listRecipes: (modifierId: string) => invoke('modifier:listRecipes', modifierId),

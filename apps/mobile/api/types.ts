@@ -21,6 +21,9 @@ export interface Product {
   emoji: string;
   description: string;
   active: boolean;
+  addonCount?: number;
+  modifierCount?: number;
+  recipeCount?: number;
 }
 
 export interface Addon {
@@ -29,6 +32,8 @@ export interface Addon {
   price: number;
   emoji: string;
   supportsRollback?: boolean;
+  active?: boolean;
+  productCount?: number;
 }
 
 export interface Modifier {
@@ -40,10 +45,17 @@ export interface Modifier {
   active: boolean;
 }
 
-export interface ModifierGroup {
+export interface ModifierGroupSummary {
   id: string;
   name: string;
   type: string;
+  sortOrder?: number;
+  active?: boolean;
+  productCount?: number;
+  modifierCount?: number;
+}
+
+export interface ModifierGroup extends ModifierGroupSummary {
   modifiers: Modifier[];
 }
 
@@ -321,5 +333,5 @@ export type ActionChatCard = Extract<ChatCard, { kind: 'action' }>;
 export type ChatActionStatus = ActionChatCard['status'];
 
 export interface ChatMessage { id: string; role: 'user'|'assistant'; content: string; cards?: ChatCard[]; followups?: string[]; createdAt: string; blocked?: string }
-export interface AssistantConfig { enabled: boolean; provider: string; baseUrl: string; model: string; hasKey: boolean; keyHint?: string|null; dailyTokenLimit: number; temporalPort: number; today?: { promptTokens: number; completionTokens: number; total: number; requests: number }; temporalRunning?: boolean }
+export interface AssistantConfig { enabled: boolean; provider: string; baseUrl: string; model: string; hasKey: boolean; keyHint?: string|null; dailyTokenLimit: number; temporalPort: number; today?: { promptTokens: number; completionTokens: number; total: number; requests: number }; temporalRunning?: boolean; temporalError?: string|null }
 export interface AssistantConfigUpdate { enabled?: boolean; provider?: string; baseUrl?: string; model?: string; apiKey?: string; dailyTokenLimit?: number }

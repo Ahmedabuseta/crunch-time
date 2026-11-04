@@ -14,6 +14,8 @@ const CORE = [
   'product_price',
   'product_list',
   'inventory_status',
+  // Always exposed: stocktake and shortage questions are a first-class ask.
+  'stock_audit',
   // Always exposed: the only way to recover when the keyword groups miss.
   'find_tools',
 ]
@@ -52,6 +54,7 @@ const RECIPE_WRITE = [
 const ADDON_READ = ['addon_list', 'modifier_group_list']
 const ADDON_WRITE = ['set_product_addons', 'set_product_modifiers']
 const ALIAS = ['unresolved_queries', 'list_aliases', 'learn_alias']
+const STOCK_WRITE = ['record_stocktake']
 
 const escapeRegex = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
@@ -75,6 +78,8 @@ const PROFIT = keywords(['ربح', 'أرباح', 'تكلفة', 'هامش', 'مص
 const TOP = keywords(['أكثر', 'أفضل', 'أسوأ', 'مبيع', 'مبيعات'])
 const MARGIN = keywords(['هامش', 'أقل ربح', 'أعلى ربح'])
 const CATEGORY = keywords(['قسم', 'أقسام', 'منيو'])
+/** Shortage, variance, stocktake and loss questions. */
+const STOCK_SIGNAL = keywords(['جرد', 'عجز', 'فائض', 'نقص', 'ناقص', 'فرق', 'سرقة', 'سرق', 'فقد', 'مفقود', 'تسريب', 'اختفى'])
 
 const CORE_SET = new Set(CORE)
 
@@ -104,6 +109,7 @@ export function selectToolNames(message: string, extra: readonly string[] = []):
   const sales = SALES.test(text)
   const profit = PROFIT.test(text)
   const top = TOP.test(text)
+  const stockSignal = STOCK_SIGNAL.test(text)
 
   if (sales) selected.add('sales_summary')
   if (profit) selected.add('profit_summary')
@@ -123,11 +129,13 @@ export function selectToolNames(message: string, extra: readonly string[] = []):
   }
   if (addon) add(selected, ADDON_READ)
   if (alias) add(selected, ALIAS)
+  if (stockSignal) add(selected, ['ingredient_list', 'ingredient_details'])
 
   if (action) {
     if (product || price || addon) add(selected, PRODUCT_WRITE)
     if (addon) add(selected, ADDON_WRITE)
     if (ingredient) add(selected, INGREDIENT_WRITE)
+    if (stockSignal) add(selected, STOCK_WRITE)
     if (recipe) {
       add(selected, subRecipe ? RECIPE_WRITE : RECIPE_LINE_WRITE)
       add(selected, INGREDIENT_READ)
@@ -135,8 +143,9 @@ export function selectToolNames(message: string, extra: readonly string[] = []):
     if (alias) add(selected, ALIAS)
     // A generic «اعمل/عدّل» with no catalogue noun still needs the common
     // product and stock actions; the model asks a clarifying question if it
-    // needs one of the rarer sub-recipe tools.
-    if (!product && !price && !ingredient && !recipe && !addon && !alias) {
+    // needs one of the rarer sub-recipe tools. A stocktake turn has its own
+    // tool and does not need the product/inventory write group.
+    if (!product && !price && !ingredient && !recipe && !addon && !alias && !stockSignal) {
       add(selected, PRODUCT_WRITE)
       add(selected, INGREDIENT_WRITE)
     }

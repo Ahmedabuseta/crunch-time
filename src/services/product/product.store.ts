@@ -10,6 +10,7 @@ interface ProductStore {
   create: (data: CreateProductInput) => Promise<string>
   update: (id: string, data: UpdateProductInput) => Promise<void>
   remove: (id: string, opts?: { hard?: boolean }) => Promise<void>
+  duplicate: (id: string) => Promise<string>
 }
 
 export const useProductStore = create<ProductStore>((set, get) => ({
@@ -42,5 +43,11 @@ export const useProductStore = create<ProductStore>((set, get) => ({
     const result = await window.api.product.delete(id, opts) as { ok: boolean; error?: string }
     if (!result.ok) throw new Error(result.error || 'فشل حذف المنتج')
     await get().fetch(undefined, get().includeInactive)
+  },
+
+  duplicate: async (id) => {
+    const result = await window.api.product.duplicate(id) as { id: string }
+    await get().fetch(undefined, get().includeInactive)
+    return result.id
   },
 }))

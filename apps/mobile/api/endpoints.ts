@@ -17,6 +17,8 @@ import type {
   IngredientLedger,
   LoginResponse,
   Menu,
+  Modifier,
+  ModifierGroupSummary,
   Order,
   PrinterInfo,
   Product,
@@ -251,13 +253,62 @@ export const api = {
   deleteProduct: (id: string, hard = false) =>
     request<{ ok: boolean }>(`/products/${id}${hard ? '?hard=1' : ''}`, { method: 'DELETE' }),
 
-  addons: () => request<{ addons: Addon[] }>('/addons'),
+  addons: (includeInactive = false) =>
+    request<{ addons: Addon[] }>(`/addons${includeInactive ? '?includeInactive=1' : ''}`),
   createAddon: (body: Record<string, unknown>) =>
     request<{ id: string }>('/addons', { method: 'POST', body }),
   updateAddon: (id: string, body: Record<string, unknown>) =>
     request<{ ok: boolean }>(`/addons/${id}`, { method: 'PUT', body }),
   deleteAddon: (id: string, hard = false) =>
     request<{ ok: boolean }>(`/addons/${id}${hard ? '?hard=1' : ''}`, { method: 'DELETE' }),
+  addonProducts: (id: string) =>
+    request<{ products: Product[] }>(`/addons/${encodeURIComponent(id)}/products`),
+  setAddonProducts: (id: string, productIds: string[]) =>
+    request<{ ok: boolean }>(`/addons/${encodeURIComponent(id)}/products`, {
+      method: 'PUT',
+      body: { productIds },
+    }),
+
+  // ─── Admin: modifier groups + options ───────────────────────
+  modifierGroups: (includeInactive = false) =>
+    request<{ groups: ModifierGroupSummary[] }>(
+      `/modifier-groups${includeInactive ? '?includeInactive=1' : ''}`
+    ),
+  modifierGroup: (id: string) =>
+    request<{ group: ModifierGroupSummary }>(`/modifier-groups/${encodeURIComponent(id)}`),
+  createModifierGroup: (body: Record<string, unknown>) =>
+    request<{ id: string }>('/modifier-groups', { method: 'POST', body }),
+  updateModifierGroup: (id: string, body: Record<string, unknown>) =>
+    request<{ ok: boolean }>(`/modifier-groups/${encodeURIComponent(id)}`, { method: 'PUT', body }),
+  deleteModifierGroup: (id: string, hard = false) =>
+    request<{ ok: boolean }>(`/modifier-groups/${encodeURIComponent(id)}${hard ? '?hard=1' : ''}`, {
+      method: 'DELETE',
+    }),
+  reorderModifierGroups: (ids: string[]) =>
+    request<{ ok: boolean }>('/modifier-groups/reorder', { method: 'POST', body: { ids } }),
+  modifierGroupModifiers: (id: string, includeInactive = false) =>
+    request<{ modifiers: Modifier[] }>(
+      `/modifier-groups/${encodeURIComponent(id)}/modifiers${includeInactive ? '?includeInactive=1' : ''}`
+    ),
+  modifierGroupProducts: (id: string) =>
+    request<{ products: Product[] }>(`/modifier-groups/${encodeURIComponent(id)}/products`),
+  setModifierGroupProducts: (id: string, productIds: string[]) =>
+    request<{ ok: boolean }>(`/modifier-groups/${encodeURIComponent(id)}/products`, {
+      method: 'PUT',
+      body: { productIds },
+    }),
+  createModifier: (body: Record<string, unknown>) =>
+    request<{ id: string }>('/modifiers', { method: 'POST', body }),
+  updateModifier: (id: string, body: Record<string, unknown>) =>
+    request<{ ok: boolean }>(`/modifiers/${encodeURIComponent(id)}`, { method: 'PUT', body }),
+  deleteModifier: (id: string, hard = false) =>
+    request<{ ok: boolean }>(`/modifiers/${encodeURIComponent(id)}${hard ? '?hard=1' : ''}`, {
+      method: 'DELETE',
+    }),
+  reorderModifiers: (ids: string[]) =>
+    request<{ ok: boolean }>('/modifiers/reorder', { method: 'POST', body: { ids } }),
+  duplicateProduct: (id: string) =>
+    request<{ id: string }>(`/products/${encodeURIComponent(id)}/duplicate`, { method: 'POST', body: {} }),
 
   // ─── Admin: inventory ───────────────────────────────────────
   ingredients: (params?: { low?: string } & ListParams) =>

@@ -4,7 +4,7 @@
 // data, stores a pending action and returns a confirm card. `confirm` is the
 // only path to `backend.*`, and it lives in src/ai/actions.ts.
 import { z } from 'zod'
-import { money, percent, quantity, actionCard, marginPercent, packagesFor } from '../cards'
+import { money, percent, quantity, actionCard, marginPercent, packagesFor, metricsCard } from '../cards'
 import { createAction, getAction } from '../actions'
 import type { ToolOutput } from '../schemas'
 import { resolveIngredient, resolveProduct, siblingsOf } from './resolve'
@@ -137,7 +137,7 @@ export const WRITE_TOOLS: ToolDef[] = [
 
   {
     name: 'adjust_stock',
-    description: 'تسوية مخزون مادة بزيادة أو نقص (جرد). موجبة للزيادة، سالبة للنقص. بيرجّع كارت تأكيد.',
+    description: 'تصحيح رصيد مادة بزيادة أو نقص (حركة يدوية). للجرد الفعلي استخدم record_stocktake. موجبة للزيادة، سالبة للنقص. بيرجّع كارت تأكيد.',
     write: true,
     schema: z.object({
       ingredient: ingredientRef,
@@ -175,6 +175,77 @@ export const WRITE_TOOLS: ToolDef[] = [
       return toolOutput(
         { actionId: action.id, ingredient: item.name, delta, newStock },
         `جاهز أعدّل ${item.name} بمقدار ${delta > 0 ? '+' : ''}${quantity(delta, item.unit)} — مستني تأكيدك`,
+        [],
+      )
+    },
+  },
+
+  {
+    name: 'record_stocktake',
+    description: 'تسجيل جرد فعلي لمادة: بيحسب الفرق عن رصيد النظام (عجز/فائض) وقيمته ويجهز تسوية بتأكيد. استخدمها لما صاحب المطعم يقول الكمية الفعلية بعد الجرد — مش adjust_stock.',
+    write: true,
+    schema: z.object({
+      ingredient: ingredientRef,
+      counted_quantity: z.number().nonnegative().max(10_000_000).describe('الكمية الفعلية بعد الجرد بوحدة المادة'),
+      note: z.string().max(200).optional(),
+    }),
+    async run(args, ctx): Promise<ToolOutput> {
+      const resolved = resolveIngredient(args.ingredient)
+      if (!resolved.ok) return toolOutput({ error: resolved.error }, resolved.error)
+
+      const item = resolved.row
+      const counted = Math.round(Number(args.counted_quantity) * 100) / 100
+      if (!Number.isFinite(counted) || counted < 0) {
+        return toolOutput({ error: 'الكمية الفعلية لازم تكون صفر أو أكبر' }, 'الكمية الفعلية غير صالحة')
+      }
+
+      const system = Math.round((Number(item.stockQuantity) || 0) * 100) / 100
+      const delta = Math.round((counted - system) * 100) / 100
+      const unitCost = Number(item.costPerUnit) || 0
+      const value = Math.round(Math.abs(delta) * unitCost * 100) / 100
+      const variancePct = system !== 0 ? Math.round((delta / system) * 1000) / 10 : null
+      const note = `جرد${args.note ? ` — ${String(args.note).trim()}` : ''}`
+
+      if (delta === 0) {
+        return toolOutput(
+          { ingredient: item.name, system, counted, delta: 0, value: 0, variancePct },
+          `الجرد مطابق لرصيد ${item.name} (${quantity(counted, item.unit)})`,
+          [
+            metricsCard('مطابقة جرد', [
+              { label: 'رصيد النظام', value: quantity(system, item.unit) },
+              { label: 'الجرد الفعلي', value: quantity(counted, item.unit) },
+              { label: 'الفرق', value: 'مطابق', tone: 'good' as const },
+            ]),
+          ],
+        )
+      }
+
+      const preview = {
+        title: 'تسجيل جرد',
+        subject: item.name,
+        rows: [
+          { label: 'رصيد النظام', value: quantity(system, item.unit) },
+          { label: 'الجرد الفعلي', value: quantity(counted, item.unit) },
+          {
+            label: 'الفرق',
+            value: `${delta > 0 ? '+' : ''}${quantity(delta, item.unit)}`,
+            tone: delta < 0 ? ('down' as const) : ('up' as const),
+          },
+          { label: 'قيمة الفرق', value: money(value) },
+          ...(variancePct != null ? [{ label: 'نسبة الفرق', value: percent(variancePct) }] : []),
+        ],
+        result: `${item.name} هيبقى ${quantity(counted, item.unit)} بعد التأكيد.`,
+        warning: delta < 0
+          ? `عجز ${quantity(Math.abs(delta), item.unit)} بقيمة ${money(value)}. راجع التالف/الاستهلاك غير المسجل قبل التأكيد — التأكيد هيسجل تسوية مخزون.`
+          : `فائض ${quantity(delta, item.unit)} بقيمة ${money(value)}. التأكيد هيزود الرصيد للكمية اللي اتجردت.`,
+      }
+
+      const action = createAction('adjust_stock', { ingredientId: item.id, delta, note }, preview)
+      ctx.cards.push(actionCard(action.id, 'proposed', preview))
+
+      return toolOutput(
+        { actionId: action.id, ingredient: item.name, system, counted, delta, value, variancePct },
+        `جاهز أسجل جرد ${item.name}: النظام ${quantity(system, item.unit)}، الفعلي ${quantity(counted, item.unit)}، ${delta < 0 ? 'عجز' : 'فائض'} ${quantity(Math.abs(delta), item.unit)} — مستني تأكيدك`,
         [],
       )
     },

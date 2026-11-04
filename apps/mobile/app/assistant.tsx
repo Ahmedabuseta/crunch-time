@@ -147,10 +147,11 @@ export default function AssistantScreen() {
   const submit = useCallback(() => {
     const value = draft.trim();
     if (!value || streaming) return;
-    feedback('selection');
+    // The composer fires the press haptic itself, so a second one here would
+    // buzz twice for one tap.
     setDraft('');
     void send(value);
-  }, [draft, feedback, send, streaming]);
+  }, [draft, send, streaming]);
 
   /** A suggestion or a follow-up is a real question: tapping it sends it. */
   const ask = useCallback(

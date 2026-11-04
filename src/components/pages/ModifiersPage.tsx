@@ -1,10 +1,10 @@
-import { Fragment, useEffect, useState } from 'react'
+import { Fragment, useEffect, useMemo, useState } from 'react'
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select'
 import { useModifierStore } from '@/services/modifier/modifier.store'
 import { useInventoryStore } from '@/services/inventory/inventory.store'
 import { RecipePanel } from './RecipePanel'
+import { ProductLinkDialog } from '@/components/ProductLinkDialog'
 import { Button } from '@/components/ui/button'
-import { Plus, Pencil, Trash2, X, Link } from 'lucide-react'
 import { ListToolbar } from '@/components/ui/list-toolbar'
 import { DataTable, sortRows, type DataColumn, type SortState } from '@/components/ui/data-table'
 import { Pagination } from '@/components/ui/pagination'
@@ -12,8 +12,29 @@ import { useListControls } from '@/components/ui/list-controls'
 import { toast } from '@/components/ui/toast'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { fmtMoney } from '@/lib/format'
-import type { ViewMode } from '@/components/ui/view-toggle'
 import { useIsAdmin } from '@/lib/use-is-admin'
+import { cn } from '@/lib/utils'
+import type { ViewMode } from '@/components/ui/view-toggle'
+import type { ModifierGroupWithModifiers } from '@/services/modifier/modifier.types'
+import {
+  ArrowDown,
+  ArrowUp,
+  Eye,
+  EyeOff,
+  Link2,
+  Loader2,
+  Pencil,
+  Plus,
+  Trash2,
+  UtensilsCrossed,
+  X,
+} from 'lucide-react'
+
+function messageOf(error: unknown): string {
+  return error instanceof Error ? error.message : 'خطأ غير متوقع'
+}
+
+const TYPE_LABEL = (type: string) => (type === 'multi-select' ? 'اختيار متعدد' : 'اختيار واحد')
 
 export function ModifiersPage() {
   const groups = useModifierStore((s) => s.groups)
@@ -22,233 +43,626 @@ export function ModifiersPage() {
   const createGroup = useModifierStore((s) => s.createGroup)
   const updateGroup = useModifierStore((s) => s.updateGroup)
   const removeGroup = useModifierStore((s) => s.removeGroup)
+  const reorderGroups = useModifierStore((s) => s.reorderGroups)
   const createModifier = useModifierStore((s) => s.createModifier)
   const updateModifier = useModifierStore((s) => s.updateModifier)
   const removeModifier = useModifierStore((s) => s.removeModifier)
+  const reorderModifiers = useModifierStore((s) => s.reorderModifiers)
   const ingredients = useInventoryStore((s) => s.ingredients)
   const fetchIngredients = useInventoryStore((s) => s.fetchIngredients)
 
-  const [showGroupForm, setShowGroupForm] = useState(false)
+  const [groupFormOpen, setGroupFormOpen] = useState(false)
   const [editGroupId, setEditGroupId] = useState<string | null>(null)
-  const [groupForm, setGroupForm] = useState({ name: '', type: 'single-select' })
-  const [addGroupTo, setAddGroupTo] = useState<string | null>(null)
+  const [groupForm, setGroupForm] = useState<{ name: string; type: 'single-select' | 'multi-select'; active: boolean }>({
+    name: '',
+    type: 'single-select',
+    active: true,
+  })
+  const [groupError, setGroupError] = useState<string | null>(null)
+  const [groupSaving, setGroupSaving] = useState(false)
+
+  const [modFormOpen, setModFormOpen] = useState(false)
+  const [modGroupId, setModGroupId] = useState<string | null>(null)
   const [editModId, setEditModId] = useState<string | null>(null)
-  const [modForm, setModForm] = useState({ name: '', priceAdjustment: '' })
+  const [modForm, setModForm] = useState({ name: '', priceAdjustment: '', active: true })
+  const [modError, setModError] = useState<string | null>(null)
+  const [modSaving, setModSaving] = useState(false)
+
   const [recipeFor, setRecipeFor] = useState<string | null>(null)
-  const [view, setView] = useState<ViewMode>('table')
+  const [linkFor, setLinkFor] = useState<ModifierGroupWithModifiers | null>(null)
+  const [linkIds, setLinkIds] = useState<string[]>([])
+  const [view, setView] = useState<ViewMode>('cards')
+  const [status, setStatus] = useState<string | null>(null)
   const [typeFilter, setTypeFilter] = useState<string | null>(null)
   const [modSort, setModSort] = useState<SortState<any> | null>(null)
   const [pendingDelete, setPendingDelete] = useState<{ kind: 'group' | 'modifier'; item: any } | null>(null)
 
-  useEffect(() => { fetchGroups(); fetchIngredients() }, [])
+  useEffect(() => {
+    void fetchGroups(true)
+    void fetchIngredients()
+    // The sales screens share this store; never leave hidden groups behind.
+    return () => { void fetchGroups(false) }
+  }, [])
 
   const list = useListControls({
     items: groups,
-    searchText: (g) => `${g.name} ${g.modifiers.map(m => m.name).join(' ')} ${g.type === 'single-select' ? 'اختيار واحد' : 'اختيار متعدد'}`,
-    filter: (g) => !typeFilter || g.type === typeFilter,
+    searchText: (group) => `${group.name} ${group.modifiers.map((modifier) => modifier.name).join(' ')} ${TYPE_LABEL(group.type)}`,
+    filter: (group) => {
+      if (status === 'active' && !group.active) return false
+      if (status === 'hidden' && group.active) return false
+      if (typeFilter && group.type !== typeFilter) return false
+      return true
+    },
   })
 
-  const resetGroupForm = () => { setGroupForm({ name: '', type: 'single-select' }); setEditGroupId(null); setShowGroupForm(false) }
-  const resetModForm = () => { setModForm({ name: '', priceAdjustment: '' }); setAddGroupTo(null); setEditModId(null) }
+  const activeCount = groups.filter((group) => group.active).length
+  const hiddenCount = groups.length - activeCount
 
-  const handleCreateGroup = async () => {
-    if (!groupForm.name) return
-    await createGroup({ name: groupForm.name, type: groupForm.type })
-    toast({ title: 'تم إنشاء مجموعة الموديفاير', description: groupForm.name, variant: 'success' })
-    resetGroupForm()
+  const flatModifiers = useMemo(
+    () => sortRows(
+      list.items.flatMap((group) => group.modifiers.map((modifier) => ({
+        ...modifier,
+        groupId: group.id,
+        groupName: group.name,
+        groupType: group.type,
+        groupActive: group.active,
+      }))),
+      modSort,
+    ),
+    [list.items, modSort],
+  )
+
+  const resetGroupForm = () => {
+    setGroupForm({ name: '', type: 'single-select', active: true })
+    setEditGroupId(null)
+    setGroupFormOpen(false)
+    setGroupError(null)
   }
 
-  const handleUpdateGroup = async () => {
-    if (!editGroupId || !groupForm.name) return
-    await updateGroup(editGroupId, { name: groupForm.name, type: groupForm.type })
-    toast({ title: 'تم تحديث المجموعة', description: groupForm.name, variant: 'success' })
-    resetGroupForm()
+  const openCreateGroup = () => {
+    setGroupForm({ name: '', type: 'single-select', active: true })
+    setEditGroupId(null)
+    setGroupError(null)
+    setGroupFormOpen(true)
   }
 
-  const handleCreateModifier = async (groupId: string) => {
-    if (!modForm.name) return
-    await createModifier({ modifierGroupId: groupId, name: modForm.name, priceAdjustment: parseFloat(modForm.priceAdjustment) || 0 })
-    toast({ title: 'تم إضافة الخيار', description: modForm.name, variant: 'success' })
-    resetModForm()
+  const openEditGroup = (group: ModifierGroupWithModifiers) => {
+    setGroupForm({ name: group.name, type: group.type, active: !!group.active })
+    setEditGroupId(group.id)
+    setGroupError(null)
+    setGroupFormOpen(true)
   }
 
-  const handleUpdateModifier = async () => {
-    if (!editModId || !modForm.name) return
-    await updateModifier(editModId, { name: modForm.name, priceAdjustment: parseFloat(modForm.priceAdjustment) || 0 })
-    toast({ title: 'تم تحديث الخيار', description: modForm.name, variant: 'success' })
-    resetModForm()
+  const saveGroup = async () => {
+    const name = groupForm.name.trim()
+    if (!name) { setGroupError('اسم المجموعة مطلوب'); return }
+
+    setGroupSaving(true)
+    setGroupError(null)
+    try {
+      if (editGroupId) {
+        await updateGroup(editGroupId, { name, type: groupForm.type, active: groupForm.active })
+      } else {
+        await createGroup({ name, type: groupForm.type, active: groupForm.active })
+      }
+      toast({ title: editGroupId ? 'تم تحديث المجموعة' : 'تم إنشاء المجموعة', description: name, variant: 'success' })
+      resetGroupForm()
+    } catch (error) {
+      setGroupError(messageOf(error))
+    } finally {
+      setGroupSaving(false)
+    }
   }
 
-  const startEditGroup = (g: any) => {
-    setEditGroupId(g.id); setShowGroupForm(false)
-    setGroupForm({ name: g.name, type: g.type })
+  const toggleGroupActive = async (group: ModifierGroupWithModifiers) => {
+    try {
+      await updateGroup(group.id, { active: !group.active })
+      toast({ title: group.active ? 'تم إخفاء المجموعة' : 'تم إظهار المجموعة', description: group.name, variant: 'success' })
+    } catch (error) {
+      toast({ title: messageOf(error), variant: 'error' })
+    }
   }
 
-  const startEditMod = (m: any, groupId: string) => {
-    setEditModId(m.id); setAddGroupTo(groupId)
-    setModForm({ name: m.name, priceAdjustment: String(m.priceAdjustment || 0) })
-    setView('cards')
+  const moveGroup = async (group: ModifierGroupWithModifiers, direction: -1 | 1) => {
+    const ids = groups.map((entry) => entry.id)
+    const index = ids.indexOf(group.id)
+    const target = index + direction
+    if (index < 0 || target < 0 || target >= ids.length) return
+    ;[ids[index], ids[target]] = [ids[target], ids[index]]
+    try {
+      await reorderGroups(ids)
+    } catch (error) {
+      toast({ title: messageOf(error), variant: 'error' })
+    }
+  }
+
+  const resetModForm = () => {
+    setModForm({ name: '', priceAdjustment: '', active: true })
+    setModGroupId(null)
+    setEditModId(null)
+    setModFormOpen(false)
+    setModError(null)
+  }
+
+  const openCreateModifier = (groupId: string) => {
+    setModGroupId(groupId)
+    setEditModId(null)
+    setModForm({ name: '', priceAdjustment: '', active: true })
+    setModError(null)
+    setModFormOpen(true)
+  }
+
+  const openEditModifier = (modifier: any, groupId: string) => {
+    setModGroupId(groupId)
+    setEditModId(modifier.id)
+    setModForm({ name: modifier.name, priceAdjustment: String(modifier.priceAdjustment || 0), active: !!modifier.active })
+    setModError(null)
+    setModFormOpen(true)
+  }
+
+  const saveModifier = async () => {
+    const name = modForm.name.trim()
+    const price = Number(modForm.priceAdjustment || 0)
+    if (!name) { setModError('اسم الخيار مطلوب'); return }
+    if (!Number.isFinite(price)) { setModError('اكتب سعر صحيح'); return }
+
+    setModSaving(true)
+    setModError(null)
+    try {
+      if (editModId) {
+        await updateModifier(editModId, { name, priceAdjustment: price, active: modForm.active })
+      } else if (modGroupId) {
+        await createModifier({ modifierGroupId: modGroupId, name, priceAdjustment: price, active: modForm.active })
+      }
+      toast({ title: editModId ? 'تم تحديث الخيار' : 'تم إضافة الخيار', description: name, variant: 'success' })
+      resetModForm()
+    } catch (error) {
+      setModError(messageOf(error))
+    } finally {
+      setModSaving(false)
+    }
+  }
+
+  const toggleModifierActive = async (modifier: any) => {
+    try {
+      await updateModifier(modifier.id, { active: !modifier.active })
+      toast({ title: modifier.active ? 'تم إخفاء الخيار' : 'تم إظهار الخيار', description: modifier.name, variant: 'success' })
+    } catch (error) {
+      toast({ title: messageOf(error), variant: 'error' })
+    }
+  }
+
+  const moveModifier = async (group: ModifierGroupWithModifiers, modifier: any, direction: -1 | 1) => {
+    const ids = group.modifiers.map((entry) => entry.id)
+    const index = ids.indexOf(modifier.id)
+    const target = index + direction
+    if (index < 0 || target < 0 || target >= ids.length) return
+    ;[ids[index], ids[target]] = [ids[target], ids[index]]
+    try {
+      await reorderModifiers(ids)
+    } catch (error) {
+      toast({ title: messageOf(error), variant: 'error' })
+    }
+  }
+
+  const openLinks = async (group: ModifierGroupWithModifiers) => {
+    try {
+      const products = await window.api.modifier.listProducts(group.id) as any[]
+      setLinkIds(products.map((product) => product.id))
+      setLinkFor(group)
+    } catch (error) {
+      toast({ title: messageOf(error), variant: 'error' })
+    }
+  }
+
+  const handleDelete = async (hard: boolean) => {
+    if (!pendingDelete) return
+    const { kind, item } = pendingDelete
+    try {
+      if (kind === 'group') await removeGroup(item.id, { hard })
+      else await removeModifier(item.id, { hard })
+      toast({ title: hard ? 'تم الحذف النهائي' : 'تم تعطيل العنصر', description: item.name, variant: 'success' })
+    } catch (error) {
+      toast({ title: messageOf(error), variant: 'error' })
+    } finally {
+      setPendingDelete(null)
+    }
   }
 
   const columns: DataColumn<any>[] = [
     {
-      key: 'name', label: 'الخيار', render: (m) => (
-        <span className="font-bold">{m.name}{m.priceAdjustment > 0 && <span className="text-primary text-xs mr-1">+{fmtMoney(m.priceAdjustment)} ج.م</span>}</span>
+      key: 'name',
+      label: 'الخيار',
+      sortValue: (modifier) => modifier.name,
+      render: (modifier) => (
+        <span className="font-bold">
+          {modifier.name}
+          {modifier.priceAdjustment !== 0 && (
+            <span className="me-1 text-xs font-bold text-primary">
+              {modifier.priceAdjustment > 0 ? '+' : ''}{fmtMoney(modifier.priceAdjustment)} ج.م
+            </span>
+          )}
+        </span>
       ),
     },
-    { key: 'group', label: 'المجموعة', sortValue: (m: any) => m.groupName, render: (m) => <span className="text-xs bg-secondary rounded-full px-2 py-0.5">{m.groupName}</span> },
-    { key: 'type', label: 'النوع', sortValue: (m: any) => m.groupType, render: (m) => <span className="text-[10px] text-muted-foreground">{m.groupType === 'single-select' ? 'اختيار واحد' : 'اختيار متعدد'}</span> },
     {
-      key: 'actions', label: 'إجراءات', className: 'text-left', render: (m) => (
+      key: 'group',
+      label: 'المجموعة',
+      sortValue: (modifier) => modifier.groupName,
+      render: (modifier) => <span className="rounded-full bg-secondary px-2 py-0.5 text-xs">{modifier.groupName}</span>,
+    },
+    {
+      key: 'type',
+      label: 'النوع',
+      sortValue: (modifier) => modifier.groupType,
+      render: (modifier) => <span className="text-[10px] text-muted-foreground">{TYPE_LABEL(modifier.groupType)}</span>,
+    },
+    {
+      key: 'status',
+      label: 'الظهور',
+      sortValue: (modifier) => (modifier.active && modifier.groupActive ? 1 : 0),
+      render: (modifier) => {
+        const visible = modifier.active && modifier.groupActive
+        return (
+          <span className={cn(
+            'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-black',
+            visible ? 'bg-green-500/10 text-green-400' : 'bg-secondary text-muted-foreground',
+          )}>
+            {visible ? <Eye className="h-3 w-3" /> : <EyeOff className="h-3 w-3" />}
+            {visible ? 'ظاهر' : 'مخفي'}
+          </span>
+        )
+      },
+    },
+    {
+      key: 'actions',
+      label: 'إجراءات',
+      className: 'text-left',
+      render: (modifier) => (
         <div className="flex items-center gap-1">
-          <Button variant="ghost" size="icon" className="h-7 w-7 rounded-lg" onClick={() => setRecipeFor(recipeFor === m.id ? null : m.id)}><Link className="h-3.5 w-3.5" /></Button>
-          <Button variant="ghost" size="icon" className="h-7 w-7 rounded-lg text-primary" onClick={() => { setAddGroupTo(m.groupId); setEditModId(null); setModForm({ name: '', priceAdjustment: '' }); setView('cards') }}><Plus className="h-3.5 w-3.5" /></Button>
-          <Button variant="ghost" size="icon" className="h-7 w-7 rounded-lg" onClick={() => startEditMod(m, m.groupId)}><Pencil className="h-3.5 w-3.5" /></Button>
-          <Button variant="ghost" size="icon" className="h-7 w-7 rounded-lg text-destructive" onClick={() => setPendingDelete({ kind: 'modifier', item: m })}><Trash2 className="h-3.5 w-3.5" /></Button>
+          <Button variant="ghost" size="icon" className="h-7 w-7 rounded-lg" title={modifier.active ? 'إخفاء' : 'إظهار'} onClick={() => void toggleModifierActive(modifier)}>
+            {modifier.active ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+          </Button>
+          <Button variant="ghost" size="icon" className="h-7 w-7 rounded-lg" title="الوصفة" onClick={() => setRecipeFor(recipeFor === modifier.id ? null : modifier.id)}>
+            <UtensilsCrossed className="h-3.5 w-3.5" />
+          </Button>
+          <Button variant="ghost" size="icon" className="h-7 w-7 rounded-lg" title="تعديل" onClick={() => openEditModifier(modifier, modifier.groupId)}>
+            <Pencil className="h-3.5 w-3.5" />
+          </Button>
+          <Button variant="ghost" size="icon" className="h-7 w-7 rounded-lg text-destructive" title="حذف" onClick={() => setPendingDelete({ kind: 'modifier', item: modifier })}>
+            <Trash2 className="h-3.5 w-3.5" />
+          </Button>
         </div>
       ),
     },
   ]
 
+  const linkGroup = modGroupId ? groups.find((group) => group.id === modGroupId) : null
+
   return (
-    <div className="flex flex-col h-full">
-      <div className="flex items-center justify-between px-5 py-4 border-b">
-        <h2 className="text-base font-black">الموديفاير ({groups.length} مجموعات)</h2>
-        <Button size="sm" className="gap-1.5 rounded-xl" onClick={() => { showGroupForm ? resetGroupForm() : setShowGroupForm(true); setEditGroupId(null) }}>
-          {showGroupForm ? <X className="h-4 w-4" /> : <Plus className="h-4 w-4" />} {showGroupForm ? 'إغلاق' : 'إضافة مجموعة'}
+    <div className="flex h-full flex-col">
+      <div className="flex items-center justify-between border-b px-5 py-4">
+        <div>
+          <h2 className="text-base font-black">الموديفاير ({groups.length} مجموعات)</h2>
+          <p className="mt-0.5 text-[10px] text-muted-foreground">{activeCount} ظاهرة · {hiddenCount} مخفية</p>
+        </div>
+        <Button size="sm" className="gap-1.5 rounded-xl" onClick={openCreateGroup}>
+          <Plus className="h-4 w-4" /> إضافة مجموعة
         </Button>
       </div>
 
-      {(showGroupForm || editGroupId) && (
-        <div className="mx-5 mt-4 p-4 border-2 rounded-2xl bg-card space-y-3 animate-slide-up">
-          <div className="grid grid-cols-2 gap-3">
-            <input value={groupForm.name} onChange={e => setGroupForm(f => ({ ...f, name: e.target.value }))} placeholder="اسم المجموعة" className="px-3 py-2 rounded-xl bg-secondary text-sm border-0 focus:ring-1 focus:ring-primary focus:outline-none" dir="rtl" />
-            <Select value={groupForm.type} onValueChange={v => setGroupForm(f => ({ ...f, type: v }))}>
-              <SelectTrigger className="rounded-xl">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="single-select">اختيار واحد</SelectItem>
-                <SelectItem value="multi-select">اختيار متعدد</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="flex gap-2">
-            <Button className="flex-1 rounded-xl" onClick={editGroupId ? handleUpdateGroup : handleCreateGroup}>{editGroupId ? 'تحديث' : 'إضافة'}</Button>
-            {editGroupId && <Button variant="ghost" className="rounded-xl" onClick={resetGroupForm}>إلغاء</Button>}
-          </div>
-        </div>
-      )}
-
       <ListToolbar
         search={list.search}
-        onSearchChange={(v) => { list.setSearch(v); list.setPage(1) }}
+        onSearchChange={(value) => { list.setSearch(value); list.setPage(1) }}
         searchPlaceholder="بحث عن مجموعة أو خيار..."
         view={view}
         onViewChange={setView}
-        filters={[
-          { value: null, label: 'الكل', count: groups.length },
-          { value: 'single-select', label: 'اختيار واحد', count: groups.filter(g => g.type === 'single-select').length },
-          { value: 'multi-select', label: 'اختيار متعدد', count: groups.filter(g => g.type === 'multi-select').length },
-        ]}
-        filterValue={typeFilter}
-        onFilterChange={(v) => { setTypeFilter(v); list.setPage(1) }}
-      />
+      >
+        <Select
+          value={status ?? 'all'}
+          onValueChange={(value) => { setStatus(value === 'all' ? null : value); list.setPage(1) }}
+        >
+          <SelectTrigger className="h-9 w-[118px] rounded-lg bg-secondary text-xs font-bold">
+            <SelectValue placeholder="الظهور" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">الكل ({groups.length})</SelectItem>
+            <SelectItem value="active">ظاهر ({activeCount})</SelectItem>
+            <SelectItem value="hidden">مخفي ({hiddenCount})</SelectItem>
+          </SelectContent>
+        </Select>
+        <Select value={typeFilter ?? 'all'} onValueChange={(value) => { setTypeFilter(value === 'all' ? null : value); list.setPage(1) }}>
+          <SelectTrigger className="h-9 w-[132px] rounded-lg bg-secondary text-xs font-bold">
+            <SelectValue placeholder="النوع" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">كل الأنواع</SelectItem>
+            <SelectItem value="single-select">اختيار واحد</SelectItem>
+            <SelectItem value="multi-select">اختيار متعدد</SelectItem>
+          </SelectContent>
+        </Select>
+      </ListToolbar>
 
       {view === 'table' ? (
-        <div className="flex-1 p-5 overflow-auto">
+        <div className="flex-1 overflow-auto p-5">
           <DataTable
             columns={columns}
-            data={sortRows(list.items.flatMap(g => g.modifiers.map(m => ({ ...m, groupId: g.id, groupName: g.name, groupType: g.type }))), modSort)}
-            keyExtractor={(m) => m.id}
+            data={flatModifiers}
+            keyExtractor={(modifier) => modifier.id}
             sort={modSort}
             onSortChange={setModSort}
+            rowClassName={(modifier) => (modifier.active && modifier.groupActive ? '' : 'opacity-60')}
           />
-          {recipeFor && (
-            <div className="mt-4 border-2 rounded-2xl bg-card p-4 animate-slide-up">
-              <RecipePanel
-                title={`وصفة الخيار — ${groups.flatMap(g => g.modifiers).find((m: any) => m.id === recipeFor)?.name}`}
-                targetId={recipeFor}
-                entityField="modifierId"
-                ingredients={ingredients}
-                fetchRecipes={(id) => window.api.modifier.listRecipes(id)}
-                upsertRecipe={async (data) => (await window.api.modifier.upsertRecipe(data) as { id: string }).id}
-                deleteRecipe={(id) => window.api.modifier.deleteRecipe(id)}
-              />
-            </div>
-          )}
         </div>
       ) : (
-        <div className="flex-1 p-5 space-y-4 overflow-y-auto">
-          {list.items.map(g => (
-          <div key={g.id} className="border-2 rounded-2xl bg-card overflow-hidden">
-            <div className="flex items-center justify-between p-4 border-b">
-              <div className="flex items-center gap-2">
-                <h3 className="font-bold text-sm">{g.name}</h3>
-                <span className="text-[10px] bg-secondary rounded-full px-2 py-0.5 text-muted-foreground">
-                  {g.type === 'single-select' ? 'اختيار واحد' : 'اختيار متعدد'}
+        <div className="flex-1 space-y-4 overflow-y-auto p-5">
+          {list.items.map((group) => (
+            <div key={group.id} className={cn('overflow-hidden rounded-2xl border-2 bg-card', !group.active && 'opacity-70')}>
+              <div className="flex flex-wrap items-center gap-2 border-b p-4">
+                <h3 className="text-sm font-bold">{group.name}</h3>
+                <span className="rounded-full bg-secondary px-2 py-0.5 text-[10px] text-muted-foreground">
+                  {TYPE_LABEL(group.type)}
                 </span>
-                <span className="text-[10px] text-muted-foreground">({g.modifiers.length} خيار)</span>
-              </div>
-              <div className="flex gap-1">
-                <Button variant="ghost" size="icon" className="h-7 w-7 rounded-lg" onClick={() => startEditGroup(g)}><Pencil className="h-3.5 w-3.5" /></Button>
-                <Button variant="ghost" size="icon" className="h-7 w-7 rounded-lg text-destructive" onClick={() => setPendingDelete({ kind: 'group', item: g })}><Trash2 className="h-3.5 w-3.5" /></Button>
-              </div>
-            </div>
-            <div className="p-3 space-y-1.5">
-              {g.modifiers.map(m => (
-                <Fragment key={m.id}>
-                  <div className="flex items-center justify-between px-3 py-2 rounded-xl bg-secondary/60">
-                  <span className="text-sm font-medium">{m.name}</span>
-                  <div className="flex items-center gap-2">
-                    {m.priceAdjustment > 0 && <span className="text-xs font-bold text-primary">+{fmtMoney(m.priceAdjustment)} ج.م</span>}
-                    {m.priceAdjustment === 0 && <span className="text-xs text-muted-foreground">بدون زيادة</span>}
-                    <Button variant="ghost" size="icon" className="h-6 w-6 rounded-lg" onClick={() => setRecipeFor(recipeFor === m.id ? null : m.id)}><Link className="h-3 w-3" /></Button>
-                    <Button variant="ghost" size="icon" className="h-6 w-6 rounded-lg" onClick={() => startEditMod(m, g.id)}><Pencil className="h-3 w-3" /></Button>
-                    <Button variant="ghost" size="icon" className="h-6 w-6 rounded-lg text-destructive" onClick={() => setPendingDelete({ kind: 'modifier', item: m })}><Trash2 className="h-3 w-3" /></Button>
-                  </div>
-                  </div>
-                  {recipeFor === m.id && (
-                  <div className="px-3 pb-2 pt-1 animate-slide-up">
-                    <RecipePanel
-                      title={`وصفة الخيار — ${m.name}`}
-                      targetId={m.id}
-                      entityField="modifierId"
-                      ingredients={ingredients}
-                      fetchRecipes={(id) => window.api.modifier.listRecipes(id)}
-                      upsertRecipe={async (data) => (await window.api.modifier.upsertRecipe(data) as { id: string }).id}
-                      deleteRecipe={(id) => window.api.modifier.deleteRecipe(id)}
-                    />
-                  </div>
-                )}
-                </Fragment>
-              ))}
+                <span className={cn(
+                  'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-black',
+                  group.active ? 'bg-green-500/10 text-green-400' : 'bg-secondary text-muted-foreground',
+                )}>
+                  {group.active ? <Eye className="h-3 w-3" /> : <EyeOff className="h-3 w-3" />}
+                  {group.active ? 'ظاهر' : 'مخفي'}
+                </span>
+                <span className="inline-flex items-center gap-1 rounded-full bg-secondary px-2 py-0.5 text-[10px] text-muted-foreground">
+                  <Link2 className="h-3 w-3" /> {group.productCount ?? 0} منتج
+                </span>
+                <span className="text-[10px] text-muted-foreground">{group.modifiers.length} خيار</span>
 
-              {/* Add / Edit modifier form */}
-              {addGroupTo === g.id && (
-                <div className="flex items-center gap-2 mt-2 animate-slide-up">
-                  <input value={modForm.name} onChange={e => setModForm(f => ({ ...f, name: e.target.value }))} placeholder="اسم الخيار" className="flex-1 px-3 py-1.5 rounded-lg bg-secondary text-xs border-0 focus:ring-1 focus:ring-primary focus:outline-none" dir="rtl" />
-                  <input type="number" value={modForm.priceAdjustment} onChange={e => setModForm(f => ({ ...f, priceAdjustment: e.target.value }))} placeholder="السعر" className="w-20 px-2 py-1.5 rounded-lg bg-secondary text-xs border-0 focus:ring-1 focus:ring-primary focus:outline-none text-center" />
-                  <Button size="sm" className="rounded-lg text-xs" onClick={editModId ? handleUpdateModifier : () => handleCreateModifier(g.id)}>{editModId ? 'تحديث' : 'إضافة'}</Button>
-                  <Button variant="ghost" size="sm" className="rounded-lg text-xs" onClick={resetModForm}>إلغاء</Button>
+                <div className="ms-auto flex items-center gap-1">
+                  <Button
+                    variant="ghost" size="icon" className="h-7 w-7 rounded-lg"
+                    title="تحريك لأعلى"
+                    disabled={groups[0]?.id === group.id}
+                    onClick={() => void moveGroup(group, -1)}
+                  >
+                    <ArrowUp className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button
+                    variant="ghost" size="icon" className="h-7 w-7 rounded-lg"
+                    title="تحريك لأسفل"
+                    disabled={groups[groups.length - 1]?.id === group.id}
+                    onClick={() => void moveGroup(group, 1)}
+                  >
+                    <ArrowDown className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button variant="ghost" size="icon" className="h-7 w-7 rounded-lg" title={group.active ? 'إخفاء' : 'إظهار'} onClick={() => void toggleGroupActive(group)}>
+                    {group.active ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                  </Button>
+                  <Button variant="ghost" size="icon" className="h-7 w-7 rounded-lg" title="ربط بالمنتجات" onClick={() => void openLinks(group)}>
+                    <Link2 className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button variant="ghost" size="icon" className="h-7 w-7 rounded-lg" title="إضافة خيار" onClick={() => openCreateModifier(group.id)}>
+                    <Plus className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button variant="ghost" size="icon" className="h-7 w-7 rounded-lg" title="تعديل" onClick={() => openEditGroup(group)}>
+                    <Pencil className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button variant="ghost" size="icon" className="h-7 w-7 rounded-lg text-destructive" title="حذف" onClick={() => setPendingDelete({ kind: 'group', item: group })}>
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
                 </div>
-              )}
+              </div>
 
-              {addGroupTo !== g.id && (
-                <Button variant="ghost" size="sm" className="w-full gap-1 rounded-xl text-xs mt-2" onClick={() => { setAddGroupTo(g.id); setEditModId(null); setModForm({ name: '', priceAdjustment: '' }) }}>
+              <div className="space-y-1.5 p-3">
+                {group.modifiers.map((modifier, index) => (
+                  <Fragment key={modifier.id}>
+                    <div className={cn('flex items-center justify-between gap-2 rounded-xl bg-secondary/60 px-3 py-2', !modifier.active && 'opacity-60')}>
+                      <div className="flex min-w-0 items-center gap-2">
+                        <span className="truncate text-sm font-medium">{modifier.name}</span>
+                        {modifier.priceAdjustment !== 0 && (
+                          <span className="shrink-0 text-xs font-bold text-primary">
+                            {modifier.priceAdjustment > 0 ? '+' : ''}{fmtMoney(modifier.priceAdjustment)} ج.م
+                          </span>
+                        )}
+                        {!modifier.active && (
+                          <span className="shrink-0 rounded-full bg-secondary px-2 py-0.5 text-[10px] text-muted-foreground">مخفي</span>
+                        )}
+                      </div>
+                      <div className="flex shrink-0 items-center gap-1">
+                        <Button
+                          variant="ghost" size="icon" className="h-6 w-6 rounded-lg"
+                          title="تحريك لأعلى"
+                          disabled={index === 0}
+                          onClick={() => void moveModifier(group, modifier, -1)}
+                        >
+                          <ArrowUp className="h-3 w-3" />
+                        </Button>
+                        <Button
+                          variant="ghost" size="icon" className="h-6 w-6 rounded-lg"
+                          title="تحريك لأسفل"
+                          disabled={index === group.modifiers.length - 1}
+                          onClick={() => void moveModifier(group, modifier, 1)}
+                        >
+                          <ArrowDown className="h-3 w-3" />
+                        </Button>
+                        <Button variant="ghost" size="icon" className="h-6 w-6 rounded-lg" title={modifier.active ? 'إخفاء' : 'إظهار'} onClick={() => void toggleModifierActive(modifier)}>
+                          {modifier.active ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
+                        </Button>
+                        <Button variant="ghost" size="icon" className="h-6 w-6 rounded-lg" title="الوصفة" onClick={() => setRecipeFor(recipeFor === modifier.id ? null : modifier.id)}>
+                          <UtensilsCrossed className="h-3 w-3" />
+                        </Button>
+                        <Button variant="ghost" size="icon" className="h-6 w-6 rounded-lg" title="تعديل" onClick={() => openEditModifier(modifier, group.id)}>
+                          <Pencil className="h-3 w-3" />
+                        </Button>
+                        <Button variant="ghost" size="icon" className="h-6 w-6 rounded-lg text-destructive" title="حذف" onClick={() => setPendingDelete({ kind: 'modifier', item: modifier })}>
+                          <Trash2 className="h-3 w-3" />
+                        </Button>
+                      </div>
+                    </div>
+                    {recipeFor === modifier.id && (
+                      <div className="animate-slide-up px-3 pb-2 pt-1">
+                        <RecipePanel
+                          title={`وصفة الخيار — ${modifier.name}`}
+                          targetId={modifier.id}
+                          entityField="modifierId"
+                          ingredients={ingredients}
+                          fetchRecipes={(id) => window.api.modifier.listRecipes(id)}
+                          upsertRecipe={async (data) => (await window.api.modifier.upsertRecipe(data) as { id: string }).id}
+                          deleteRecipe={(id) => window.api.modifier.deleteRecipe(id)}
+                        />
+                      </div>
+                    )}
+                  </Fragment>
+                ))}
+
+                {group.modifiers.length === 0 && (
+                  <p className="py-3 text-center text-[11px] text-muted-foreground">لا توجد خيارات</p>
+                )}
+
+                <Button variant="ghost" size="sm" className="mt-2 w-full gap-1 rounded-xl text-xs" onClick={() => openCreateModifier(group.id)}>
                   <Plus className="h-3 w-3" /> إضافة خيار
                 </Button>
-              )}
+              </div>
             </div>
-          </div>
           ))}
           {list.items.length === 0 && (
-            <p className="text-center text-xs text-muted-foreground py-10">لا توجد مجموعات مطابقة</p>
+            <p className="py-10 text-center text-xs text-muted-foreground">لا توجد مجموعات مطابقة</p>
           )}
         </div>
       )}
 
-      <Pagination page={list.page} totalPages={list.totalPages} total={list.total} start={list.start} end={list.end} onPageChange={(p) => list.setPage(p)} />
+      {recipeFor && view === 'table' && (
+        <div className="px-5 pb-5">
+          <div className="animate-slide-up rounded-2xl border-2 bg-card p-4">
+            <RecipePanel
+              title={`وصفة الخيار — ${groups.flatMap((group) => group.modifiers).find((modifier) => modifier.id === recipeFor)?.name}`}
+              targetId={recipeFor}
+              entityField="modifierId"
+              ingredients={ingredients}
+              fetchRecipes={(id) => window.api.modifier.listRecipes(id)}
+              upsertRecipe={async (data) => (await window.api.modifier.upsertRecipe(data) as { id: string }).id}
+              deleteRecipe={(id) => window.api.modifier.deleteRecipe(id)}
+            />
+          </div>
+        </div>
+      )}
+
+      <Pagination
+        page={list.page}
+        totalPages={list.totalPages}
+        total={list.total}
+        start={list.start}
+        end={list.end}
+        onPageChange={(page) => list.setPage(page)}
+      />
+
+      {groupFormOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={resetGroupForm}>
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm animate-fade-in" />
+          <div className="relative w-full max-w-md animate-scale-in rounded-3xl border-2 border-border bg-card shadow-2xl" onClick={(event) => event.stopPropagation()}>
+            <div className="flex items-center justify-between border-b px-5 py-4">
+              <h3 className="text-sm font-black">{editGroupId ? 'تعديل المجموعة' : 'مجموعة جديدة'}</h3>
+              <Button variant="ghost" size="icon" className="rounded-xl" onClick={resetGroupForm}>
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+            <div className="space-y-3 p-5">
+              <input
+                value={groupForm.name}
+                onChange={(event) => { setGroupForm((prev) => ({ ...prev, name: event.target.value })); setGroupError(null) }}
+                placeholder="اسم المجموعة"
+                className="min-h-[44px] w-full rounded-xl border-0 bg-secondary px-3 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
+                dir="rtl"
+              />
+              <Select value={groupForm.type} onValueChange={(value) => setGroupForm((prev) => ({ ...prev, type: value as 'single-select' | 'multi-select' }))}>
+                <SelectTrigger className="min-h-[44px] w-full rounded-xl bg-secondary text-sm">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="single-select">اختيار واحد</SelectItem>
+                  <SelectItem value="multi-select">اختيار متعدد</SelectItem>
+                </SelectContent>
+              </Select>
+              <label className="flex cursor-pointer items-center gap-2 rounded-xl bg-secondary/60 px-3 py-2.5 text-xs font-bold">
+                <input
+                  type="checkbox"
+                  checked={groupForm.active}
+                  onChange={(event) => setGroupForm((prev) => ({ ...prev, active: event.target.checked }))}
+                  className="h-4 w-4 accent-primary"
+                />
+                ظاهرة في شاشة البيع
+              </label>
+              {groupError && <p className="text-[11px] font-bold text-destructive">{groupError}</p>}
+            </div>
+            <div className="flex gap-2 border-t p-4">
+              <Button className="flex-1 rounded-xl" disabled={groupSaving} onClick={() => void saveGroup()}>
+                {groupSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : editGroupId ? 'حفظ التغييرات' : 'إضافة'}
+              </Button>
+              <Button variant="ghost" className="rounded-xl" onClick={resetGroupForm}>إلغاء</Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {modFormOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={resetModForm}>
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm animate-fade-in" />
+          <div className="relative w-full max-w-md animate-scale-in rounded-3xl border-2 border-border bg-card shadow-2xl" onClick={(event) => event.stopPropagation()}>
+            <div className="flex items-center justify-between border-b px-5 py-4">
+              <div>
+                <h3 className="text-sm font-black">{editModId ? 'تعديل الخيار' : 'خيار جديد'}</h3>
+                {linkGroup && <p className="mt-0.5 text-[10px] text-muted-foreground">داخل «{linkGroup.name}»</p>}
+              </div>
+              <Button variant="ghost" size="icon" className="rounded-xl" onClick={resetModForm}>
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+            <div className="space-y-3 p-5">
+              <input
+                value={modForm.name}
+                onChange={(event) => { setModForm((prev) => ({ ...prev, name: event.target.value })); setModError(null) }}
+                placeholder="اسم الخيار"
+                className="min-h-[44px] w-full rounded-xl border-0 bg-secondary px-3 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
+                dir="rtl"
+              />
+              <input
+                type="number"
+                value={modForm.priceAdjustment}
+                onChange={(event) => { setModForm((prev) => ({ ...prev, priceAdjustment: event.target.value })); setModError(null) }}
+                placeholder="فرق السعر (ج.م) — يقبل سالب"
+                className="min-h-[44px] w-full rounded-xl border-0 bg-secondary px-3 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
+              />
+              <label className="flex cursor-pointer items-center gap-2 rounded-xl bg-secondary/60 px-3 py-2.5 text-xs font-bold">
+                <input
+                  type="checkbox"
+                  checked={modForm.active}
+                  onChange={(event) => setModForm((prev) => ({ ...prev, active: event.target.checked }))}
+                  className="h-4 w-4 accent-primary"
+                />
+                ظاهر في شاشة البيع
+              </label>
+              {modError && <p className="text-[11px] font-bold text-destructive">{modError}</p>}
+            </div>
+            <div className="flex gap-2 border-t p-4">
+              <Button className="flex-1 rounded-xl" disabled={modSaving} onClick={() => void saveModifier()}>
+                {modSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : editModId ? 'حفظ التغييرات' : 'إضافة'}
+              </Button>
+              <Button variant="ghost" className="rounded-xl" onClick={resetModForm}>إلغاء</Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <ProductLinkDialog
+        open={!!linkFor}
+        title={`ربط «${linkFor?.name ?? ''}» بالمنتجات`}
+        description="اختَر المنتجات التي تعرض مجموعة الخيارات هذه. المنتجات المخفية تظهر هنا أيضاً."
+        productIds={linkIds}
+        onSave={async (ids) => {
+          if (!linkFor) return
+          await window.api.modifier.setProducts(linkFor.id, ids)
+          await fetchGroups(true)
+          toast({ title: 'تم تحديث ربط المنتجات', description: linkFor.name, variant: 'success' })
+        }}
+        onClose={() => setLinkFor(null)}
+      />
 
       <ConfirmDialog
         open={!!pendingDelete}
@@ -256,20 +670,7 @@ export function ModifiersPage() {
         description={pendingDelete ? `سيتم تعطيل «${pendingDelete.item.name}» وإخفاءه من شاشة البيع.` : undefined}
         allowHardDelete={isAdmin}
         hardDeleteDescription="يحذف العنصر نهائياً من قاعدة البيانات. لن يمكن استرجاعه."
-        onConfirm={({ hard }) => {
-          if (!pendingDelete) return
-          const opts = { hard }
-          if (pendingDelete.kind === 'group') {
-            removeGroup(pendingDelete.item.id, opts)
-              .then(() => toast({ title: hard ? 'تم الحذف النهائي للمجموعة' : 'تم حذف المجموعة', variant: 'success' }))
-              .catch((e: Error) => toast({ title: e.message, variant: 'error' }))
-          } else {
-            removeModifier(pendingDelete.item.id, opts)
-              .then(() => toast({ title: hard ? 'تم الحذف النهائي للخيار' : 'تم حذف الخيار', variant: 'success' }))
-              .catch((e: Error) => toast({ title: e.message, variant: 'error' }))
-          }
-          setPendingDelete(null)
-        }}
+        onConfirm={({ hard }) => void handleDelete(hard)}
         onCancel={() => setPendingDelete(null)}
       />
     </div>

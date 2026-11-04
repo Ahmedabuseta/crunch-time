@@ -674,9 +674,15 @@ export const rendererApi = {
     reorder: (ids: string[]) => { ids.forEach((id, i) => T.categories.update(r => r.id === id, { sortOrder: i + 1 })); return { ok: true } },
   },
   product: {
-    list: (categoryId?: string, includeInactive?: boolean) => {
+    list: async (categoryId?: string, includeInactive?: boolean) => {
       const rows = includeInactive ? T.products.select() : T.products.select(r => r.active)
-      return categoryId ? rows.filter(r => r.categoryId === categoryId) : rows
+      const filtered = categoryId ? rows.filter(r => r.categoryId === categoryId) : rows
+      return filtered.map(p => ({
+        ...p,
+        addonCount: T.productAddons.select(r => r.productId === p.id).length,
+        modifierCount: T.productModifierGroups.select(r => r.productId === p.id).length,
+        recipeCount: T.recipes.select(r => r.productId === p.id).length,
+      }))
     },
     getById: (id: string) => T.products.get(r => r.id === id) || null,
     create: (data: any) => { const id = uuid(); T.products.insert({ id, ...data, active: true }); return { id } },
@@ -700,9 +706,23 @@ export const rendererApi = {
       T.productModifierGroups.delete(r => r.productId === id)
       return { ok: true }
     },
+    duplicate: (id: string) => {
+      const source = T.products.get(r => r.id === id)
+      if (!source) throw new Error('المنتج غير موجود')
+      const newId = uuid()
+      T.products.insert({ ...source, id: newId, name: `${source.name} (نسخة)`, active: false })
+      T.productAddons.select(r => r.productId === id).forEach(l => T.productAddons.insert({ productId: newId, addonId: l.addonId }))
+      T.productModifierGroups.select(r => r.productId === id).forEach(l => T.productModifierGroups.insert({ productId: newId, modifierGroupId: l.modifierGroupId }))
+      T.recipes.select(r => r.productId === id).forEach(line => T.recipes.insert({ ...line, id: uuid(), productId: newId }))
+      return { id: newId }
+    },
   },
   addon: {
-    list: () => T.addons.select(r => r.active),
+    list: (includeInactive = false) => T.addons.select(r => includeInactive || r.active).map(a => ({
+      ...a,
+      productCount: T.productAddons.select(r => r.addonId === a.id).length,
+    })),
+    getById: (id: string) => T.addons.get(r => r.id === id) || null,
     create: (data: any) => { const id = uuid(); T.addons.insert({ id, ...data, active: true }); return { id } },
     update: (id: string, data: any) => { T.addons.update(r => r.id === id, data); return { ok: true } },
     delete: (id: string, opts?: DeleteOpts) => {
@@ -720,6 +740,12 @@ export const rendererApi = {
       return { ok: true }
     },
     listByProduct: async (productId: string) => T.productAddons.select(r => r.productId === productId).map(l => T.addons.get(a => a.id === l.addonId)).filter(Boolean),
+    listProducts: (addonId: string) => T.productAddons.select(r => r.addonId === addonId).map(l => T.products.get(p => p.id === l.productId)).filter(Boolean),
+    setProducts: (addonId: string, productIds: string[]) => {
+      T.productAddons.delete(r => r.addonId === addonId)
+      ;[...new Set(productIds)].forEach(productId => T.productAddons.insert({ productId, addonId }))
+      return { ok: true }
+    },
     linkToProduct: (productId: string, addonId: string) => { T.productAddons.insert({ productId, addonId }); return { ok: true } },
     setProductLinks: (productId: string, addonIds: string[]) => { T.productAddons.delete(r => r.productId === productId); addonIds.forEach(id => T.productAddons.insert({ productId, addonId: id })); return { ok: true } },
     listRecipes: (addonId: string) => T.addonRecipes.select(r => r.addonId === addonId),
@@ -730,8 +756,16 @@ export const rendererApi = {
     deleteRecipe: (id: string) => { if (!T.addonRecipes.get(r => r.id === id)) return { ok: false, error: 'ارتباط الوصفة غير موجود' }; T.addonRecipes.delete(r => r.id === id); return { ok: true } },
   },
   modifier: {
-    listGroups: () => T.modifierGroups.select(r => r.active).sort((a, b) => a.sortOrder - b.sortOrder),
-    createGroup: (data: any) => { const id = uuid(); T.modifierGroups.insert({ id, ...data, active: true }); return { id } },
+    listGroups: (includeInactive = false) => T.modifierGroups.select(r => includeInactive || r.active)
+      .sort((a, b) => a.sortOrder - b.sortOrder)
+      .map(g => ({ ...g, productCount: T.productModifierGroups.select(r => r.modifierGroupId === g.id).length })),
+    getGroupById: (id: string) => T.modifierGroups.get(r => r.id === id) || null,
+    createGroup: (data: any) => {
+      const max = Math.max(0, ...T.modifierGroups.select().map(g => Number(g.sortOrder) || 0))
+      const id = uuid()
+      T.modifierGroups.insert({ id, sortOrder: max + 1, ...data, active: true })
+      return { id }
+    },
     updateGroup: (id: string, data: any) => { T.modifierGroups.update(r => r.id === id, data); return { ok: true } },
     deleteGroup: (id: string, opts?: DeleteOpts) => {
       if (opts?.hard) {
@@ -753,8 +787,15 @@ export const rendererApi = {
       T.productModifierGroups.delete(r => r.modifierGroupId === id)
       return { ok: true }
     },
-    listByGroup: (groupId: string) => T.modifiers.select(r => r.active && r.modifierGroupId === groupId).sort((a, b) => a.sortOrder - b.sortOrder),
-    createModifier: (data: any) => { const id = uuid(); T.modifiers.insert({ id, ...data, active: true }); return { id } },
+    reorderGroups: (ids: string[]) => { ids.forEach((id, i) => T.modifierGroups.update(r => r.id === id, { sortOrder: i + 1 })); return { ok: true } },
+    listByGroup: (groupId: string, includeInactive = false) => T.modifiers.select(r => (includeInactive || r.active) && r.modifierGroupId === groupId).sort((a, b) => a.sortOrder - b.sortOrder),
+    getById: (id: string) => T.modifiers.get(r => r.id === id) || null,
+    createModifier: (data: any) => {
+      const max = Math.max(0, ...T.modifiers.select(r => r.modifierGroupId === data.modifierGroupId).map(m => Number(m.sortOrder) || 0))
+      const id = uuid()
+      T.modifiers.insert({ id, sortOrder: max + 1, ...data, active: true })
+      return { id }
+    },
     updateModifier: (id: string, data: any) => { T.modifiers.update(r => r.id === id, data); return { ok: true } },
     deleteModifier: (id: string, opts?: DeleteOpts) => {
       if (opts?.hard) return hardDelete(T.modifiers, id, [{ table: T.modifierRecipes, where: r => r.modifierId === id, label: 'وصفات' }])
@@ -763,9 +804,16 @@ export const rendererApi = {
       T.modifiers.update(r => r.id === id, { active: false })
       return { ok: true }
     },
+    reorderModifiers: (ids: string[]) => { ids.forEach((id, i) => T.modifiers.update(r => r.id === id, { sortOrder: i + 1 })); return { ok: true } },
     listByProduct: async (productId: string) => {
       const links = T.productModifierGroups.select(r => r.productId === productId)
       return links.map(l => { const g = T.modifierGroups.get(g => g.id === l.modifierGroupId); if (!g) return null; return { ...g, modifiers: T.modifiers.select(r => r.active && r.modifierGroupId === g.id).sort((a, b) => a.sortOrder - b.sortOrder) } }).filter(Boolean)
+    },
+    listProducts: (groupId: string) => T.productModifierGroups.select(r => r.modifierGroupId === groupId).map(l => T.products.get(p => p.id === l.productId)).filter(Boolean),
+    setProducts: (groupId: string, productIds: string[]) => {
+      T.productModifierGroups.delete(r => r.modifierGroupId === groupId)
+      ;[...new Set(productIds)].forEach(productId => T.productModifierGroups.insert({ productId, modifierGroupId: groupId }))
+      return { ok: true }
     },
     linkToProduct: (productId: string, groupId: string) => { T.productModifierGroups.insert({ productId, modifierGroupId: groupId }); return { ok: true } },
     setProductLinks: (productId: string, groupIds: string[]) => { T.productModifierGroups.delete(r => r.productId === productId); groupIds.forEach(id => T.productModifierGroups.insert({ productId, modifierGroupId: id })); return { ok: true } },

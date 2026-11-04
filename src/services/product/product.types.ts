@@ -7,6 +7,9 @@ export interface Product {
   emoji: string
   description: string
   active: boolean
+  addonCount?: number
+  modifierCount?: number
+  recipeCount?: number
 }
 
 export interface CreateProductInput {
@@ -16,6 +19,7 @@ export interface CreateProductInput {
   categoryId: string
   emoji: string
   description: string
+  active?: boolean
 }
 
 export interface UpdateProductInput {
@@ -26,4 +30,5 @@ export interface UpdateProductInput {
   emoji?: string
   description?: string
   active?: boolean
+  supportsRollback?: boolean
 }

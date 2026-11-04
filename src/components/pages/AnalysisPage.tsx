@@ -30,6 +30,8 @@ interface AnalysisColumn {
 interface AnalysisTable {
   name: string
   columns: AnalysisColumn[]
+  rowCount?: number
+  foreignKeys?: { from: string; table: string; to: string }[]
 }
 
 interface QueryResult {
@@ -699,9 +701,22 @@ export function AnalysisPage() {
                     <span className="truncate font-mono text-[11px] font-bold" dir="ltr">
                       {table.name}
                     </span>
-                    <span className="ms-auto text-[9px] text-muted-foreground">{table.columns.length}</span>
+                    <span
+                      className="ms-auto shrink-0 text-[9px] text-muted-foreground"
+                      title={`${table.columns.length} عمود · ${(table.rowCount ?? 0).toLocaleString('en-US')} صف`}
+                    >
+                      {table.columns.length} · {(table.rowCount ?? 0).toLocaleString('en-US')}
+                    </span>
                   </summary>
                   <div className="pb-1">
+                    <div className="flex items-center gap-2 px-5 py-0.5 text-[9px] text-muted-foreground">
+                      <span>{(table.rowCount ?? 0).toLocaleString('en-US')} صف</span>
+                      {table.foreignKeys?.length ? (
+                        <span className="truncate font-mono" dir="ltr">
+                          {table.foreignKeys.map((fk) => `${fk.from}→${fk.table}`).join(' · ')}
+                        </span>
+                      ) : null}
+                    </div>
                     {table.columns.map((column) => (
                       <div key={column.name} className="flex items-center gap-2 px-5 py-0.5 text-[10px]">
                         <span className="truncate font-mono" dir="ltr">

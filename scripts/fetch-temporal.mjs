@@ -3,7 +3,7 @@
 // The binary is not published to npm, and the assistant's runtime needs it, so
 // it is fetched once at packaging time rather than at app start — a shop PC
 // should never have to reach the internet to keep its own chat working.
-import { createWriteStream, existsSync, mkdirSync, rmSync } from 'node:fs'
+import { copyFileSync, createWriteStream, existsSync, mkdirSync, rmSync } from 'node:fs'
 import { chmodSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { Readable } from 'node:stream'
@@ -12,14 +12,30 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
-const target = path.join(root, 'build', 'temporal')
 
-const platform = process.platform === 'win32' ? 'windows' : process.platform
-const arch = process.arch === 'arm64' ? 'arm64' : 'amd64'
+/** `--platform=win32` / `--arch=arm64`, for a cross-platform package build. */
+const arg = (name) => {
+  const found = process.argv.find((value) => value.startsWith(`--${name}=`))
+  return found ? found.split('=')[1] : null
+}
+
+const targetPlatform = arg('platform') || process.platform
+const targetArch = arg('arch') || (process.arch === 'arm64' ? 'arm64' : 'amd64')
+const platform = targetPlatform === 'win32' ? 'windows' : targetPlatform
+const arch = targetArch
+
+// Windows refuses to execute a PE without the `.exe` extension in most spawn
+// paths, so the packaged file name follows the target, not the host.
+const binaryName = targetPlatform === 'win32' ? 'temporal.exe' : 'temporal'
+const target = path.join(root, 'build', binaryName)
 
 if (existsSync(target) && !process.argv.includes('--force')) {
   console.log(`[temporal] already present at ${target} (--force to replace)`)
   process.exit(0)
+}
+
+if (targetPlatform !== process.platform) {
+  console.log(`[temporal] cross-fetching for ${targetPlatform}/${targetArch} on ${process.platform}`)
 }
 
 const tmpDir = path.join(root, 'build', '.temporal-tmp')
@@ -62,15 +78,19 @@ try {
   }
 
   execFileSync('tar', ['xzf', archive, '-C', tmpDir], { stdio: 'inherit' })
-  const extracted = path.join(tmpDir, process.platform === 'win32' ? 'temporal.exe' : 'temporal')
+  const extracted = path.join(tmpDir, targetPlatform === 'win32' ? 'temporal.exe' : 'temporal')
   if (!existsSync(extracted)) throw new Error(`archive did not contain a temporal binary`)
-  execFileSync(process.platform === 'win32' ? 'cmd' : 'cp', process.platform === 'win32'
-    ? ['/c', 'copy', extracted, target]
-    : [extracted, target], { stdio: 'inherit' })
-  if (process.platform !== 'win32') chmodSync(target, 0o755)
+  copyFileSync(extracted, target)
+  // The mode only matters on the host that will execute it.
+  if (targetPlatform !== 'win32') chmodSync(target, 0o755)
 
-  const version = execFileSync(target, ['--version'], { encoding: 'utf8' }).trim()
-  console.log(`[temporal] installed ${version}`)
+  if (targetPlatform === process.platform) {
+    const version = execFileSync(target, ['--version'], { encoding: 'utf8' }).trim()
+    console.log(`[temporal] installed ${version} at ${target}`)
+  } else {
+    // A PE cannot run on a Linux/macOS host; the package is the verification.
+    console.log(`[temporal] installed the ${targetPlatform} binary at ${target}`)
+  }
   rmSync(tmpDir, { recursive: true, force: true })
 } catch (err) {
   rmSync(tmpDir, { recursive: true, force: true })

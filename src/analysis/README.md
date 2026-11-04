@@ -43,6 +43,11 @@ connection and one snapshot file.
   tool calls, tool outputs, token usage and finish reason, plus the model,
   table count and duration. The screen renders that as a timeline and can copy
   the whole trace as JSON.
+  The prompt carries a business glossary, read-only SQL rules and examples, the
+  local date/time, currency/tax and snapshot time, and a schema with row counts
+  and foreign keys. It understands Arabic (including Egyptian colloquial),
+  English and mixed input, and answers in the question's language. Internal
+  `ai_*`/idempotency tables and secret-shaped columns are kept out of it.
 - **Backend** — `src/backend/analysis.ts`: `query`, `schema`, `refresh`, `ask`,
   `close`.
 - **Desktop IPC** — `analysis:query`, `analysis:schema`, `analysis:refresh`,

@@ -9,9 +9,9 @@ import * as inventory from '../../backend/inventory'
 import * as orders from '../../backend/orders'
 import * as reports from '../../backend/reports'
 import { asOwner, asOwnerAsync } from '../privileges'
-import { money, percent, packagesFor, quantity, reportCard, tableCard } from '../cards'
+import { money, percent, packagesFor, quantity, reportCard, tableCard, metricsCard } from '../cards'
 import type { ToolOutput } from '../schemas'
-import { resolveProduct } from './resolve'
+import { resolveIngredient, resolveProduct } from './resolve'
 import { toolOutput, type ToolDef } from './types'
 
 const dateRange = {
@@ -165,6 +165,122 @@ export const READ_TOOLS: ToolDef[] = [
         : []
 
       return toolOutput(data, summary, cards)
+    },
+  },
+
+  {
+    name: 'stock_audit',
+    description: 'تحليل عجز/فائض مادة أو المخزون: آخر جرد وفرقه، الحركة من ساعته (شراء/استهلاك/تالف/تسوية)، الاستهلاك اليومي والتغطية، وسجل الجرد. استخدمها لأي سؤال فيه «عجز»، «فرق»، «جرد»، «سرقة/فقد»، أو «آخر جرد امتى».',
+    write: false,
+    schema: z.object({
+      ingredient: z.string().optional().describe('اسم المادة أو id؛ سيبها فاضية لآخر جرد ونظرة عامة على المخزون'),
+      days: z.number().int().min(7).max(180).optional().describe('نافذة حساب الاستهلاك بالأيام، افتراضي 30'),
+    }),
+    async run(args): Promise<ToolOutput> {
+      let ingredientId: string | undefined
+      if (args.ingredient?.trim()) {
+        const resolved = resolveIngredient(args.ingredient)
+        if (!resolved.ok) return toolOutput({ error: resolved.error }, resolved.error)
+        ingredientId = resolved.row.id
+      }
+
+      const audit = asOwner(() => inventory.stockAudit({ ingredientId, days: args.days ?? 30 })) as any
+
+      if (audit.scope === 'overview') {
+        const overview = audit.overview
+        const last = audit.lastCount
+        const countNoun = last?.labeled ? 'جرد' : 'تسوية'
+        const metrics = [
+          { label: `آخر ${countNoun}`, value: last ? `من ${last.daysAgo} يوم` : 'مفيش' },
+          { label: 'مواد متأخرة', value: String(overview.stale.length) },
+          { label: 'رصيد سالب', value: String(overview.negative.length) },
+          { label: 'أكبر عجز (90 يوم)', value: overview.losses[0] ? money(overview.losses[0].value) : '—' },
+        ]
+        const rows = overview.stale.length
+          ? overview.stale.map((row: any) => [
+              row.name,
+              row.daysSince == null ? 'مفيش جرد' : `${row.daysSince} يوم`,
+              quantity(row.stock, row.unit),
+              money(row.value),
+            ])
+          : overview.losses.map((loss: any) => [
+              loss.ingredient.name,
+              `${loss.daysAgo} يوم`,
+              quantity(loss.delta, loss.ingredient.unit),
+              money(loss.value),
+            ])
+        const summary = last
+          ? `آخر ${countNoun} من ${last.daysAgo} يوم${overview.countedItems ? ` (${overview.countedItems} مادة)` : ''} — ${overview.stale.length} مادة محتاجة جرد`
+          : 'مفيش أي جرد مسجل في النظام — الفروقات كلها غير مؤكدة'
+        return toolOutput(audit, summary, [
+          metricsCard('آخر جرد ونظرة عامة', metrics),
+          tableCard(
+            overview.stale.length ? 'مواد محتاجة جرد' : 'أكبر فروقات الجرد',
+            ['المادة', 'آخر جرد/تسوية', 'الرصيد/الفرق', 'القيمة'],
+            rows,
+          ),
+        ])
+      }
+
+      const g = audit.ingredient
+      const last = audit.lastCount
+      const win = audit.window
+      const countNoun = last?.labeled ? 'جرد' : 'تسوية'
+      const metrics = [
+        { label: 'الرصيد', value: quantity(g.stock, g.unit) },
+        { label: 'قيمة المخزون', value: money(g.stockValue) },
+        { label: `آخر ${countNoun}`, value: last ? `من ${last.daysAgo} يوم` : 'مفيش جرد' },
+        {
+          label: `فرق آخر ${countNoun}`,
+          value: last ? `${last.delta > 0 ? '+' : ''}${quantity(last.delta, g.unit)} (${money(last.value)})` : '—',
+          tone: last ? (last.delta < 0 ? ('bad' as const) : last.delta > 0 ? ('warn' as const) : ('good' as const)) : undefined,
+        },
+        { label: `استهلاك ${win.days} يوم`, value: quantity(win.consumed, g.unit) },
+        { label: 'متوسط يومي', value: quantity(win.avgDaily, g.unit) },
+        { label: 'يكفي', value: win.daysCover != null ? `${win.daysCover} يوم` : '—' },
+        { label: 'تالف', value: quantity(win.waste, g.unit) },
+      ]
+
+      const TYPE_LABEL: Record<string, string> = {
+        PURCHASE: 'شراء',
+        CONSUMPTION: 'استهلاك',
+        WASTE: 'تالف',
+        ADJUSTMENT: 'تسوية',
+        RETURN: 'مرتجع',
+      }
+      const movementRows = audit.sinceCount
+        ? Object.entries(audit.sinceCount.movements).map(([type, move]: any) => [
+            TYPE_LABEL[type] ?? type,
+            quantity(move.qty, g.unit),
+            String(move.count),
+          ])
+        : [
+            ['شراء', quantity(win.purchased, g.unit), ''],
+            ['استهلاك', quantity(-win.consumed, g.unit), ''],
+            ['تالف', quantity(-win.waste, g.unit), ''],
+            ['تسوية', quantity(win.adjusted, g.unit), ''],
+          ]
+
+      // The model tends to paraphrase this line, so it has to carry the two
+      // facts it kept dropping: the balance is negative, and an unlabelled
+      // adjustment is not a confirmed count.
+      const lead = last
+        ? `آخر ${last.labeled ? 'جرد' : 'تسوية مش جرد مؤكد'} لـ ${g.name} من ${last.daysAgo} يوم: ${last.delta < 0 ? 'عجز' : last.delta > 0 ? 'فائض' : 'مطابق'} ${quantity(Math.abs(last.delta), g.unit)} (${money(last.value)}) — الرصيد الحالي ${quantity(g.stock, g.unit)}${g.stock < 0 ? ' (سالب)' : ''}`
+        : `مفيش جرد مسجل لـ ${g.name} — الرصيد ${quantity(g.stock, g.unit)}${g.stock < 0 ? ' (سالب)' : ''} واستهلاك ${win.days} يوم ${quantity(win.consumed, g.unit)}`
+      const notes = (audit.signals ?? [])
+        .filter((signal: string) => !lead.includes(signal))
+        .slice(0, 2)
+        .join(' ')
+      const summary = `${lead}${notes ? `. ${notes}` : ''}`.slice(0, 300)
+
+      return toolOutput(audit, summary, [
+        metricsCard(`تحليل ${g.name}`, metrics),
+        tableCard(
+          audit.sinceCount ? `حركة من آخر ${countNoun}` : `حركة آخر ${win.days} يوم`,
+          ['النوع', 'الكمية', 'عدد الحركات'],
+          movementRows,
+        ),
+      ])
     },
   },
 

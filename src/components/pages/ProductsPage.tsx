@@ -9,7 +9,7 @@ import { useInventoryStore } from '@/services/inventory/inventory.store'
 import { RecipePanel } from './RecipePanel'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { Plus, Pencil, Trash2, X, Link, ChevronDown, UtensilsCrossed, ClipboardList, PlugZap, SlidersHorizontal, TrendingUp, CheckCircle, AlertTriangle, Eye, EyeOff, ArrowUp, ArrowDown, FileDown } from 'lucide-react'
+import { Plus, Pencil, Trash2, X, Copy, ChevronDown, UtensilsCrossed, ClipboardList, PlugZap, SlidersHorizontal, TrendingUp, CheckCircle, AlertTriangle, Eye, EyeOff, ArrowUp, ArrowDown, FileDown } from 'lucide-react'
 import { MenuExportDialog } from '@/components/MenuExportDialog'
 import { cn } from '@/lib/utils'
 import { fmtMoney } from '@/lib/format'
@@ -26,6 +26,10 @@ import { Emoji } from '@/components/Emoji'
 
 type TabId = 'data' | 'recipe' | 'addons' | 'modifiers'
 
+function messageOf(error: unknown): string {
+  return error instanceof Error ? error.message : 'خطأ غير متوقع'
+}
+
 export function ProductsPage() {
   const products = useProductStore((s) => s.products)
   const isAdmin = useIsAdmin()
@@ -33,6 +37,7 @@ export function ProductsPage() {
   const createProduct = useProductStore((s) => s.create)
   const updateProduct = useProductStore((s) => s.update)
   const removeProduct = useProductStore((s) => s.remove)
+  const duplicateProduct = useProductStore((s) => s.duplicate)
   const categories = useCategoryStore((s) => s.categories)
   const fetchCategories = useCategoryStore((s) => s.fetch)
   const addons = useAddonStore((s) => s.addons)
@@ -42,10 +47,11 @@ export function ProductsPage() {
   const ingredients = useInventoryStore((s) => s.ingredients)
   const fetchIngredients = useInventoryStore((s) => s.fetchIngredients)
 
-  const emptyForm = { name: '', emoji: '', price: '', categoryId: '', description: '' }
+  const emptyForm = { name: '', emoji: '', price: '', categoryId: '', description: '', active: true }
   const [showForm, setShowForm] = useState(false)
   const [editId, setEditId] = useState<string | null>(null)
   const [form, setForm] = useState(emptyForm)
+  const [formTouched, setFormTouched] = useState(false)
   const [selectedAddons, setSelectedAddons] = useState<string[]>([])
   const [selectedModGroups, setSelectedModGroups] = useState<string[]>([])
   const [recipeFor, setRecipeFor] = useState<string | null>(null)
@@ -76,6 +82,14 @@ export function ProductsPage() {
   const visibleCount = products.filter(p => p.active).length
   const hiddenCount = products.length - visibleCount
 
+  const formError = !form.name.trim()
+    ? 'اسم المنتج مطلوب'
+    : !form.categoryId
+      ? 'اختر القسم'
+      : !Number.isFinite(Number(form.price)) || Number(form.price) < 0
+        ? 'اكتب سعر صحيح'
+        : null
+
   const SORT_FIELDS: Record<string, ((p: any) => SortValue) | undefined> = {
     name: (p) => p.name,
     cat: (p) => catMap.get(p.categoryId)?.name || '',
@@ -98,13 +112,14 @@ export function ProductsPage() {
 
   const resetForm = () => {
     setForm(emptyForm)
+    setFormTouched(false)
     setSelectedAddons([]); setSelectedModGroups([]); setEditId(null); setShowForm(false)
     setTab('data'); setExpandedGroups({}); setGroupModifiers({})
   }
 
   const openCreate = () => {
     setEditId(null); setShowForm(true)
-    setForm(emptyForm); setSelectedAddons([]); setSelectedModGroups([])
+    setForm(emptyForm); setFormTouched(false); setSelectedAddons([]); setSelectedModGroups([])
     setTab('data'); setExpandedGroups({}); setGroupModifiers({})
   }
 
@@ -121,25 +136,58 @@ export function ProductsPage() {
   }
 
   const handleCreate = async () => {
-    if (!form.name || !form.price || !form.categoryId) return
-    const id = await createProduct({ name: form.name, emoji: form.emoji || '', price: parseFloat(form.price), categoryId: form.categoryId, description: form.description })
-    await Promise.all([
-      window.api.addon.setProductLinks(id, selectedAddons),
-      window.api.modifier.setProductLinks(id, selectedModGroups),
-    ])
-    toast({ title: 'تم إنشاء المنتج', description: form.name, variant: 'success' })
-    setEditId(id); setShowForm(false); setTab('recipe')
+    setFormTouched(true)
+    if (formError) return
+    try {
+      const id = await createProduct({
+        name: form.name.trim(),
+        emoji: form.emoji || '',
+        price: Number(form.price),
+        categoryId: form.categoryId,
+        description: form.description.trim(),
+        active: form.active,
+      })
+      await Promise.all([
+        window.api.addon.setProductLinks(id, selectedAddons),
+        window.api.modifier.setProductLinks(id, selectedModGroups),
+      ])
+      toast({ title: 'تم إنشاء المنتج', description: form.name.trim(), variant: 'success' })
+      setEditId(id); setShowForm(false); setTab('recipe')
+    } catch (error) {
+      toast({ title: messageOf(error), variant: 'error' })
+    }
   }
 
   const handleUpdate = async () => {
-    if (!editId || !form.name) return
-    await updateProduct(editId, { name: form.name, emoji: form.emoji, price: parseFloat(form.price), categoryId: form.categoryId, description: form.description })
-    await Promise.all([
-      window.api.addon.setProductLinks(editId, selectedAddons),
-      window.api.modifier.setProductLinks(editId, selectedModGroups),
-    ])
-    toast({ title: 'تم تحديث المنتج', description: form.name, variant: 'success' })
-    resetForm()
+    setFormTouched(true)
+    if (!editId || formError) return
+    try {
+      await updateProduct(editId, {
+        name: form.name.trim(),
+        emoji: form.emoji,
+        price: Number(form.price),
+        categoryId: form.categoryId,
+        description: form.description.trim(),
+        active: form.active,
+      })
+      await Promise.all([
+        window.api.addon.setProductLinks(editId, selectedAddons),
+        window.api.modifier.setProductLinks(editId, selectedModGroups),
+      ])
+      toast({ title: 'تم تحديث المنتج', description: form.name.trim(), variant: 'success' })
+      resetForm()
+    } catch (error) {
+      toast({ title: messageOf(error), variant: 'error' })
+    }
+  }
+
+  const handleDuplicate = async (product: any) => {
+    try {
+      await duplicateProduct(product.id)
+      toast({ title: 'تم نسخ المنتج', description: 'النسخة مخفية — راجعها وعدّلها ثم أظهرها', variant: 'success' })
+    } catch (error) {
+      toast({ title: messageOf(error), variant: 'error' })
+    }
   }
 
   const handleDelete = async (p: any, opts?: { hard?: boolean }) => {
@@ -158,7 +206,8 @@ export function ProductsPage() {
 
   const startEdit = async (p: any) => {
     setEditId(p.id); setShowForm(false)
-    setForm({ name: p.name, emoji: p.emoji, price: String(p.price), categoryId: p.categoryId, description: p.description })
+    setForm({ name: p.name, emoji: p.emoji, price: String(p.price), categoryId: p.categoryId, description: p.description, active: !!p.active })
+    setFormTouched(false)
     setTab('data'); setExpandedGroups({}); setGroupModifiers({})
     const [addonLinks, modLinks] = await Promise.all([
       window.api.addon.listByProduct(p.id),
@@ -197,6 +246,18 @@ export function ProductsPage() {
       },
     },
     {
+      key: 'options', label: 'الخيارات', sortValue: (p: any) => (p.addonCount ?? 0) + (p.modifierCount ?? 0), render: (p) => (
+        <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
+          <span className="inline-flex items-center gap-1 rounded-full bg-secondary px-2 py-0.5" title="إضافات">
+            <PlugZap className="h-3 w-3" /> {p.addonCount ?? 0}
+          </span>
+          <span className="inline-flex items-center gap-1 rounded-full bg-secondary px-2 py-0.5" title="موديفاير">
+            <SlidersHorizontal className="h-3 w-3" /> {p.modifierCount ?? 0}
+          </span>
+        </div>
+      ),
+    },
+    {
       key: 'status', label: 'الظهور', sortValue: (p) => (p.active ? 1 : 0), render: (p) => (
         <span className={cn(
           "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-black",
@@ -219,7 +280,8 @@ export function ProductsPage() {
           >
             {p.active ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
           </Button>
-          <Button variant="ghost" size="icon" className="h-7 w-7 rounded-lg" onClick={() => setRecipeFor(recipeFor === p.id ? null : p.id)}><Link className="h-3.5 w-3.5" /></Button>
+          <Button variant="ghost" size="icon" className="h-7 w-7 rounded-lg" title="نسخ المنتج" onClick={() => void handleDuplicate(p)}><Copy className="h-3.5 w-3.5" /></Button>
+          <Button variant="ghost" size="icon" className="h-7 w-7 rounded-lg" title="الوصفة" onClick={() => setRecipeFor(recipeFor === p.id ? null : p.id)}><UtensilsCrossed className="h-3.5 w-3.5" /></Button>
           <Button variant="ghost" size="icon" className="h-7 w-7 rounded-lg" onClick={() => startEdit(p)}><Pencil className="h-3.5 w-3.5" /></Button>
           <Button variant="ghost" size="icon" className="h-7 w-7 rounded-lg text-destructive" onClick={() => setPendingDelete(p)}><Trash2 className="h-3.5 w-3.5" /></Button>
         </div>
@@ -294,6 +356,16 @@ export function ProductsPage() {
                     </Select>
 
                     <input value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} placeholder="الوصف" className="w-full px-4 py-3 min-h-[48px] rounded-xl bg-secondary text-base border-0 focus:ring-1 focus:ring-primary focus:outline-none" dir="rtl" />
+
+                    <label className="flex cursor-pointer items-center gap-2 rounded-xl bg-secondary/60 px-3 py-2.5 text-xs font-bold">
+                      <input
+                        type="checkbox"
+                        checked={form.active}
+                        onChange={e => setForm(f => ({ ...f, active: e.target.checked }))}
+                        className="h-4 w-4 accent-primary"
+                      />
+                      ظاهر في قائمة البيع
+                    </label>
 
                     {editId && editingProduct && (
                       <>
@@ -468,9 +540,14 @@ export function ProductsPage() {
             </ScrollArea>
 
             {/* Drawer footer */}
-            <div className="flex gap-2 p-4 border-t bg-card">
-              <Button className="flex-1 rounded-xl min-h-[48px] text-base font-bold" onClick={editId ? handleUpdate : handleCreate}>{editId ? 'حفظ التغييرات' : (tab === 'recipe' ? 'إنشاء المنتج ثم الوصفة' : 'إضافة المنتج')}</Button>
-              <Button variant="ghost" className="rounded-xl min-h-[48px] px-6" onClick={resetForm}>إلغاء</Button>
+            <div className="space-y-2 border-t bg-card p-4">
+              {formTouched && formError && (
+                <p className="text-[11px] font-bold text-destructive">{formError}</p>
+              )}
+              <div className="flex gap-2">
+                <Button className="flex-1 rounded-xl min-h-[48px] text-base font-bold" onClick={editId ? handleUpdate : handleCreate}>{editId ? 'حفظ التغييرات' : (tab === 'recipe' ? 'إنشاء المنتج ثم الوصفة' : 'إضافة المنتج')}</Button>
+                <Button variant="ghost" className="rounded-xl min-h-[48px] px-6" onClick={resetForm}>إلغاء</Button>
+              </div>
             </div>
           </div>
         </div>
@@ -582,7 +659,8 @@ export function ProductsPage() {
                       >
                         {p.active ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
                       </Button>
-                      <Button variant="ghost" size="icon" className="h-7 w-7 rounded-lg" onClick={() => setRecipeFor(recipeFor === p.id ? null : p.id)}><Link className="h-3.5 w-3.5" /></Button>
+                      <Button variant="ghost" size="icon" className="h-7 w-7 rounded-lg" title="نسخ المنتج" onClick={() => void handleDuplicate(p)}><Copy className="h-3.5 w-3.5" /></Button>
+                      <Button variant="ghost" size="icon" className="h-7 w-7 rounded-lg" title="الوصفة" onClick={() => setRecipeFor(recipeFor === p.id ? null : p.id)}><UtensilsCrossed className="h-3.5 w-3.5" /></Button>
                       <Button variant="ghost" size="icon" className="h-7 w-7 rounded-lg" onClick={() => startEdit(p)}><Pencil className="h-3.5 w-3.5" /></Button>
                       <Button variant="ghost" size="icon" className="h-7 w-7 rounded-lg text-destructive" onClick={() => setPendingDelete(p)}><Trash2 className="h-3.5 w-3.5" /></Button>
                     </div>

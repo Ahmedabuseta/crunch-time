@@ -188,13 +188,14 @@ describe('read tools', () => {
 
 describe('tool registry', () => {
   it('registers every report, analytics, catalog and alias tool', () => {
-    expect(READ_TOOLS).toHaveLength(8)
+    expect(READ_TOOLS).toHaveLength(9)
     expect(MANAGE_READ_TOOLS).toHaveLength(10)
     expect(ANALYTICS_TOOLS).toHaveLength(1)
     expect(MANAGE_WRITE_TOOLS).toHaveLength(17)
     expect(ALIAS_TOOLS).toHaveLength(3)
-    expect(ALL_TOOLS.filter((tool) => tool.write)).toHaveLength(24)
-    expect(TOOLS.size).toBe(47)
+    // Stocktake, plan and alias-writing tools join the write set; find_tools is a read.
+    expect(ALL_TOOLS.filter((tool) => tool.write)).toHaveLength(25)
+    expect(TOOLS.size).toBe(49)
   })
 
   it('gives every tool a description and a schema', () => {

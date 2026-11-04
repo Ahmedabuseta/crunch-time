@@ -122,7 +122,11 @@ export default function ProductsScreen() {
               key={product.id}
               leading={<Text style={{ fontSize: 22 }}>{product.emoji}</Text>}
               title={product.name}
-              subtitle={`${fmtMoneyInt(product.price)} ج.م · ${categoryName(product.categoryId)}${product.active ? '' : ' · معطّل'}`}
+              subtitle={`${fmtMoneyInt(product.price)} ج.م · ${categoryName(product.categoryId)}${
+                (product.addonCount ?? 0) + (product.modifierCount ?? 0) > 0
+                  ? ` · ${product.addonCount ?? 0} إضافة · ${product.modifierCount ?? 0} موديفاير`
+                  : ''
+              }${product.active ? '' : ' · معطّل'}`}
               tint={product.active ? undefined : red}
               onPress={() => router.push(`/manage/product?id=${product.id}`)}
               trailing={
@@ -154,7 +158,7 @@ export default function ProductsScreen() {
         </Text>
       ) : (
         <Text variant='caption' style={{ color: muted }}>
-          السعر اللي بتكتبه هو سعر البيع — الخصومات والإضافات بتتظبط من الكمبيوتر.
+          السعر اللي بتكتبه هو سعر البيع — الإضافات والخيارات بتتظبط من شاشاتهم، والخصومات من الكمبيوتر.
         </Text>
       )}
     </AdminScreen>

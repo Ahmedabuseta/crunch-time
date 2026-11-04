@@ -60,6 +60,11 @@ describe('askQuestion', () => {
     expect(result.context.tables).toBeGreaterThan(0)
     expect(result.context.model).toBe('fake-model')
     expect(result.context.durationMs).toBeGreaterThanOrEqual(0)
+    const system = fake.requests[0].body.messages.find((message: any) => message.role === 'system')?.content ?? ''
+    expect(system).toContain('orders')
+    expect(system).toContain('English')
+    expect(system).toContain('SELECT')
+    expect(system).toContain('مبيعات')
     expect(fake.requests[0].body.tools.map((entry: any) => entry.function.name)).toContain('run_sql')
   })
 

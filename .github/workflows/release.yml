@@ -34,13 +34,25 @@ jobs:
       # own GitHub publisher fails opaquely ("Cannot cleanup" with an
       # empty message), so publishing is done by the standard release
       # action below instead.
+      #
+      # `dist`, not `build`: it also runs fetch:temporal, so this Windows
+      # runner downloads the Windows CLI into build/temporal.exe. The old
+      # `build` command shipped the installer with no runtime at all.
       - name: Build installer
         shell: bash
-        run: npm run build && npx electron-builder --publish never 2>&1 | tee build-output.log; test ${PIPESTATUS[0]} -eq 0
+        run: npm run dist 2>&1 | tee build-output.log; test ${PIPESTATUS[0]} -eq 0
         env:
           # No code-signing certificate: skip cert discovery so the
           # build cannot hang waiting for one.
           CSC_IDENTITY_AUTO_DISCOVERY: false
+
+      # The assistant is the reason the binary is packaged. Fail the job
+      # before publishing if it is missing or ended up under the old name.
+      - name: Verify bundled runtime
+        shell: bash
+        run: |
+          ls -l build/temporal.exe
+          test -f release/win-unpacked/resources/temporal.exe
 
       # The check-run annotations API is readable without admin
       # rights, unlike the full logs — surface the failure there.

@@ -14,7 +14,7 @@ import { Text } from '@/components/ui/text';
 import { View } from '@/components/ui/view';
 import { useColor } from '@/hooks/useColor';
 import { useColorScheme } from '@/hooks/useColorScheme';
-import { useHaptics } from '@/hooks/useHaptics';
+import { useHaptics, type HapticIntent } from '@/hooks/useHaptics';
 import { withOpacity } from '@/theme/colors';
 import { AlertTriangle, ArrowUp, Mic, Square, X } from 'lucide-react-native';
 import React, {
@@ -39,6 +39,7 @@ import Animated, {
   useSharedValue,
   withRepeat,
   withSequence,
+  withSpring,
   withTiming,
 } from 'react-native-reanimated';
 
@@ -195,9 +196,11 @@ export const AssistantComposer = forwardRef<AssistantComposerRef, AssistantCompo
     );
 
     const editable = !streaming && !disabled;
+    const hasDraft = value.trim().length > 0;
     // While recording, the mic button is the submit path: sending a draft that
-    // is still being spoken into would interleave two turns.
-    const canSend = editable && !recording && value.trim().length > 0;
+    // is still being spoken into would interleave two turns. Same while a
+    // transcript is still being decoded.
+    const canSend = editable && !recording && !voice?.transcribing && hasDraft;
     const showCounter = maxLength > 0 && value.length >= Math.floor(maxLength * 0.8);
     // The slot is separate from the status row: an empty status row would add
     // 20px of nothing above a caller-provided footer.
@@ -304,62 +307,54 @@ export const AssistantComposer = forwardRef<AssistantComposerRef, AssistantCompo
 
           {trailing}
 
-          {/* Push-to-talk. Hidden while an answer streams: that slot already
-              holds stop, and recording mid-answer is not a real intent. */}
-          {voice && !streaming ? (
-            <Pressable
-              onPress={voice.recording ? voice.onStop : voice.onStart}
-              disabled={voice.transcribing || disabled}
-              style={({ pressed }) => [
-                styles.action,
-                {
-                  backgroundColor: voice.recording ? red : secondary,
-                  opacity: disabled ? 0.5 : pressed ? 0.85 : 1,
-                },
-              ]}
-              accessibilityRole='button'
-              accessibilityLabel={voice.recording ? 'وقف التسجيل' : 'اتكلم'}
-              accessibilityState={{ disabled: voice.transcribing || disabled }}
-            >
-              {voice.transcribing ? (
-                <Spinner size='sm' color={muted} />
-              ) : voice.recording ? (
-                <Square size={14} color='#FFFFFF' />
-              ) : (
-                <Mic size={18} color={muted} />
-              )}
-            </Pressable>
-          ) : null}
-
+          {/* One action slot, swapped by state: stop the answer, stop the
+              recording, wait for the transcript, send the draft, or start
+              talking. The old layout showed mic and send side by side and
+              spent 56px of the field's width on a button that does nothing. */}
           {streaming ? (
-            <Pressable
+            <ActionButton
+              label='وقف الرد'
+              backgroundColor={red}
               onPress={onStop}
-              style={({ pressed }) => [
-                styles.action,
-                { backgroundColor: red, opacity: pressed ? 0.85 : 1 },
-              ]}
-              accessibilityRole='button'
-              accessibilityLabel='وقف الرد'
+              haptic='impact-medium'
             >
               <Square size={15} color='#FFFFFF' />
-            </Pressable>
-          ) : (
-            <Pressable
-              onPress={onSubmit}
+            </ActionButton>
+          ) : recording ? (
+            <ActionButton
+              label='وقف التسجيل'
+              backgroundColor={red}
+              onPress={() => voice?.onStop()}
+              haptic='impact-medium'
+            >
+              <Square size={14} color='#FFFFFF' />
+            </ActionButton>
+          ) : voice?.transcribing ? (
+            <ActionButton
+              label='بحوّل الكلام'
+              backgroundColor={secondary}
+              loading
+              loadingColor={muted}
+            />
+          ) : hasDraft || !voice ? (
+            <ActionButton
+              label='إرسال'
+              backgroundColor={canSend ? primary : secondary}
               disabled={!canSend}
-              style={({ pressed }) => [
-                styles.action,
-                {
-                  backgroundColor: canSend ? primary : secondary,
-                  opacity: pressed && canSend ? 0.85 : 1,
-                },
-              ]}
-              accessibilityRole='button'
-              accessibilityLabel='إرسال'
-              accessibilityState={{ disabled: !canSend }}
+              onPress={onSubmit}
+              glowColor={canSend ? primary : undefined}
             >
               <ArrowUp size={20} color={canSend ? primaryForeground : muted} />
-            </Pressable>
+            </ActionButton>
+          ) : (
+            <ActionButton
+              label='اتكلم'
+              backgroundColor={secondary}
+              disabled={disabled}
+              onPress={() => voice?.onStart()}
+            >
+              <Mic size={18} color={muted} />
+            </ActionButton>
           )}
         </View>
 
@@ -425,6 +420,81 @@ export const AssistantComposer = forwardRef<AssistantComposerRef, AssistantCompo
     );
   }
 );
+
+/**
+ * One 46px control. Press scales with a spring and fires a haptic, matching the
+ * app's buttons; the primary action also gets a soft glow so the one thing the
+ * owner is about to press is the one thing that stands out.
+ */
+function ActionButton({
+  label,
+  children,
+  onPress,
+  disabled = false,
+  loading = false,
+  backgroundColor,
+  loadingColor,
+  glowColor,
+  haptic = 'impact-light',
+}: {
+  label: string;
+  children?: React.ReactNode;
+  onPress?: () => void;
+  disabled?: boolean;
+  loading?: boolean;
+  backgroundColor: string;
+  loadingColor?: string;
+  glowColor?: string;
+  haptic?: HapticIntent;
+}) {
+  const feedback = useHaptics();
+  const scale = useSharedValue(1);
+  const inert = disabled || loading;
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+  }));
+
+  return (
+    <Pressable
+      onPress={onPress}
+      disabled={inert}
+      onPressIn={() => {
+        if (inert) return;
+        feedback(haptic);
+        scale.value = withSpring(0.9, { damping: 16, stiffness: 420 });
+      }}
+      onPressOut={() => {
+        scale.value = withSpring(1, { damping: 18, stiffness: 380 });
+      }}
+      accessibilityRole='button'
+      accessibilityLabel={label}
+      accessibilityState={{ disabled: inert, busy: loading }}
+    >
+      <Animated.View
+        style={[
+          styles.action,
+          {
+            backgroundColor,
+            opacity: disabled ? 0.45 : 1,
+            ...(glowColor
+              ? {
+                  shadowColor: glowColor,
+                  shadowOpacity: 0.28,
+                  shadowRadius: 8,
+                  shadowOffset: { width: 0, height: 2 },
+                  elevation: 3,
+                }
+              : null),
+          },
+          animatedStyle,
+        ]}
+      >
+        {loading ? <Spinner size='sm' color={loadingColor} /> : children}
+      </Animated.View>
+    </Pressable>
+  );
+}
 
 const styles = StyleSheet.create({
   container: {

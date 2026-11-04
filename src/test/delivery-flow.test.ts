@@ -28,8 +28,11 @@ const call = async (channel: string, ...args: any[]) => {
   return fn({}, ...args)
 }
 
-const day = (offset = 0) =>
-  new Date(Date.now() + offset * 86_400_000).toISOString().slice(0, 10)
+const day = (offset = 0) => {
+  const date = new Date(Date.now() + offset * 86_400_000)
+  const pad = (value: number) => String(value).padStart(2, '0')
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
+}
 
 let productId = ''
 let adminId = ''

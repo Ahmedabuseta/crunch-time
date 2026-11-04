@@ -1,30 +1,104 @@
-// Modifiers.
-import { and, eq } from 'drizzle-orm'
-import { getDb } from '../db/client'
+// Modifier groups and options: admin CRUD, visibility, ordering and links.
+import { and, eq, sql } from 'drizzle-orm'
+import { getDb, getSqlite } from '../db/client'
 import * as schema from '../db/schema'
-import { listRecipeRows, uuid } from './shared'
+import { hardDelete, listRecipeRows, uuid } from './shared'
 import { requireAdmin } from './session'
-import { hardDelete } from './shared'
 
-const { modifierGroups, modifiers, productModifierGroups, modifierRecipes } = schema
+const { modifierGroups, modifiers, productModifierGroups, modifierRecipes, products } = schema
 
-export function listModifierGroups() {
+function cleanGroup(data: any, partial: boolean): Record<string, unknown> {
+  const out: Record<string, unknown> = {}
+
+  if (!partial || data.name !== undefined) {
+    const name = String(data.name ?? '').trim()
+    if (!name) throw new Error('اسم مجموعة الخيارات مطلوب')
+    out.name = name
+  }
+
+  if (!partial || data.type !== undefined) {
+    const type = String(data.type ?? '').trim()
+    if (type !== 'single-select' && type !== 'multi-select') throw new Error('نوع المجموعة غير صالح')
+    out.type = type
+  }
+
+  if (data.sortOrder !== undefined) {
+    const order = Number(data.sortOrder)
+    if (!Number.isFinite(order) || order < 0) throw new Error('ترتيب المجموعة غير صالح')
+    out.sortOrder = Math.trunc(order)
+  }
+  if (data.active !== undefined) out.active = Boolean(data.active)
+  return out
+}
+
+function cleanModifier(data: any, partial: boolean): Record<string, unknown> {
+  const out: Record<string, unknown> = {}
+
+  if (!partial || data.name !== undefined) {
+    const name = String(data.name ?? '').trim()
+    if (!name) throw new Error('اسم الخيار مطلوب')
+    out.name = name
+  }
+
+  if (!partial || data.priceAdjustment !== undefined) {
+    const price = Number(data.priceAdjustment ?? 0)
+    if (!Number.isFinite(price)) throw new Error('سعر الخيار غير صالح')
+    out.priceAdjustment = price
+  }
+
+  if (data.sortOrder !== undefined) {
+    const order = Number(data.sortOrder)
+    if (!Number.isFinite(order) || order < 0) throw new Error('ترتيب الخيار غير صالح')
+    out.sortOrder = Math.trunc(order)
+  }
+  if (data.active !== undefined) out.active = Boolean(data.active)
+  return out
+}
+
+/** Active groups for the sales screens; the admin page opts into the full list. */
+export function listModifierGroups(includeInactive = false) {
   const db = getDb()
-  return db.select().from(modifierGroups).where(eq(modifierGroups.active, true)).orderBy(modifierGroups.sortOrder)
+  const rows = db.select({
+    id: modifierGroups.id,
+    name: modifierGroups.name,
+    type: modifierGroups.type,
+    sortOrder: modifierGroups.sortOrder,
+    active: modifierGroups.active,
+    productCount: sql<number>`(SELECT COUNT(*) FROM product_modifier_groups pmg WHERE pmg.modifier_group_id = ${modifierGroups.id})`,
+    modifierCount: sql<number>`(SELECT COUNT(*) FROM modifiers m WHERE m.modifier_group_id = ${modifierGroups.id})`,
+  }).from(modifierGroups).all() as any[]
+
+  return rows
+    .filter((row) => includeInactive || row.active)
+    .sort((a, b) => (a.sortOrder - b.sortOrder) || String(a.name).localeCompare(String(b.name), 'ar'))
+}
+
+export function getModifierGroupById(id: string) {
+  return getDb().select().from(modifierGroups).where(eq(modifierGroups.id, id)).get() ?? null
 }
 
 export function createModifierGroup(data: any) {
   requireAdmin()
-  const db = getDb()
+  const clean = cleanGroup(data, false)
+  if (clean.sortOrder === undefined) {
+    const max = getDb().select({ max: sql<number>`COALESCE(MAX(sort_order), 0)` }).from(modifierGroups).get()?.max ?? 0
+    clean.sortOrder = max + 1
+  }
   const id = uuid()
-  db.insert(modifierGroups).values({ id, ...data, active: true }).run()
+  getDb().insert(modifierGroups).values({ id, ...clean } as any).run()
   return { id }
 }
 
 export function updateModifierGroup(id: string, data: any) {
   requireAdmin()
   const db = getDb()
-  db.update(modifierGroups).set(data).where(eq(modifierGroups.id, id)).run()
+  if (!db.select({ id: modifierGroups.id }).from(modifierGroups).where(eq(modifierGroups.id, id)).get()) {
+    throw new Error('مجموعة الخيارات غير موجودة')
+  }
+  const clean = cleanGroup(data, true)
+  if (Object.keys(clean).length > 0) {
+    db.update(modifierGroups).set(clean as any).where(eq(modifierGroups.id, id)).run()
+  }
   return { ok: true }
 }
 
@@ -32,8 +106,6 @@ export function deleteModifierGroup(id: string, opts?: { hard?: boolean }) {
   requireAdmin()
   const db = getDb()
   if (opts?.hard) {
-    // Member modifiers carry their own recipes; if any exist the
-    // group is history-linked and must be refused, not cascaded.
     return hardDelete(
       'modifier_groups',
       id,
@@ -52,25 +124,55 @@ export function deleteModifierGroup(id: string, opts?: { hard?: boolean }) {
   return { ok: true }
 }
 
-export function listModifiersByGroup(groupId: string) {
+export function reorderModifierGroups(ids: string[]) {
+  requireAdmin()
+  const sqlite = getSqlite()
+  const update = sqlite.prepare('UPDATE modifier_groups SET sort_order = ? WHERE id = ?')
+  sqlite.transaction(() => {
+    (ids ?? []).map(String).forEach((id, index) => update.run(index + 1, id))
+  })()
+  return { ok: true }
+}
+
+export function listModifiersByGroup(groupId: string, includeInactive = false) {
   const db = getDb()
+  const conditions = [eq(modifiers.modifierGroupId, groupId)]
+  if (!includeInactive) conditions.push(eq(modifiers.active, true))
   return db.select().from(modifiers)
-    .where(and(eq(modifiers.active, true), eq(modifiers.modifierGroupId, groupId)))
+    .where(and(...conditions))
     .orderBy(modifiers.sortOrder)
+    .all()
+}
+
+export function getModifierById(id: string) {
+  return getDb().select().from(modifiers).where(eq(modifiers.id, id)).get() ?? null
 }
 
 export function createModifier(data: any) {
   requireAdmin()
-  const db = getDb()
+  const groupId = String(data.modifierGroupId ?? '').trim()
+  if (!groupId) throw new Error('المجموعة مطلوبة')
+  const clean = cleanModifier(data, false)
+  if (clean.sortOrder === undefined) {
+    const max = getDb().select({ max: sql<number>`COALESCE(MAX(sort_order), 0)` })
+      .from(modifiers)
+      .where(eq(modifiers.modifierGroupId, groupId))
+      .get()?.max ?? 0
+    clean.sortOrder = max + 1
+  }
   const id = uuid()
-  db.insert(modifiers).values({ id, ...data, active: true }).run()
+  getDb().insert(modifiers).values({ id, modifierGroupId: groupId, ...clean } as any).run()
   return { id }
 }
 
 export function updateModifier(id: string, data: any) {
   requireAdmin()
   const db = getDb()
-  db.update(modifiers).set(data).where(eq(modifiers.id, id)).run()
+  if (!db.select({ id: modifiers.id }).from(modifiers).where(eq(modifiers.id, id)).get()) {
+    throw new Error('الخيار غير موجود')
+  }
+  const clean = cleanModifier(data, true)
+  if (Object.keys(clean).length > 0) db.update(modifiers).set(clean as any).where(eq(modifiers.id, id)).run()
   return { ok: true }
 }
 
@@ -90,13 +192,23 @@ export function deleteModifier(id: string, opts?: { hard?: boolean }) {
   return { ok: true }
 }
 
+export function reorderModifiers(ids: string[]) {
+  requireAdmin()
+  const sqlite = getSqlite()
+  const update = sqlite.prepare('UPDATE modifiers SET sort_order = ? WHERE id = ?')
+  sqlite.transaction(() => {
+    (ids ?? []).map(String).forEach((id, index) => update.run(index + 1, id))
+  })()
+  return { ok: true }
+}
+
 export function listModifiersByProduct(productId: string) {
   const db = getDb()
   const groups = db.select({
     id: modifierGroups.id, name: modifierGroups.name, type: modifierGroups.type,
   }).from(modifierGroups)
     .innerJoin(productModifierGroups, eq(modifierGroups.id, productModifierGroups.modifierGroupId))
-    .where(eq(productModifierGroups.productId, productId))
+    .where(and(eq(productModifierGroups.productId, productId), eq(modifierGroups.active, true)))
     .all()
 
   return groups.map((g: any) => ({
@@ -106,6 +218,35 @@ export function listModifiersByProduct(productId: string) {
       .orderBy(modifiers.sortOrder)
       .all(),
   }))
+}
+
+/** Products currently offering this modifier group, including hidden ones. */
+export function listModifierGroupProducts(groupId: string) {
+  const db = getDb()
+  return db.select({
+    id: products.id,
+    name: products.name,
+    emoji: products.emoji,
+    active: products.active,
+    price: products.price,
+  })
+    .from(products)
+    .innerJoin(productModifierGroups, eq(products.id, productModifierGroups.productId))
+    .where(eq(productModifierGroups.modifierGroupId, groupId))
+    .all()
+}
+
+/** Replace the group's product links — the reverse of the product-side picker. */
+export function setModifierGroupProducts(groupId: string, productIds: string[]) {
+  requireAdmin()
+  const sqlite = getSqlite()
+  const ids = [...new Set((productIds ?? []).map(String).filter(Boolean))]
+  sqlite.transaction(() => {
+    sqlite.prepare('DELETE FROM product_modifier_groups WHERE modifier_group_id = ?').run(groupId)
+    const insert = sqlite.prepare('INSERT INTO product_modifier_groups (product_id, modifier_group_id) VALUES (?, ?)')
+    for (const productId of ids) insert.run(productId, groupId)
+  })()
+  return { ok: true }
 }
 
 export function linkModifierToProduct(productId: string, groupId: string) {

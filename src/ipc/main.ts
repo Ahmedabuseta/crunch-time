@@ -342,6 +342,10 @@ export function registerIpcHandlers() {
     b.catalog.deleteProduct(id, opts)
   )
 
+  ipcMain.handle('product:duplicate', (_e, id: string) =>
+    b.catalog.duplicateProduct(id)
+  )
+
   // Menu → Word (.docx), optionally with each product's recipe.
   ipcMain.handle('menu:exportWord', (_e, opts?: MenuExportOptions) =>
     b.menuExport.exportMenuWord(opts)
@@ -350,8 +354,12 @@ export function registerIpcHandlers() {
   // ═══════════════════════════════════════════════════════════
   // ADDONS
   // ═══════════════════════════════════════════════════════════
-  ipcMain.handle('addon:list', () =>
-    b.addons.listAddons()
+  ipcMain.handle('addon:list', (_e, includeInactive?: boolean) =>
+    b.addons.listAddons(includeInactive)
+  )
+
+  ipcMain.handle('addon:getById', (_e, id: string) =>
+    b.addons.getAddonById(id)
   )
 
   ipcMain.handle('addon:create', (_e, data: any) =>
@@ -378,6 +386,14 @@ export function registerIpcHandlers() {
     b.addons.setAddonLinks(productId, addonIds)
   )
 
+  ipcMain.handle('addon:listProducts', (_e, addonId: string) =>
+    b.addons.listAddonProducts(addonId)
+  )
+
+  ipcMain.handle('addon:setProducts', (_e, addonId: string, productIds: string[]) =>
+    b.addons.setAddonProducts(addonId, productIds)
+  )
+
   ipcMain.handle('addon:listRecipes', (_e, addonId: string) =>
     b.addons.listAddonRecipes(addonId)
   )
@@ -393,8 +409,12 @@ export function registerIpcHandlers() {
   // ═══════════════════════════════════════════════════════════
   // MODIFIERS
   // ═══════════════════════════════════════════════════════════
-  ipcMain.handle('modifier:listGroups', () =>
-    b.modifiers.listModifierGroups()
+  ipcMain.handle('modifier:listGroups', (_e, includeInactive?: boolean) =>
+    b.modifiers.listModifierGroups(includeInactive)
+  )
+
+  ipcMain.handle('modifier:getGroupById', (_e, id: string) =>
+    b.modifiers.getModifierGroupById(id)
   )
 
   ipcMain.handle('modifier:createGroup', (_e, data: any) =>
@@ -409,8 +429,20 @@ export function registerIpcHandlers() {
     b.modifiers.deleteModifierGroup(id, opts)
   )
 
-  ipcMain.handle('modifier:listByGroup', (_e, groupId: string) =>
-    b.modifiers.listModifiersByGroup(groupId)
+  ipcMain.handle('modifier:listByGroup', (_e, groupId: string, includeInactive?: boolean) =>
+    b.modifiers.listModifiersByGroup(groupId, includeInactive)
+  )
+
+  ipcMain.handle('modifier:reorderGroups', (_e, ids: string[]) =>
+    b.modifiers.reorderModifierGroups(ids)
+  )
+
+  ipcMain.handle('modifier:reorderModifiers', (_e, ids: string[]) =>
+    b.modifiers.reorderModifiers(ids)
+  )
+
+  ipcMain.handle('modifier:getById', (_e, id: string) =>
+    b.modifiers.getModifierById(id)
   )
 
   ipcMain.handle('modifier:createModifier', (_e, data: any) =>
@@ -435,6 +467,14 @@ export function registerIpcHandlers() {
 
   ipcMain.handle('modifier:setProductLinks', (_e, productId: string, groupIds: string[]) =>
     b.modifiers.setModifierLinks(productId, groupIds)
+  )
+
+  ipcMain.handle('modifier:listProducts', (_e, groupId: string) =>
+    b.modifiers.listModifierGroupProducts(groupId)
+  )
+
+  ipcMain.handle('modifier:setProducts', (_e, groupId: string, productIds: string[]) =>
+    b.modifiers.setModifierGroupProducts(groupId, productIds)
   )
 
   ipcMain.handle('modifier:listRecipes', (_e, modifierId: string) =>

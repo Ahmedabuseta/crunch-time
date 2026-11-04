@@ -43,10 +43,66 @@ export function useProducts(categoryId?: string) {
   });
 }
 
-export function useAddons() {
+export function useAddons(includeInactive = false) {
   return useQuery({
-    queryKey: qk.addons,
-    queryFn: () => api.addons(),
+    queryKey: qk.addons(includeInactive),
+    queryFn: () => api.addons(includeInactive),
+    staleTime: STALE.reference,
+  });
+}
+
+export function useAddonProducts(addonId: string | null | undefined) {
+  return useQuery({
+    queryKey: qk.addonProducts(addonId ?? ''),
+    queryFn: () => api.addonProducts(addonId as string),
+    enabled: Boolean(addonId),
+    staleTime: STALE.reference,
+  });
+}
+
+export function useModifierGroups(includeInactive = false) {
+  return useQuery({
+    queryKey: qk.modifierGroups(includeInactive),
+    queryFn: () => api.modifierGroups(includeInactive),
+    staleTime: STALE.reference,
+  });
+}
+
+export function useModifierGroup(id: string | null | undefined) {
+  return useQuery({
+    queryKey: qk.modifierGroup(id ?? ''),
+    queryFn: () => api.modifierGroup(id as string),
+    enabled: Boolean(id),
+    staleTime: STALE.reference,
+  });
+}
+
+export function useModifierGroupModifiers(
+  groupId: string | null | undefined,
+  includeInactive = true
+) {
+  return useQuery({
+    queryKey: qk.modifierGroupModifiers(groupId ?? '', includeInactive),
+    queryFn: () => api.modifierGroupModifiers(groupId as string, includeInactive),
+    enabled: Boolean(groupId),
+    staleTime: STALE.reference,
+  });
+}
+
+export function useModifierGroupProducts(groupId: string | null | undefined) {
+  return useQuery({
+    queryKey: qk.modifierGroupProducts(groupId ?? ''),
+    queryFn: () => api.modifierGroupProducts(groupId as string),
+    enabled: Boolean(groupId),
+    staleTime: STALE.reference,
+  });
+}
+
+/** Every product, for the reverse-link picker — not a page of them. */
+export function useAllProducts() {
+  return useQuery({
+    queryKey: qk.allProducts,
+    queryFn: () => api.products({ pageSize: ALL_ROWS }),
     staleTime: STALE.reference,
   });
 }

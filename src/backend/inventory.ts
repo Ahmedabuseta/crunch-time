@@ -744,6 +744,421 @@ export function listTransactions(ingredientId: string, filters?: { type?: string
   return { ingredient, currentStock, openingBalance: r2(currentStock - grandTotal), movements, total, page, pageSize, totalPages }
 }
 
+// ─── Stock audit: last count, variance and shrinkage ──────────
+//
+// There is no separate stocktake table: a count is an ADJUSTMENT whose note
+// starts with «جرد». That keeps the ledger the single source of truth and lets
+// old data work — the latest ADJUSTMENT is used when no note says «جرد», with a
+// `labeled: false` flag so the model does not over-claim that it was a count.
+
+const COUNT_NOTE = /جرد|stocktake|stock\s*count/i
+
+export interface StockAuditOptions {
+  ingredientId?: string
+  /** Consumption window in days. */
+  days?: number
+  historyLimit?: number
+}
+
+function isCountNote(note: unknown): boolean {
+  return COUNT_NOTE.test(String(note ?? ''))
+}
+
+function daysSince(iso: string | null | undefined): number | null {
+  if (!iso) return null
+  const ms = Date.now() - Date.parse(iso)
+  if (!Number.isFinite(ms)) return null
+  return Math.max(0, Math.floor(ms / 86_400_000))
+}
+
+function countRow(where: string, params: any[]) {
+  const s = getSqlite()
+  const labelled = s.prepare(`
+    SELECT t.rowid AS rowid, t.id, t.created_at AS at, t.quantity AS delta, t.note,
+           t.ingredient_id AS ingredientId, i.name, i.unit,
+           i.cost_per_unit AS unitCost, i.stock_quantity AS stock
+    FROM inventory_transactions t
+    JOIN ingredients i ON i.id = t.ingredient_id
+    WHERE ${where} AND t.type = 'ADJUSTMENT'
+      AND (t.note LIKE '%جرد%' OR lower(t.note) LIKE '%stocktake%' OR lower(t.note) LIKE '%stock count%')
+    ORDER BY t.created_at DESC, t.rowid DESC
+    LIMIT 1
+  `).get(...params) as any
+  if (labelled) return { ...labelled, labeled: true }
+
+  const any = s.prepare(`
+    SELECT t.rowid AS rowid, t.id, t.created_at AS at, t.quantity AS delta, t.note,
+           t.ingredient_id AS ingredientId, i.name, i.unit,
+           i.cost_per_unit AS unitCost, i.stock_quantity AS stock
+    FROM inventory_transactions t
+    JOIN ingredients i ON i.id = t.ingredient_id
+    WHERE ${where} AND t.type = 'ADJUSTMENT'
+    ORDER BY t.created_at DESC, t.rowid DESC
+    LIMIT 1
+  `).get(...params) as any
+  return any ? { ...any, labeled: false } : null
+}
+
+/** Signed sum of everything that happened strictly after a transaction. */
+function sumAfter(ingredientId: string, at: string, rowid: number): number {
+  const row = getSqlite().prepare(`
+    SELECT COALESCE(SUM(quantity), 0) AS q
+    FROM inventory_transactions
+    WHERE ingredient_id = ?
+      AND (created_at > ? OR (created_at = ? AND rowid > ?))
+  `).get(ingredientId, at, at, rowid) as any
+  return r2(Number(row?.q) || 0)
+}
+
+function auditIngredient(ingredientId: string, days: number, historyLimit: number) {
+  const s = getSqlite()
+  const ingredient = s.prepare('SELECT * FROM ingredients WHERE id = ?').get(ingredientId) as any
+  if (!ingredient) return null
+
+  const stock = r2(Number(ingredient.stock_quantity) || 0)
+  const unitCost = r2(Number(ingredient.cost_per_unit) || 0)
+  const unit = String(ingredient.unit ?? '')
+  const count = countRow('t.ingredient_id = ?', [ingredientId])
+  const windowStart = new Date(Date.now() - days * 86_400_000).toISOString()
+
+  let lastCount = null as null | Record<string, any>
+  let sinceCount = null as null | Record<string, any>
+  let history: any[] = []
+
+  if (count) {
+    const after = sumAfter(ingredientId, String(count.at), Number(count.rowid))
+    const delta = r2(Number(count.delta) || 0)
+    const counted = r2(stock - after)
+    const systemBefore = r2(counted - delta)
+    const value = r2(Math.abs(delta) * unitCost)
+
+    lastCount = {
+      at: count.at,
+      daysAgo: daysSince(count.at),
+      delta,
+      counted,
+      systemBefore,
+      value,
+      note: count.note ?? null,
+      labeled: Boolean(count.labeled),
+      // A manual adjustment records the difference; it is not proof of a
+      // physical count, and it never records the cause.
+      kind: count.labeled ? 'stocktake' : 'adjustment',
+      confirmed: Boolean(count.labeled),
+      ingredient: { id: ingredientId, name: ingredient.name, unit },
+    }
+
+    const moves = s.prepare(`
+      SELECT type, COUNT(*) AS count, COALESCE(SUM(quantity), 0) AS qty
+      FROM inventory_transactions
+      WHERE ingredient_id = ?
+        AND (created_at > ? OR (created_at = ? AND rowid > ?))
+      GROUP BY type
+    `).all(ingredientId, count.at, count.at, count.rowid) as any[]
+
+    const movements: Record<string, { count: number; qty: number }> = {}
+    let net = 0
+    for (const move of moves) {
+      const qty = r2(Number(move.qty) || 0)
+      movements[String(move.type)] = { count: Number(move.count) || 0, qty }
+      net += qty
+    }
+
+    sinceCount = {
+      at: count.at,
+      days: daysSince(count.at),
+      movements,
+      net: r2(net),
+    }
+
+    history = (s.prepare(`
+      SELECT t.created_at AS at, t.quantity AS delta, t.note
+      FROM inventory_transactions t
+      WHERE t.ingredient_id = ? AND t.type = 'ADJUSTMENT'
+      ORDER BY t.created_at DESC, t.rowid DESC
+      LIMIT ?
+    `).all(ingredientId, historyLimit) as any[]).map((row) => {
+      const delta = r2(Number(row.delta) || 0)
+      return {
+        at: row.at,
+        daysAgo: daysSince(row.at),
+        delta,
+        value: r2(Math.abs(delta) * unitCost),
+        note: row.note ?? null,
+        labeled: isCountNote(row.note),
+      }
+    })
+  }
+
+  const win = s.prepare(`
+    SELECT
+      COALESCE(SUM(CASE WHEN type = 'CONSUMPTION' THEN -quantity ELSE 0 END), 0) AS consumed,
+      COALESCE(SUM(CASE WHEN type = 'WASTE' THEN -quantity ELSE 0 END), 0) AS waste,
+      COALESCE(SUM(CASE WHEN type = 'PURCHASE' THEN quantity ELSE 0 END), 0) AS purchased,
+      COALESCE(SUM(CASE WHEN type = 'ADJUSTMENT' THEN quantity ELSE 0 END), 0) AS adjusted,
+      COALESCE(SUM(CASE WHEN type = 'RETURN' THEN -quantity ELSE 0 END), 0) AS returned,
+      COUNT(DISTINCT CASE WHEN type = 'CONSUMPTION' THEN reference_order_id END) AS orders,
+      MAX(CASE WHEN type = 'CONSUMPTION' THEN created_at END) AS lastConsumedAt
+    FROM inventory_transactions
+    WHERE ingredient_id = ? AND created_at >= ?
+  `).get(ingredientId, windowStart) as any
+
+  const consumed = r2(Math.abs(Number(win?.consumed) || 0))
+  const waste = r2(Math.abs(Number(win?.waste) || 0))
+  const purchased = r2(Number(win?.purchased) || 0)
+  const adjusted = r2(Number(win?.adjusted) || 0)
+  const returned = r2(Math.abs(Number(win?.returned) || 0))
+  const avgDaily = r2(consumed / days)
+  const daysCover = avgDaily > 0 ? r2(Math.max(0, stock) / avgDaily) : null
+
+  const lastOfType = (type: string) => {
+    const row = s.prepare(`
+      SELECT created_at AS at, quantity AS qty, note, unit_cost AS unitCost, supplier
+      FROM inventory_transactions
+      WHERE ingredient_id = ? AND type = ?
+      ORDER BY created_at DESC, rowid DESC
+      LIMIT 1
+    `).get(ingredientId, type) as any
+    return row ? { at: row.at, qty: r2(Number(row.qty) || 0), note: row.note ?? null, unitCost: row.unitCost ?? null, supplier: row.supplier ?? null } : null
+  }
+
+  const productRows = listIngredientProducts(ingredientId) as any[]
+  const sold = new Map<string, number>()
+  if (productRows.length > 0) {
+    const ids = productRows.map((product) => String(product.id))
+    const marks = ids.map(() => '?').join(', ')
+    const rows = s.prepare(`
+      SELECT oi.product_id AS id, COALESCE(SUM(oi.quantity), 0) AS qty
+      FROM order_items oi
+      JOIN orders o ON o.id = oi.order_id
+      WHERE o.status = 'COMPLETED' AND o.created_at >= ?
+        AND oi.product_id IN (${marks})
+      GROUP BY oi.product_id
+    `).all(windowStart, ...ids) as any[]
+    for (const row of rows) sold.set(String(row.id), r2(Number(row.qty) || 0))
+  }
+
+  const products = productRows
+    .map((product) => ({
+      name: String(product.name),
+      inBase: Boolean(product.inBase),
+      links: Array.isArray(product.links) ? product.links : [],
+      sold: sold.get(String(product.id)) ?? 0,
+    }))
+    .sort((a, b) => b.sold - a.sold || a.name.localeCompare(b.name, 'ar'))
+    .slice(0, 8)
+
+  const negativeCounts = history.filter((row) => row.delta < 0 && (row.daysAgo ?? 999) <= 90).length
+  const lc = lastCount
+  const stale = !lc || (lc.daysAgo ?? 0) > 30
+  const signals: string[] = []
+
+  if (!count || !lc) {
+    signals.push('مفيش جرد مسجل للمادة — آخر جرد غير معروف، اسأل صاحب المطعم عن آخر مرة جرد والكمية الفعلية.')
+  } else {
+    const noun = lc.labeled ? 'جرد' : 'تسوية'
+    if (!lc.labeled) signals.push('آخر تسوية على المادة مش جرد مؤكد — آخر جرد فعلي غير معروف. اسأل عن الكمية الفعلية اللي اتجردت.')
+    if (lc.delta < 0) {
+      signals.push(`آخر ${noun} سجلت عجز ${Math.abs(lc.delta)} ${unit} بقيمة ${lc.value} ج.م.`)
+    } else if (lc.delta > 0) {
+      signals.push(`آخر ${noun} سجلت فائض ${lc.delta} ${unit} بقيمة ${lc.value} ج.م.`)
+    }
+    if (stale) signals.push(`آخر ${noun} من ${lc.daysAgo} يوم — الفرق الحالي مش مؤكد، محتاج جرد جديد.`)
+  }
+  if (negativeCounts >= 2) signals.push(`العجز اتكرر في ${negativeCounts} جرد خلال آخر 90 يوم — راجع الاستهلاك غير المسجل أو الفقد.`)
+  if (stock < 0) signals.push('رصيد النظام سالب — ده معناه حركة أو استهلاك أكبر من المسجل.')
+  if (daysCover != null && daysCover < 2) signals.push('الرصيد يكفي أقل من يومين بالاستهلاك الحالي.')
+  if (waste === 0 && consumed > 0 && (lastCount?.delta ?? 0) < 0) {
+    signals.push('مفيش تالف مسجل في الفترة — لو فيه تالف بيترمي من غير تسجيل ده يفسر جزء من العجز.')
+  }
+  if ((lastCount?.value ?? 0) >= 200) signals.push('قيمة آخر فرق جرد كبيرة — يستاهل مراجعة الورديات/الكاميرا قبل التسوية.')
+
+  // A short, structured reading the model can quote instead of inventing a
+  // cause. `currentStockNegative` is the strongest evidence that something was
+  // not recorded: the ledger cannot go below zero by itself.
+  const verdict = {
+    countKnown: Boolean(count?.labeled),
+    currentStockNegative: stock < 0,
+    likelyCause: stock < 0
+      ? 'حركة أو استهلاك غير مسجل'
+      : negativeCounts >= 2
+        ? 'عجز متكرر — راجع الاستهلاك/الفقد'
+        : 'مش محدد — محتاج جرد فعلي',
+    nextAction: count?.labeled
+      ? 'راجع حركة الفترة أو اعمل جرد جديد'
+      : 'اسأل عن آخر جرد فعلي أو سجّل الجرد الحالي',
+  }
+
+  return {
+    generatedAt: now(),
+    windowDays: days,
+    scope: 'ingredient' as const,
+    ingredient: {
+      id: ingredientId,
+      name: String(ingredient.name),
+      unit,
+      category: ingredient.category,
+      storage: ingredient.storage,
+      active: Boolean(ingredient.active),
+      stock,
+      minStock: r2(Number(ingredient.min_stock) || 0),
+      unitCost,
+      stockValue: r2(stock * unitCost),
+    },
+    lastCount,
+    history,
+    sinceCount,
+    window: {
+      days,
+      consumed,
+      waste,
+      purchased,
+      adjusted,
+      returned,
+      orders: Number(win?.orders) || 0,
+      avgDaily,
+      daysCover,
+      lastConsumedAt: win?.lastConsumedAt ?? null,
+    },
+    lastPurchase: lastOfType('PURCHASE'),
+    lastWaste: lastOfType('WASTE'),
+    products,
+    flags: {
+      negativeStock: stock < 0,
+      staleCount: stale,
+      noCount: !count,
+      needsCount: !count || !count.labeled || stale,
+      recurringLoss: negativeCounts >= 2,
+      highValueLoss: (lastCount?.value ?? 0) >= 200,
+    },
+    verdict,
+    signals,
+  }
+}
+
+function auditOverview(days: number) {
+  const s = getSqlite()
+  const count = countRow('1 = 1', [])
+  const lastCount = count
+    ? {
+        at: count.at,
+        daysAgo: daysSince(count.at),
+        delta: r2(Number(count.delta) || 0),
+        value: r2(Math.abs(Number(count.delta) || 0) * (Number(count.unitCost) || 0)),
+        note: count.note ?? null,
+        labeled: Boolean(count.labeled),
+        ingredient: { id: count.ingredientId, name: count.name, unit: count.unit },
+      }
+    : null
+
+  const countedItems = count
+    ? Number((s.prepare(`
+        SELECT COUNT(DISTINCT ingredient_id) AS c
+        FROM inventory_transactions
+        WHERE type = 'ADJUSTMENT' AND date(created_at) = date(?)
+          AND (note LIKE '%جرد%' OR lower(note) LIKE '%stocktake%' OR lower(note) LIKE '%stock count%')
+      `).get(count.at) as any)?.c) || 0
+    : 0
+
+  const all = s.prepare(`
+    SELECT i.id, i.name, i.unit, i.stock_quantity AS stock, i.cost_per_unit AS unitCost,
+           i.min_stock AS minStock,
+           (SELECT MAX(t.created_at) FROM inventory_transactions t
+             WHERE t.ingredient_id = i.id AND t.type = 'ADJUSTMENT'
+               AND (t.note LIKE '%جرد%' OR lower(t.note) LIKE '%stocktake%' OR lower(t.note) LIKE '%stock count%')) AS lastLabelled,
+           (SELECT MAX(t.created_at) FROM inventory_transactions t
+             WHERE t.ingredient_id = i.id AND t.type = 'ADJUSTMENT') AS lastAny
+    FROM ingredients i
+    WHERE i.active = 1
+  `).all() as any[]
+
+  const rows = all.map((row) => {
+    const lastAt = row.lastLabelled || row.lastAny || null
+    const gap = daysSince(lastAt)
+    const stock = r2(Number(row.stock) || 0)
+    const unitCost = r2(Number(row.unitCost) || 0)
+    return {
+      id: row.id,
+      name: row.name,
+      unit: row.unit,
+      stock,
+      minStock: r2(Number(row.minStock) || 0),
+      unitCost,
+      value: r2(stock * unitCost),
+      lastCountAt: lastAt,
+      daysSince: gap,
+      labeled: Boolean(row.lastLabelled),
+    }
+  })
+
+  const stale = rows
+    .filter((row) => row.daysSince == null || row.daysSince >= 30)
+    .sort((a, b) => b.value - a.value || (b.daysSince ?? 9999) - (a.daysSince ?? 9999))
+    .slice(0, 12)
+
+  const since = new Date(Date.now() - 90 * 86_400_000).toISOString()
+  const losses = (s.prepare(`
+    SELECT t.created_at AS at, t.quantity AS delta, t.note,
+           i.id AS ingredientId, i.name, i.unit, i.cost_per_unit AS unitCost
+    FROM inventory_transactions t
+    JOIN ingredients i ON i.id = t.ingredient_id
+    WHERE t.type = 'ADJUSTMENT' AND t.quantity < 0 AND t.created_at >= ?
+    ORDER BY (ABS(t.quantity) * i.cost_per_unit) DESC, t.created_at DESC
+    LIMIT 10
+  `).all(since) as any[]).map((row) => ({
+    at: row.at,
+    daysAgo: daysSince(row.at),
+    ingredient: { id: row.ingredientId, name: row.name, unit: row.unit },
+    delta: r2(Number(row.delta) || 0),
+    value: r2(Math.abs(Number(row.delta) || 0) * (Number(row.unitCost) || 0)),
+    note: row.note ?? null,
+  }))
+
+  const negative = rows
+    .filter((row) => row.stock < 0)
+    .sort((a, b) => a.stock - b.stock)
+    .slice(0, 12)
+    .map((row) => ({ id: row.id, name: row.name, unit: row.unit, stock: row.stock, value: row.value }))
+
+  const signals: string[] = []
+  if (!lastCount) {
+    signals.push('مفيش أي جرد مسجل في النظام — كل فروقات المخزون غير مؤكدة.')
+  } else {
+    if (!lastCount.labeled) signals.push('آخر تسوية مش متسجلة كجرد — ممكن تكون تصحيح مش جرد فعلي.')
+    signals.push(`آخر جرد من ${lastCount.daysAgo} يوم${countedItems ? ` (${countedItems} مادة)` : ''}.`)
+  }
+  if (stale.length > 0) signals.push(`${stale.length} مادة بقالها أكتر من 30 يوم من غير جرد (أو ما اتجردتش قبل كده).`)
+  if (negative.length > 0) signals.push(`${negative.length} مادة برصيد سالب — حركة أو استهلاك غير مسجل.`)
+  if (losses.length > 0) signals.push('فيه فروقات عجز مسجلة خلال آخر 90 يوم — راجع القائمة.')
+
+  return {
+    generatedAt: now(),
+    windowDays: days,
+    scope: 'overview' as const,
+    lastCount,
+    overview: {
+      countedItems,
+      stale,
+      losses,
+      negative,
+      totalIngredients: rows.length,
+      countedIngredients: rows.filter((row) => row.lastCountAt).length,
+    },
+    signals,
+  }
+}
+
+/** Last count, variance and loss analysis for one ingredient or the whole store. */
+export function stockAudit(opts: StockAuditOptions = {}) {
+  const days = Math.min(Math.max(Math.trunc(opts.days ?? 30), 1), 365)
+  const historyLimit = Math.min(Math.max(Math.trunc(opts.historyLimit ?? 6), 1), 24)
+  if (opts.ingredientId) {
+    const result = auditIngredient(opts.ingredientId, days, historyLimit)
+    if (result) return result
+  }
+  return auditOverview(days)
+}
+
 export function recordWaste(ingredientId: string, qty: number, note?: string) {
   requireAdmin()
   const db = getDb()

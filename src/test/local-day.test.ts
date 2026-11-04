@@ -100,6 +100,22 @@ describe('reports use the local day', () => {
     expect(todayRow.date).toBe(today)
     expect(todayRow.revenue).toBeGreaterThanOrEqual(75)
   })
+
+  it('accepts an explicit from/to window for the trend', () => {
+    insertOrder('local-day-window', new Date(2026, 8, 16, 13, 0).toISOString(), 60)
+
+    const rows = revenueTrend(7, '2026-09-14', '2026-09-17')
+    expect(rows.map(row => row.date)).toEqual(['2026-09-14', '2026-09-15', '2026-09-16', '2026-09-17'])
+    const day = rows.find(row => row.date === '2026-09-16')
+    expect(day?.revenue).toBeGreaterThanOrEqual(60)
+  })
+
+  it('falls back to the trailing window when from/to are invalid or future', () => {
+    const today = localDateOf(new Date().toISOString())
+    const rows = revenueTrend(3, 'garbage', '2099-01-01')
+    expect(rows).toHaveLength(3)
+    expect(rows[rows.length - 1].date).toBe(today)
+  })
 })
 
 describe('hourly blocks', () => {

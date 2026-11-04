@@ -1,12 +1,58 @@
 // Catalog: categories + products.
-import { and, asc, desc, eq, sql } from 'drizzle-orm'
+import { and, asc, desc, eq, getTableColumns, sql } from 'drizzle-orm'
 import { getDb, getSqlite } from '../db/client'
 import * as schema from '../db/schema'
 import { uuid } from './shared'
 import { requireAdmin } from './session'
 import { hardDelete } from './shared'
 
-const { categories, products, productAddons, productModifierGroups } = schema
+const { categories, products, productAddons, productModifierGroups, recipes } = schema
+
+const productColumns = getTableColumns(products)
+const productCounts = {
+  addonCount: sql<number>`(SELECT COUNT(*) FROM product_addons pa WHERE pa.product_id = ${products.id})`,
+  modifierCount: sql<number>`(SELECT COUNT(*) FROM product_modifier_groups pmg WHERE pmg.product_id = ${products.id})`,
+  recipeCount: sql<number>`(SELECT COUNT(*) FROM recipes r WHERE r.product_id = ${products.id})`,
+}
+
+function ensureCategory(categoryId: string): void {
+  const row = getDb().select({ id: categories.id }).from(categories).where(eq(categories.id, categoryId)).get()
+  if (!row) throw new Error('القسم غير موجود')
+}
+
+function cleanProduct(data: any, partial: boolean): Record<string, unknown> {
+  const out: Record<string, unknown> = {}
+
+  if (!partial || data.name !== undefined) {
+    const name = String(data.name ?? '').trim()
+    if (!name) throw new Error('اسم المنتج مطلوب')
+    out.name = name
+  }
+
+  if (!partial || data.price !== undefined) {
+    const price = Number(data.price)
+    if (!Number.isFinite(price) || price < 0) throw new Error('سعر المنتج غير صالح')
+    out.price = price
+  }
+
+  if (!partial || data.categoryId !== undefined) {
+    const categoryId = String(data.categoryId ?? '').trim()
+    if (!categoryId) throw new Error('القسم مطلوب')
+    out.categoryId = categoryId
+  }
+
+  if (!partial || data.emoji !== undefined) out.emoji = String(data.emoji ?? '').trim() || '🍽️'
+  if (!partial || data.description !== undefined) out.description = String(data.description ?? '').trim()
+
+  if (data.costPrice !== undefined) {
+    const cost = Number(data.costPrice)
+    if (!Number.isFinite(cost) || cost < 0) throw new Error('تكلفة المنتج غير صالحة')
+    out.costPrice = cost
+  }
+  if (data.active !== undefined) out.active = Boolean(data.active)
+  if (data.supportsRollback !== undefined) out.supportsRollback = Boolean(data.supportsRollback)
+  return out
+}
 
 export function listCategories() {
   const db = getDb()
@@ -80,7 +126,7 @@ export function listProducts(categoryId?: string, includeInactive?: boolean) {
   const where = includeInactive
     ? (categoryId ? eq(products.categoryId, categoryId) : undefined)
     : (categoryId ? and(eq(products.active, true), eq(products.categoryId, categoryId)) : eq(products.active, true))
-  const query = db.select().from(products)
+  const query = db.select({ ...productColumns, ...productCounts }).from(products)
   return where ? query.where(where).all() : query.all()
 }
 
@@ -119,7 +165,7 @@ export function listProductsPaged(options: {
     db.select({ count: sql<number>`COUNT(*)` }).from(products).where(where).get()?.count ?? 0
   )
   const column = PRODUCT_SORTS[options.sort ?? 'name']
-  const items = db.select().from(products).where(where)
+  const items = db.select({ ...productColumns, ...productCounts }).from(products).where(where)
     // The id is a tiebreaker: two products with the same name would otherwise
     // order arbitrarily between queries, and page 2 could repeat a row.
     .orderBy(options.dir === 'desc' ? desc(column) : asc(column), asc(products.id))
@@ -174,17 +220,47 @@ export function getProductById(id: string) {
 
 export function createProduct(data: any) {
   requireAdmin()
+  const clean = cleanProduct(data, false)
+  ensureCategory(String(clean.categoryId))
   const db = getDb()
   const id = uuid()
-  db.insert(products).values({ id, ...data, active: true }).run()
+  db.insert(products).values({ id, ...clean } as any).run()
   return { id }
 }
 
 export function updateProduct(id: string, data: any) {
   requireAdmin()
   const db = getDb()
-  db.update(products).set(data).where(eq(products.id, id)).run()
+  if (!db.select({ id: products.id }).from(products).where(eq(products.id, id)).get()) {
+    throw new Error('المنتج غير موجود')
+  }
+  const clean = cleanProduct(data, true)
+  if (clean.categoryId !== undefined) ensureCategory(String(clean.categoryId))
+  if (Object.keys(clean).length > 0) db.update(products).set(clean as any).where(eq(products.id, id)).run()
   return { ok: true }
+}
+
+/** Copy a product's catalogue row, its option links and its recipe. */
+export function duplicateProduct(id: string) {
+  requireAdmin()
+  const db = getDb()
+  const source = db.select().from(products).where(eq(products.id, id)).get()
+  if (!source) throw new Error('المنتج غير موجود')
+
+  const newId = uuid()
+  db.transaction((tx) => {
+    tx.insert(products).values({ ...source, id: newId, name: `${source.name} (نسخة)`, active: false }).run()
+    for (const link of tx.select().from(productAddons).where(eq(productAddons.productId, id)).all()) {
+      tx.insert(productAddons).values({ productId: newId, addonId: link.addonId }).run()
+    }
+    for (const link of tx.select().from(productModifierGroups).where(eq(productModifierGroups.productId, id)).all()) {
+      tx.insert(productModifierGroups).values({ productId: newId, modifierGroupId: link.modifierGroupId }).run()
+    }
+    for (const line of tx.select().from(recipes).where(eq(recipes.productId, id)).all()) {
+      tx.insert(recipes).values({ ...line, id: uuid(), productId: newId }).run()
+    }
+  })
+  return { id: newId }
 }
 
 export function deleteProduct(id: string, opts?: { hard?: boolean }) {

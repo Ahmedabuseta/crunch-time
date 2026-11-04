@@ -230,6 +230,7 @@ export interface ApiBridge {
     create: (data: any) => Promise<{ id: string }>
     update: (id: string, data: any) => Promise<{ ok: boolean }>
     delete: (id: string, opts?: DeleteOpts) => Promise<{ ok: boolean; error?: string }>
+    duplicate: (id: string) => Promise<{ id: string }>
   }
   menu: {
     exportWord: (opts?: {
@@ -240,11 +241,14 @@ export interface ApiBridge {
     }) => Promise<{ ok: boolean; path?: string; canceled?: boolean; message?: string; error?: string }>
   }
   addon: {
-    list: () => Promise<any[]>
+    list: (includeInactive?: boolean) => Promise<any[]>
+    getById: (id: string) => Promise<any>
     create: (data: any) => Promise<{ id: string }>
     update: (id: string, data: any) => Promise<{ ok: boolean }>
     delete: (id: string, opts?: DeleteOpts) => Promise<{ ok: boolean; error?: string }>
     listByProduct: (productId: string) => Promise<any[]>
+    listProducts: (addonId: string) => Promise<any[]>
+    setProducts: (addonId: string, productIds: string[]) => Promise<{ ok: boolean }>
     linkToProduct: (productId: string, addonId: string) => Promise<{ ok: boolean }>
     setProductLinks: (productId: string, addonIds: string[]) => Promise<{ ok: boolean }>
     listRecipes: (addonId: string) => Promise<any[]>
@@ -252,15 +256,21 @@ export interface ApiBridge {
     deleteRecipe: (id: string) => Promise<{ ok: boolean; error?: string }>
   }
   modifier: {
-    listGroups: () => Promise<any[]>
+    listGroups: (includeInactive?: boolean) => Promise<any[]>
+    getGroupById: (id: string) => Promise<any>
     createGroup: (data: any) => Promise<{ id: string }>
     updateGroup: (id: string, data: any) => Promise<{ ok: boolean }>
     deleteGroup: (id: string, opts?: DeleteOpts) => Promise<{ ok: boolean; error?: string }>
-    listByGroup: (groupId: string) => Promise<any[]>
+    reorderGroups: (ids: string[]) => Promise<{ ok: boolean }>
+    listByGroup: (groupId: string, includeInactive?: boolean) => Promise<any[]>
+    getById: (id: string) => Promise<any>
     createModifier: (data: any) => Promise<{ id: string }>
     updateModifier: (id: string, data: any) => Promise<{ ok: boolean }>
     deleteModifier: (id: string, opts?: DeleteOpts) => Promise<{ ok: boolean; error?: string }>
+    reorderModifiers: (ids: string[]) => Promise<{ ok: boolean }>
     listByProduct: (productId: string) => Promise<any[]>
+    listProducts: (groupId: string) => Promise<any[]>
+    setProducts: (groupId: string, productIds: string[]) => Promise<{ ok: boolean }>
     linkToProduct: (productId: string, groupId: string) => Promise<{ ok: boolean }>
     setProductLinks: (productId: string, groupIds: string[]) => Promise<{ ok: boolean }>
     listRecipes: (modifierId: string) => Promise<any[]>
@@ -391,7 +401,9 @@ export interface ApiBridge {
     }>
     schema: () => Promise<{
       name: string
+      rowCount: number
       columns: { name: string; type: string; notNull: boolean; primaryKey: boolean }[]
+      foreignKeys: { from: string; table: string; to: string }[]
     }[]>
     refresh: () => Promise<number>
     ask: (question: string) => Promise<{
