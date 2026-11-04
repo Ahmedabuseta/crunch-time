@@ -77,7 +77,12 @@ try {
     await download(url, archive)
   }
 
-  execFileSync('tar', ['xzf', archive, '-C', tmpDir], { stdio: 'inherit' })
+  // Run inside the temp directory with a bare file name: GNU tar on Windows
+  // treats the `D:` in an absolute path as a remote host and fails.
+  execFileSync('tar', ['xzf', path.basename(archive)], {
+    cwd: tmpDir,
+    stdio: 'inherit',
+  })
   const extracted = path.join(tmpDir, targetPlatform === 'win32' ? 'temporal.exe' : 'temporal')
   if (!existsSync(extracted)) throw new Error(`archive did not contain a temporal binary`)
   copyFileSync(extracted, target)
