@@ -61,7 +61,7 @@ jobs:
       - name: Verify packaged Temporal dependencies
         shell: bash
         run: |
-          node -e "const asar=require('@electron/asar'); const list=asar.listPackage('release/win-unpacked/resources/app.asar'); const hit=list.find((f)=>f.endsWith('/node_modules/protobufjs/ext/protojson.js')); if(!hit){console.error('protobufjs/ext/protojson missing from app.asar');process.exit(1)} console.log('packaged', hit)"
+          node -e "const asar=require('@electron/asar'); const a='release/win-unpacked/resources/app.asar'; const pkg=JSON.parse(asar.extractFile(a,'node_modules/protobufjs/package.json').toString()); const list=asar.listPackage(a); const norm=(f)=>f.split(String.fromCharCode(92)).join('/'); const hit=list.find((f)=>norm(f).endsWith('/node_modules/protobufjs/ext/protojson.js')); if(pkg.version!=='8.8.1'){console.error('unexpected root protobufjs',pkg.version);process.exit(1)} if(!hit){console.error('protobufjs/ext/protojson missing from app.asar');process.exit(1)} console.log('packaged protobufjs',pkg.version,hit)"
 
       # The check-run annotations API is readable without admin
       # rights, unlike the full logs — surface the failure there.
