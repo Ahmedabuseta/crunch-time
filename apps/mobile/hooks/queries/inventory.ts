@@ -52,11 +52,15 @@ export function useLowStock(limit = 3) {
   });
 }
 
-/** One ingredient's recent movements, shown under its form. */
-export function useIngredientLedger(id: string | null | undefined, pageSize = 8) {
+/** One ingredient's movements. Paged and filtered on the server so a material
+ * with thousands of rows never sends its whole ledger to the phone. */
+export function useIngredientLedger(
+  id: string | null | undefined,
+  filters: { page?: number; pageSize?: number; type?: string; from?: string; to?: string } = {}
+) {
   return useQuery({
-    queryKey: qk.ingredientLedger(id ?? ''),
-    queryFn: () => api.ledger(id as string, { pageSize }),
+    queryKey: qk.ingredientLedger(id ?? '', filters),
+    queryFn: () => api.ledger(id as string, filters),
     enabled: Boolean(id),
     staleTime: STALE.short,
   });

@@ -2,6 +2,7 @@ import { api } from '@/api/endpoints';
 import type { Modifier, ModifierGroupSummary } from '@/api/types';
 import { AdminScreen, Chips, Field, ListRow } from '@/components/app/AdminKit';
 import { LinkProductsSheet } from '@/components/app/LinkProductsSheet';
+import { AvoidKeyboard } from '@/components/ui/avoid-keyboard';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -337,6 +338,7 @@ export default function ModifierGroupScreen() {
               </View>
             </ScrollView>
           </Pressable>
+          <AvoidKeyboard />
         </Pressable>
       </Modal>
 

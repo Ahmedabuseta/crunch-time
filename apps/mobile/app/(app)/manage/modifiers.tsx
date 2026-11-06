@@ -1,6 +1,7 @@
 import type { ModifierGroupSummary } from '@/api/types';
 import { AdminScreen, Chips, Field, ListRow, SearchField } from '@/components/app/AdminKit';
 import { FilterSelect } from '@/components/app/FilterSelect';
+import { AvoidKeyboard } from '@/components/ui/avoid-keyboard';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Switch } from '@/components/ui/switch';
@@ -273,6 +274,7 @@ export default function ModifiersScreen() {
               </View>
             </ScrollView>
           </Pressable>
+          <AvoidKeyboard />
         </Pressable>
       </Modal>
     </AdminScreen>

@@ -3,6 +3,7 @@ import type { Addon } from '@/api/types';
 import { AdminScreen, Field, ListRow, SearchField } from '@/components/app/AdminKit';
 import { FilterSelect } from '@/components/app/FilterSelect';
 import { LinkProductsSheet } from '@/components/app/LinkProductsSheet';
+import { AvoidKeyboard } from '@/components/ui/avoid-keyboard';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Switch } from '@/components/ui/switch';
@@ -254,6 +255,7 @@ export default function AddonsScreen() {
               </View>
             </ScrollView>
           </Pressable>
+          <AvoidKeyboard />
         </Pressable>
       </Modal>
 

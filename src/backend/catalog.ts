@@ -148,18 +148,25 @@ export type ProductSortKey = keyof typeof PRODUCT_SORTS
 export function listProductsPaged(options: {
   categoryId?: string
   search?: string
+  /** Admin lists need the retired rows too; the till menu leaves this off. */
+  includeInactive?: boolean
+  /** Explicit status filter; overrides `includeInactive` when set. */
+  active?: boolean
   limit: number
   offset: number
   sort?: ProductSortKey
   dir?: 'asc' | 'desc'
 }) {
   const db = getDb()
-  const conditions = [eq(products.active, true)]
+  const conditions: any[] = []
+  if (options.active === true) conditions.push(eq(products.active, true))
+  else if (options.active === false) conditions.push(eq(products.active, false))
+  else if (!options.includeInactive) conditions.push(eq(products.active, true))
   if (options.categoryId) conditions.push(eq(products.categoryId, options.categoryId))
   if (options.search) {
     conditions.push(sql`LOWER(${products.name}) LIKE ${`%${options.search.toLowerCase()}%`}`)
   }
-  const where = and(...conditions)
+  const where = conditions.length ? and(...conditions) : undefined
 
   const total = Number(
     db.select({ count: sql<number>`COUNT(*)` }).from(products).where(where).get()?.count ?? 0

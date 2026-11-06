@@ -122,20 +122,31 @@ export type IngredientSortKey = keyof typeof INGREDIENT_SORTS
 export function listIngredientsPaged(options: {
   search?: string
   lowOnly?: boolean
+  category?: string
+  storage?: string
+  /** Admin lists need the retired rows too. */
+  includeInactive?: boolean
+  /** Explicit status filter; overrides `includeInactive` when set. */
+  active?: boolean
   limit: number
   offset: number
   sort?: IngredientSortKey
   dir?: 'asc' | 'desc'
 }) {
   const db = getDb()
-  const conditions = [eq(ingredients.active, true)]
+  const conditions: any[] = []
+  if (options.active === true) conditions.push(eq(ingredients.active, true))
+  else if (options.active === false) conditions.push(eq(ingredients.active, false))
+  else if (!options.includeInactive) conditions.push(eq(ingredients.active, true))
+  if (options.category) conditions.push(eq(ingredients.category, options.category))
+  if (options.storage) conditions.push(eq(ingredients.storage, options.storage))
   if (options.search) {
     conditions.push(sql`LOWER(${ingredients.name}) LIKE ${`%${options.search.toLowerCase()}%`}`)
   }
   if (options.lowOnly) {
     conditions.push(sql`${ingredients.stockQuantity} <= ${ingredients.minStock}`)
   }
-  const where = and(...conditions)
+  const where = conditions.length ? and(...conditions) : undefined
 
   const total = Number(
     db.select({ count: sql<number>`COUNT(*)` }).from(ingredients).where(where).get()?.count ?? 0

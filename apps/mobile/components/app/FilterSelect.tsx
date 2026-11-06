@@ -28,6 +28,7 @@ export function FilterSelect({
 }) {
   const [open, setOpen] = useState(false);
   const primary = useColor('primary');
+  const primaryForeground = useColor('primaryForeground');
   const muted = useColor('mutedForeground');
   const border = useColor('border');
   const card = useColor('card');
@@ -47,10 +48,10 @@ export function FilterSelect({
           { backgroundColor: active ? primary : card, borderColor: active ? primary : border },
         ]}
       >
-        <Text variant='caption' style={{ color: active ? '#0F0A03' : muted, fontWeight: '700' }}>
+        <Text variant='caption' style={{ color: active ? primaryForeground : muted, fontWeight: '700' }}>
           {active ? selected?.label ?? label : label}
         </Text>
-        <ChevronDown size={13} color={active ? '#0F0A03' : muted} />
+        <ChevronDown size={13} color={active ? primaryForeground : muted} />
       </Pressable>
 
       <Modal visible={open} transparent animationType='fade' onRequestClose={() => setOpen(false)}>

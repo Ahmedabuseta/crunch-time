@@ -31,7 +31,15 @@ export function useRestock() {
   return useMutation({
     mutationFn: (vars: {
       id: string;
-      body: { qty: number; note?: string; unitCost?: number; packagePrice?: number; supplier?: string };
+      body: {
+        qty: number;
+        note?: string;
+        unitCost?: number;
+        packagePrice?: number;
+        totalPrice?: number;
+        supplier?: string;
+        byQuantity?: boolean;
+      };
     }) => api.restock(vars.id, vars.body),
     onSuccess: () => invalidateKeys(queryClient, stockKeys),
   });

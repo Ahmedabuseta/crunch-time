@@ -43,6 +43,7 @@ export function DatePicker({
 }) {
   const [open, setOpen] = useState(false);
   const primary = useColor('primary');
+  const primaryForeground = useColor('primaryForeground');
   const muted = useColor('mutedForeground');
   const border = useColor('border');
   const card = useColor('card');
@@ -137,7 +138,7 @@ export function DatePicker({
                   >
                     <Text
                       style={{
-                        color: cell.disabled ? muted : cell.date === value ? '#0F0A03' : text,
+                        color: cell.disabled ? muted : cell.date === value ? primaryForeground : text,
                         fontWeight: cell.date === value ? '800' : '500',
                       }}
                     >

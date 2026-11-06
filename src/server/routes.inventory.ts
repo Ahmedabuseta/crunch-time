@@ -3,7 +3,7 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify'
 import type { Backend } from '../backend'
 import { mutate } from './route-helpers'
-import { readListQuery, pageMeta, flag } from './list-query'
+import { readListQuery, pageMeta, flag, filter } from './list-query'
 
 const hardOpt = (req: FastifyRequest) => {
   const q = (req.query || {}) as any
@@ -18,9 +18,14 @@ export function registerInventoryRoutes(app: FastifyInstance, backend: Backend) 
       defaultSort: 'name',
       defaultDir: 'asc',
     })
+    const active = filter(query, 'active')
     const { items, total } = await backend.inventory.listIngredientsPaged({
       search: query.search || undefined,
       lowOnly: flag(query, 'low'),
+      category: filter(query, 'category'),
+      storage: filter(query, 'storage'),
+      active: active === '1' ? true : active === '0' ? false : undefined,
+      includeInactive: flag(query, 'includeInactive'),
       limit: query.pageSize,
       offset: query.offset,
       sort: query.sort as any,
@@ -73,7 +78,11 @@ export function registerInventoryRoutes(app: FastifyInstance, backend: Backend) 
     const body = (req.body || {}) as any
     return mutate(req, { action: 'inventory.restock', entity: 'ingredient', entityId: (req.params as any).id }, () =>
       backend.inventory.restock((req.params as any).id, body.qty, body.note, {
-        unitCost: body.unitCost, packagePrice: body.packagePrice, supplier: body.supplier,
+        unitCost: body.unitCost,
+        packagePrice: body.packagePrice,
+        totalPrice: body.totalPrice != null ? Number(body.totalPrice) : undefined,
+        supplier: body.supplier,
+        byQuantity: Boolean(body.byQuantity),
       }))
   })
   app.get('/ingredients/:id/transactions', async (req) => {

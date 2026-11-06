@@ -56,8 +56,11 @@ export function registerCatalogRoutes(app: FastifyInstance, backend: Backend) {
       defaultSort: 'name',
       defaultDir: 'asc',
     })
+    const active = filter(query, 'active')
     const { items, total } = await backend.catalog.listProductsPaged({
       categoryId: filter(query, 'categoryId'),
+      active: active === '1' ? true : active === '0' ? false : undefined,
+      includeInactive: includeInactive(req),
       search: query.search || undefined,
       limit: query.pageSize,
       offset: query.offset,

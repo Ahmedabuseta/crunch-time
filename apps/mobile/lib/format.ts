@@ -14,6 +14,14 @@ export const fmtMoneyInt = (value: number | null | undefined): string =>
 export const fmtQty = (value: number | null | undefined): string =>
   Number(value || 0).toLocaleString('en-US', { maximumFractionDigits: 1 });
 
+/** Decimal display for quantities and per-unit costs — never a raw float. */
+export const fmtDecimal = (value: number | null | undefined, digits = 2): string =>
+  Number(value || 0).toLocaleString('en-US', { maximumFractionDigits: digits });
+
+/** A number for an editable field: rounded, with no grouping separators. */
+export const editNumber = (value: number | null | undefined, digits = 2): string =>
+  String(Math.round((Number(value) || 0) * 10 ** digits) / 10 ** digits);
+
 export const UNIT_LABELS: Record<string, string> = {
   g: 'جم',
   kg: 'كجم',

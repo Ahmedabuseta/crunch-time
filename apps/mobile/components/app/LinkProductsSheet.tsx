@@ -1,5 +1,6 @@
 import type { Product } from '@/api/types';
 import { ListRow, SearchField } from '@/components/app/AdminKit';
+import { AvoidKeyboard } from '@/components/ui/avoid-keyboard';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Text } from '@/components/ui/text';
@@ -37,6 +38,7 @@ export function LinkProductsSheet({
   onClose,
 }: LinkProductsSheetProps) {
   const primary = useColor('primary');
+  const primaryForeground = useColor('primaryForeground');
   const muted = useColor('mutedForeground');
   const border = useColor('border');
   const card = useColor('card');
@@ -151,7 +153,7 @@ export function LinkProductsSheet({
                           },
                         ]}
                       >
-                        {selected.has(product.id) ? <Check size={13} color='#0F0A03' /> : null}
+                        {selected.has(product.id) ? <Check size={13} color={primaryForeground} /> : null}
                       </View>
                     }
                     title={`${product.emoji} ${product.name}`}
@@ -171,6 +173,7 @@ export function LinkProductsSheet({
             <Button label='إلغاء' variant='ghost' style={{ flex: 1 }} onPress={onClose} />
           </View>
         </Pressable>
+        <AvoidKeyboard />
       </Pressable>
     </Modal>
   );

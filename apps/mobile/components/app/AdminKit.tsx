@@ -222,6 +222,7 @@ export function Chips<T extends string>({
   label?: string;
 }) {
   const primary = useColor('primary');
+  const primaryForeground = useColor('primaryForeground');
   const secondary = useColor('secondary');
   const muted = useColor('mutedForeground');
 
@@ -249,7 +250,7 @@ export function Chips<T extends string>({
             >
               <Text
                 variant='caption'
-                style={{ color: active ? '#0F0A03' : muted, fontWeight: '600' }}
+                style={{ color: active ? primaryForeground : muted, fontWeight: '600' }}
               >
                 {option.label}
               </Text>

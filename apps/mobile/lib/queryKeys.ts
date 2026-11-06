@@ -38,7 +38,20 @@ export const qk = {
 
   // ─── Inventory ──────────────────────────────────────────────
   ingredients: ['ingredients'] as const,
-  ingredientLedger: (id: string) => ['ingredients', id, 'ledger'] as const,
+  ingredientLedger: (
+    id: string,
+    filters?: { page?: number; pageSize?: number; type?: string; from?: string; to?: string }
+  ) =>
+    [
+      'ingredients',
+      id,
+      'ledger',
+      filters?.page ?? 1,
+      filters?.pageSize ?? 8,
+      filters?.type ?? '',
+      filters?.from ?? '',
+      filters?.to ?? '',
+    ] as const,
   inventoryAlerts: ['inventory', 'alerts'] as const,
 
   // ─── Reports ────────────────────────────────────────────────

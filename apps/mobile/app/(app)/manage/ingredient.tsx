@@ -1,21 +1,27 @@
-import type { Ingredient, IngredientLedger } from '@/api/types';
+import type { Ingredient } from '@/api/types';
 import { AdminScreen, Chips, Field } from '@/components/app/AdminKit';
+import { IngredientLedgerTable } from '@/components/app/IngredientLedgerTable';
+import {
+  INVENTORY_OP_TITLES,
+  InventoryOpForm,
+  type InventoryOpKind,
+} from '@/components/app/InventoryOpSheet';
+import { BottomSheet } from '@/components/ui/bottom-sheet';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Switch } from '@/components/ui/switch';
 import { Text } from '@/components/ui/text';
 import { View } from '@/components/ui/view';
-import {
-  useAdjustStock,
-  useDeleteIngredient,
-  useRecordWaste,
-  useRestock,
-  useSaveIngredient,
-} from '@/hooks/mutations/inventory';
-import { useIngredient, useIngredientLedger } from '@/hooks/queries/inventory';
+import { useDeleteIngredient, useSaveIngredient } from '@/hooks/mutations/inventory';
+import { useIngredient } from '@/hooks/queries/inventory';
 import { useColor } from '@/hooks/useColor';
-import { fmtTime } from '@/lib/format';
+import { editNumber } from '@/lib/format';
+import {
+  INVENTORY_CATEGORIES,
+  STORAGE_OPTIONS,
+} from '@/lib/inventoryTaxonomy';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Trash2 } from 'lucide-react-native';
 import React, { useState } from 'react';
@@ -29,55 +35,55 @@ const UNITS = [
   { value: 'pcs', label: 'قطعة' },
 ];
 
-const MOVEMENT_LABELS: Record<string, string> = {
-  PURCHASE: 'شراء',
-  CONSUMPTION: 'استهلاك',
-  ADJUSTMENT: 'تسوية',
-  WASTE: 'تالف',
-};
-
 interface Draft {
   id?: string;
   name: string;
   unit: string;
+  category: string;
+  storage: string;
   stockQuantity: string;
   minStock: string;
   costPerUnit: string;
+  purchaseQty: string;
+  plannedCost: string;
   supplier: string;
+  secondarySupplier: string;
+  supplierRatio: string;
+  active: boolean;
 }
 
 const emptyDraft = (): Draft => ({
   name: '',
   unit: 'g',
+  category: 'other',
+  storage: 'dry',
   stockQuantity: '0',
   minStock: '0',
   costPerUnit: '0',
+  purchaseQty: '1',
+  plannedCost: '0',
   supplier: '',
+  secondarySupplier: '',
+  supplierRatio: '0.7',
+  active: true,
 });
 
 export default function IngredientFormScreen() {
   const { id } = useLocalSearchParams<{ id?: string }>();
   const router = useRouter();
   const muted = useColor('mutedForeground');
-  const red = useColor('red');
-  const green = useColor('green');
 
   const ingredientQuery = useIngredient(id);
-  const ledgerQuery = useIngredientLedger(id);
   const saveIngredient = useSaveIngredient();
   const deleteIngredient = useDeleteIngredient();
-  const restock = useRestock();
-  const recordWaste = useRecordWaste();
-  const adjustStock = useAdjustStock();
 
   const ingredient: Ingredient | null =
     ingredientQuery.data?.ingredient ?? null;
-  const ledger: IngredientLedger | null = ledgerQuery.data?.ledger ?? null;
 
   const [edits, setEdits] = useState<Partial<Draft>>({});
-  const [amount, setAmount] = useState('');
-  const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
+  const [opSheet, setOpSheet] = useState<InventoryOpKind | null>(null);
+  const [ledgerVersion, setLedgerVersion] = useState(0);
 
   // Derived draft: the fetched ingredient is the base, local edits sit on top.
   const base: Draft | null = id
@@ -86,10 +92,17 @@ export default function IngredientFormScreen() {
           id: ingredient.id,
           name: ingredient.name,
           unit: ingredient.unit,
-          stockQuantity: String(ingredient.stockQuantity),
-          minStock: String(ingredient.minStock),
-          costPerUnit: String(ingredient.costPerUnit),
+          category: ingredient.category ?? 'other',
+          storage: ingredient.storage ?? 'dry',
+          stockQuantity: editNumber(ingredient.stockQuantity),
+          minStock: editNumber(ingredient.minStock),
+          costPerUnit: editNumber(ingredient.costPerUnit),
+          purchaseQty: editNumber(ingredient.purchaseQty ?? 1),
+          plannedCost: editNumber(ingredient.plannedCost ?? 0),
           supplier: ingredient.supplier ?? '',
+          secondarySupplier: ingredient.secondarySupplier ?? '',
+          supplierRatio: editNumber(ingredient.supplierRatio ?? 0.7, 3),
+          active: ingredient.active !== false,
         }
       : null
     : emptyDraft();
@@ -108,37 +121,22 @@ export default function IngredientFormScreen() {
         body: {
           name: draft.name.trim(),
           unit: draft.unit,
+          category: draft.category,
+          storage: draft.storage,
           stockQuantity: Number(draft.stockQuantity) || 0,
           minStock: Number(draft.minStock) || 0,
           costPerUnit: Number(draft.costPerUnit) || 0,
+          purchaseQty: Number(draft.purchaseQty) || 1,
+          plannedCost: Number(draft.plannedCost) || 0,
           supplier: draft.supplier.trim() || null,
+          secondarySupplier: draft.secondarySupplier.trim() || null,
+          supplierRatio: Number(draft.supplierRatio) || 0,
+          active: draft.active,
         },
       });
       router.back();
     } catch (err: any) {
       Alert.alert('تعذّر الحفظ', err?.message ?? '');
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const stockOp = async (kind: 'restock' | 'waste' | 'adjust') => {
-    if (!ingredient) return;
-    const value = Number(amount);
-    if (!Number.isFinite(value) || value === 0) {
-      Alert.alert('اكتب كمية');
-      return;
-    }
-    setBusy(true);
-    try {
-      const body = { qty: value, note: note.trim() || undefined };
-      if (kind === 'restock') await restock.mutateAsync({ id: ingredient.id, body });
-      else if (kind === 'waste') await recordWaste.mutateAsync({ id: ingredient.id, body });
-      else await adjustStock.mutateAsync({ id: ingredient.id, body: { delta: value, note: body.note } });
-      setAmount('');
-      setNote('');
-    } catch (err: any) {
-      Alert.alert('تعذّر تسجيل الحركة', err?.message ?? '');
     } finally {
       setBusy(false);
     }
@@ -192,6 +190,27 @@ export default function IngredientFormScreen() {
         <Card style={{ gap: 12 }}>
           <Field label='الاسم' value={draft.name} onChange={(v) => setEdits((prev) => ({ ...prev, name: v }))} placeholder='لحم بقري' />
           <Chips label='الوحدة' value={draft.unit} onChange={(unit) => setEdits((prev) => ({ ...prev, unit }))} options={UNITS} />
+          <Chips
+            label='القسم'
+            value={draft.category}
+            onChange={(category) =>
+              setEdits((prev) => ({
+                ...prev,
+                category,
+                storage:
+                  INVENTORY_CATEGORIES.find((entry) => entry.id === category)?.defaultStorage ??
+                  prev.storage ??
+                  'dry',
+              }))
+            }
+            options={INVENTORY_CATEGORIES.map((entry) => ({ value: entry.id, label: entry.label }))}
+          />
+          <Chips
+            label='التخزين'
+            value={draft.storage}
+            onChange={(storage) => setEdits((prev) => ({ ...prev, storage }))}
+            options={STORAGE_OPTIONS.map((entry) => ({ value: entry.id, label: entry.label }))}
+          />
           <View style={{ flexDirection: 'row', gap: 10 }}>
             <View style={{ flex: 1 }}>
               <Field label='الرصيد' value={draft.stockQuantity} onChange={(v) => setEdits((prev) => ({ ...prev, stockQuantity: v }))} keyboardType='number-pad' />
@@ -210,6 +229,27 @@ export default function IngredientFormScreen() {
           </View>
           <View style={{ flexDirection: 'row', gap: 10 }}>
             <View style={{ flex: 1 }}>
+              <Field label='حجم العبوة' value={draft.purchaseQty} onChange={(v) => setEdits((prev) => ({ ...prev, purchaseQty: v }))} keyboardType='number-pad' placeholder='1000' />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Field label='التكلفة المخططة' value={draft.plannedCost} onChange={(v) => setEdits((prev) => ({ ...prev, plannedCost: v }))} keyboardType='number-pad' />
+            </View>
+          </View>
+          <View style={{ flexDirection: 'row', gap: 10 }}>
+            <View style={{ flex: 1 }}>
+              <Field label='المورد الثاني' value={draft.secondarySupplier} onChange={(v) => setEdits((prev) => ({ ...prev, secondarySupplier: v }))} placeholder='اختياري' />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Field label='نسبة المورد (0–1)' value={draft.supplierRatio} onChange={(v) => setEdits((prev) => ({ ...prev, supplierRatio: v }))} keyboardType='number-pad' />
+            </View>
+          </View>
+          <Switch
+            label='المادة نشطة'
+            value={draft.active}
+            onValueChange={(active) => setEdits((prev) => ({ ...prev, active }))}
+          />
+          <View style={{ flexDirection: 'row', gap: 10 }}>
+            <View style={{ flex: 1 }}>
               <Button loading={busy} style={{ alignSelf: 'stretch' }} onPress={() => void save()}>
                 حفظ
               </Button>
@@ -224,53 +264,33 @@ export default function IngredientFormScreen() {
           {ingredient ? (
             <>
               <Separator />
-              <View style={{ flexDirection: 'row', gap: 10 }}>
-                <View style={{ flex: 1 }}>
-                  <Field label='الكمية' value={amount} onChange={setAmount} keyboardType='number-pad' placeholder='100' />
-                </View>
-                <View style={{ flex: 2 }}>
-                  <Field label='ملاحظة' value={note} onChange={setNote} placeholder='اختياري' />
-                </View>
-              </View>
               <View style={{ flexDirection: 'row', gap: 8 }}>
                 <View style={{ flex: 1 }}>
-                  <Button size='sm' variant='success' loading={busy} style={{ alignSelf: 'stretch' }} onPress={() => void stockOp('restock')}>
+                  <Button size='sm' variant='success' style={{ alignSelf: 'stretch' }} onPress={() => setOpSheet('restock')}>
                     توريد
                   </Button>
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Button size='sm' variant='secondary' loading={busy} style={{ alignSelf: 'stretch' }} onPress={() => void stockOp('adjust')}>
+                  <Button size='sm' variant='secondary' style={{ alignSelf: 'stretch' }} onPress={() => setOpSheet('stocktake')}>
                     تسوية
                   </Button>
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Button size='sm' variant='destructive' loading={busy} style={{ alignSelf: 'stretch' }} onPress={() => void stockOp('waste')}>
+                  <Button size='sm' variant='destructive' style={{ alignSelf: 'stretch' }} onPress={() => setOpSheet('waste')}>
                     تالف
                   </Button>
                 </View>
               </View>
 
+              <Separator />
               <Text variant='caption' style={{ color: muted, fontWeight: '700' }}>
-                آخر الحركات
+                سجل الحركة
               </Text>
-              {ledger?.movements?.length ? (
-                ledger.movements.map((movement) => (
-                  <View key={movement.id} style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 10 }}>
-                    <Text variant='caption' style={{ color: muted, flex: 1 }}>
-                      {MOVEMENT_LABELS[movement.type] ?? movement.type} · {fmtTime(movement.createdAt)}
-                      {movement.note ? ` · ${movement.note}` : ''}
-                    </Text>
-                    <Text variant='caption' style={{ color: movement.quantity >= 0 ? green : red, fontWeight: '700' }}>
-                      {movement.quantity > 0 ? '+' : ''}
-                      {movement.quantity}
-                    </Text>
-                  </View>
-                ))
-              ) : (
-                <Text variant='caption' style={{ color: muted }}>
-                  مفيش حركات مسجّلة
-                </Text>
-              )}
+              <IngredientLedgerTable
+                ingredientId={ingredient.id}
+                unit={ingredient.unit}
+                refreshToken={ledgerVersion}
+              />
 
               <Button size='sm' variant='ghost' icon={Trash2} style={{ alignSelf: 'stretch' }} onPress={() => remove(ingredient)}>
                 حذف
@@ -283,6 +303,26 @@ export default function IngredientFormScreen() {
           مفيش مادة مطابقة
         </Text>
       )}
+
+      <BottomSheet
+        isVisible={Boolean(opSheet && ingredient)}
+        onClose={() => {
+          setOpSheet(null);
+          setLedgerVersion((version) => version + 1);
+        }}
+        title={opSheet ? INVENTORY_OP_TITLES[opSheet] : ''}
+      >
+        {opSheet && ingredient ? (
+          <InventoryOpForm
+            ingredient={ingredient}
+            op={opSheet}
+            onClose={() => {
+              setOpSheet(null);
+              setLedgerVersion((version) => version + 1);
+            }}
+          />
+        ) : null}
+      </BottomSheet>
     </AdminScreen>
   );
 }

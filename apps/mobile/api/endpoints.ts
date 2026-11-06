@@ -239,8 +239,13 @@ export const api = {
   deleteCategory: (id: string, hard = false) =>
     request<{ ok: boolean }>(`/categories/${id}${hard ? '?hard=1' : ''}`, { method: 'DELETE' }),
 
-  products: (params?: { categoryId?: string } & ListParams) =>
-    request<{ products: Product[] } & PagedMeta>(`/products${qs(params)}`),
+  products: (
+    params?: {
+      categoryId?: string;
+      active?: '0' | '1';
+      includeInactive?: '0' | '1';
+    } & ListParams
+  ) => request<{ products: Product[] } & PagedMeta>(`/products${qs(params)}`),
   /** One product, for the edit form — instead of downloading the list and
    * searching it, which a paged list would no longer give you. */
   product: (id: string) => request<{ product: Product }>(`/products/${encodeURIComponent(id)}`),
@@ -311,8 +316,15 @@ export const api = {
     request<{ id: string }>(`/products/${encodeURIComponent(id)}/duplicate`, { method: 'POST', body: {} }),
 
   // ─── Admin: inventory ───────────────────────────────────────
-  ingredients: (params?: { low?: string } & ListParams) =>
-    request<{ ingredients: Ingredient[] } & PagedMeta>(`/ingredients${qs(params as any)}`),
+  ingredients: (
+    params?: {
+      low?: string;
+      category?: string;
+      storage?: string;
+      active?: '0' | '1';
+      includeInactive?: '0' | '1';
+    } & ListParams
+  ) => request<{ ingredients: Ingredient[] } & PagedMeta>(`/ingredients${qs(params as any)}`),
   /** One ingredient, for the edit form — instead of downloading the list and
    * searching it, which a paged list would no longer give you. */
   ingredient: (id: string) =>
@@ -326,13 +338,24 @@ export const api = {
   inventoryAlerts: () => request<{ alerts: Ingredient[] }>('/inventory/alerts'),
   restock: (
     id: string,
-    body: { qty: number; note?: string; unitCost?: number; packagePrice?: number; supplier?: string }
+    body: {
+      qty: number;
+      note?: string;
+      unitCost?: number;
+      packagePrice?: number;
+      totalPrice?: number;
+      supplier?: string;
+      byQuantity?: boolean;
+    }
   ) => request<{ ok: boolean }>(`/ingredients/${id}/restock`, { method: 'POST', body }),
   recordWaste: (id: string, body: { qty: number; note?: string }) =>
     request<{ ok: boolean }>(`/ingredients/${id}/waste`, { method: 'POST', body }),
   adjustStock: (id: string, body: { delta: number; note?: string }) =>
     request<{ ok: boolean }>(`/ingredients/${id}/adjust`, { method: 'POST', body }),
-  ledger: (id: string, query?: { page?: number; pageSize?: number; type?: string }) =>
+  ledger: (
+    id: string,
+    query?: { page?: number; pageSize?: number; type?: string; from?: string; to?: string }
+  ) =>
     request<{ ledger: IngredientLedger }>(`/ingredients/${id}/transactions${qs(query as any)}`),
 
   // ─── Admin: users ───────────────────────────────────────────

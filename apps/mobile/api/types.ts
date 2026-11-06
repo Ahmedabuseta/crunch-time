@@ -21,6 +21,7 @@ export interface Product {
   emoji: string;
   description: string;
   active: boolean;
+  supportsRollback?: boolean;
   addonCount?: number;
   modifierCount?: number;
   recipeCount?: number;
@@ -180,6 +181,8 @@ export interface Ingredient {
   id: string;
   name: string;
   unit: string;
+  category?: string;
+  storage?: string;
   stockQuantity: number;
   minStock: number;
   costPerUnit: number;
@@ -189,6 +192,9 @@ export interface Ingredient {
   secondarySupplier: string | null;
   supplierRatio: number;
   plannedCost: number;
+  productCount?: number;
+  recipeProductCount?: number;
+  optionalProductCount?: number;
 }
 
 export interface InventoryTransaction {

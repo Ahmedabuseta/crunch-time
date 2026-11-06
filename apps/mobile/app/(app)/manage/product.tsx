@@ -3,11 +3,13 @@ import { AdminScreen, Chips, Field } from '@/components/app/AdminKit';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Switch } from '@/components/ui/switch';
 import { Text } from '@/components/ui/text';
 import { View } from '@/components/ui/view';
 import { useSaveProduct } from '@/hooks/mutations/catalogue';
 import { useCategories, useProduct } from '@/hooks/queries/catalogue';
 import { useColor } from '@/hooks/useColor';
+import { editNumber } from '@/lib/format';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { ChevronLeft, Layers } from 'lucide-react-native';
 import React, { useState } from 'react';
@@ -17,19 +19,23 @@ interface Draft {
   id?: string;
   name: string;
   price: string;
+  costPrice: string;
   emoji: string;
   description: string;
   categoryId: string;
   active: boolean;
+  supportsRollback: boolean;
 }
 
 const emptyDraft = (categoryId: string): Draft => ({
   name: '',
   price: '',
+  costPrice: '',
   emoji: '🍔',
   description: '',
   categoryId,
   active: true,
+  supportsRollback: true,
 });
 
 export default function ProductFormScreen() {
@@ -55,11 +61,13 @@ export default function ProductFormScreen() {
       ? {
           id: product.id,
           name: product.name,
-          price: String(product.price),
+          price: editNumber(product.price),
+          costPrice: editNumber(product.costPrice ?? 0),
           emoji: product.emoji,
           description: product.description,
           categoryId: product.categoryId,
           active: product.active,
+          supportsRollback: product.supportsRollback !== false,
         }
       : null
     : emptyDraft(categories[0]?.id ?? '');
@@ -88,10 +96,12 @@ export default function ProductFormScreen() {
         body: {
           name: draft.name.trim(),
           price,
+          costPrice: Number(draft.costPrice) || 0,
           emoji: draft.emoji.trim() || '🍔',
           description: draft.description.trim(),
           categoryId: draft.categoryId,
-          ...(draft.id ? { active: draft.active } : {}),
+          active: draft.active,
+          supportsRollback: draft.supportsRollback,
         },
       });
       router.back();
@@ -113,7 +123,10 @@ export default function ProductFormScreen() {
             <View style={{ flex: 1 }}>
               <Field label='السعر' value={draft.price} onChange={(v) => setEdits((prev) => ({ ...prev, price: v }))} keyboardType='number-pad' placeholder='70' />
             </View>
-            <View style={{ width: 90 }}>
+            <View style={{ flex: 1 }}>
+              <Field label='التكلفة' value={draft.costPrice} onChange={(v) => setEdits((prev) => ({ ...prev, costPrice: v }))} keyboardType='number-pad' placeholder='حسب الوصفة' />
+            </View>
+            <View style={{ width: 78 }}>
               <Field label='الأيقونة' value={draft.emoji} onChange={(v) => setEdits((prev) => ({ ...prev, emoji: v }))} />
             </View>
           </View>
@@ -124,6 +137,16 @@ export default function ProductFormScreen() {
             options={categories.map((c) => ({ value: c.id, label: `${c.emoji} ${c.name}` }))}
           />
           <Field label='الوصف' value={draft.description} onChange={(v) => setEdits((prev) => ({ ...prev, description: v }))} placeholder='لحم، خس، طماطم' multiline />
+          <Switch
+            label='ظاهر في المنيو'
+            value={draft.active}
+            onValueChange={(active) => setEdits((prev) => ({ ...prev, active }))}
+          />
+          <Switch
+            label='يرجّع المخزون عند الاسترداد'
+            value={draft.supportsRollback}
+            onValueChange={(supportsRollback) => setEdits((prev) => ({ ...prev, supportsRollback }))}
+          />
 
           {/* A recipe needs a saved product to hang off, so it only appears
               once there is an id. */}

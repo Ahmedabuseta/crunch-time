@@ -4,8 +4,9 @@ import { useKeyboardHeight } from '@/hooks/useKeyboardHeight'; // Make sure this
 import { useColor } from '@/hooks/useColor';
 import { BORDER_RADIUS } from '@/theme/globals';
 import { X } from 'lucide-react-native';
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import {
+  Dimensions,
   Modal,
   Pressable,
   ScrollView,
@@ -178,7 +179,9 @@ export function BottomSheet({
   isVisible,
   onClose,
   children,
-  snapPoints = [0.3, 0.6, 0.9],
+  // One snap point is the supported shape: the content height is fixed to the
+  // first point, so a second one would leave a gap below the sheet.
+  snapPoints = [0.9],
   enableBackdropDismiss = true,
   title,
   style,
@@ -187,8 +190,26 @@ export function BottomSheet({
   const cardColor = useColor('card');
   const mutedColor = useColor('muted');
   const { keyboardHeight, isKeyboardVisible } = useKeyboardHeight();
-  const { height: screenHeight } = useWindowDimensions();
-  const maxTranslateY = -screenHeight + 50;
+  // The sheet is laid out against the physical screen, not `window`: on
+  // Android the window shrinks when the keyboard opens, which used to resize
+  // the sheet mid-animation and push its content off screen.
+  const screenHeight = Dimensions.get('screen').height;
+  const { height: windowHeight } = useWindowDimensions();
+  const baselineHeight = useRef(windowHeight);
+
+  useEffect(() => {
+    if (!isKeyboardVisible) baselineHeight.current = windowHeight;
+  }, [isKeyboardVisible, windowHeight]);
+
+  // Two platform shapes: a window that absorbs the keyboard is laid out
+  // against its new height; a window that does not is laid out against the
+  // physical screen and lifted by the keyboard. Doing both was what made the
+  // sheet jump or hide its footer.
+  const shrink = Math.max(0, baselineHeight.current - windowHeight);
+  const keyboardResized = keyboardHeight > 0 && shrink >= keyboardHeight * 0.6;
+  const layoutHeight = keyboardResized ? windowHeight : screenHeight;
+  const keyboardLift = keyboardResized ? 0 : keyboardHeight;
+  const maxTranslateY = -layoutHeight + 50;
 
   const translateY = useSharedValue(0);
   const context = useSharedValue({ y: 0 });
@@ -197,7 +218,7 @@ export function BottomSheet({
   // Shared value to hold keyboard height for use in worklets
   const keyboardHeightSV = useSharedValue(0);
 
-  const snapPointsHeights = snapPoints.map((point) => -screenHeight * point);
+  const snapPointsHeights = snapPoints.map((point) => -layoutHeight * point);
   const defaultHeight = snapPointsHeights[0];
 
   const [modalVisible, setModalVisible] = React.useState(false);
@@ -230,24 +251,15 @@ export function BottomSheet({
 
   // --- START: NEW KEYBOARD HANDLING LOGIC ---
   useEffect(() => {
-    // Update the shared value whenever keyboardHeight changes
-    keyboardHeightSV.value = keyboardHeight;
+    // The worklets need the already-resolved lift, not the raw keyboard height.
+    keyboardHeightSV.value = keyboardLift;
 
     // Only adjust position if the sheet is currently visible
     if (isVisible) {
       const currentSnapHeight = snapPointsHeights[currentSnapIndex.value];
-      let destination: number;
-
-      if (isKeyboardVisible) {
-        // Keyboard is open, move sheet up by keyboard height
-        destination = currentSnapHeight - keyboardHeight;
-      } else {
-        // Keyboard is closed, return to original snap point
-        destination = currentSnapHeight;
-      }
-      scrollTo(destination);
+      scrollTo(currentSnapHeight - keyboardLift);
     }
-  }, [keyboardHeight, isKeyboardVisible, isVisible]);
+  }, [keyboardLift, isVisible]);
   // --- END: NEW KEYBOARD HANDLING LOGIC ---
 
   const findClosestSnapPoint = (currentY: number) => {
@@ -303,7 +315,7 @@ export function BottomSheet({
       const currentY = translateY.value;
       const velocity = event.velocityY;
 
-      if (velocity > 500 && currentY > -screenHeight * 0.2) {
+      if (velocity > 500 && currentY > -layoutHeight * 0.2) {
         animateClose();
         return;
       }
@@ -361,7 +373,7 @@ export function BottomSheet({
             rBottomSheetStyle={rBottomSheetStyle}
             cardColor={cardColor}
             mutedColor={mutedColor}
-            screenHeight={screenHeight}
+            screenHeight={layoutHeight}
             sheetHeight={-defaultHeight}
             gesture={disablePanGesture ? undefined : gesture}
             onClose={animateClose}
