@@ -54,6 +54,15 @@ jobs:
           ls -l build/temporal.exe
           test -f release/win-unpacked/resources/temporal.exe
 
+      # v1.12.1 shipped @temporalio/worker but the hoisted protobufjs@7.6.6
+      # lacked ext/protojson, so the packaged assistant failed with
+      # "Cannot find module 'protobufjs/ext/protojson'". Fail before
+      # publishing if that regresses.
+      - name: Verify packaged Temporal dependencies
+        shell: bash
+        run: |
+          node -e "const asar=require('@electron/asar'); const list=asar.listPackage('release/win-unpacked/resources/app.asar'); const hit=list.find((f)=>f.endsWith('/node_modules/protobufjs/ext/protojson.js')); if(!hit){console.error('protobufjs/ext/protojson missing from app.asar');process.exit(1)} console.log('packaged', hit)"
+
       # The check-run annotations API is readable without admin
       # rights, unlike the full logs — surface the failure there.
       - name: Surface build error
