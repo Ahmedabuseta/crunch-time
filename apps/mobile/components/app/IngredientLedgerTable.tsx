@@ -3,9 +3,11 @@ import { FilterSelect } from '@/components/app/FilterSelect';
 import { Text } from '@/components/ui/text';
 import { View } from '@/components/ui/view';
 import { useIngredientLedger } from '@/hooks/queries/inventory';
+import { useOrder } from '@/hooks/queries/orders';
 import { useColor } from '@/hooks/useColor';
 import { ymd } from '@/lib/dateRanges';
-import { fmtQty, UNIT_LABELS } from '@/lib/format';
+import { fmtMoneyInt, fmtQty, UNIT_LABELS } from '@/lib/format';
+import { ChevronDown, ChevronUp } from 'lucide-react-native';
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet } from 'react-native';
 
@@ -60,10 +62,15 @@ export function IngredientLedgerTable({
   const [type, setType] = useState('');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
+  const [expandedOrder, setExpandedOrder] = useState<string | null>(null);
 
   useEffect(() => {
     setPage(1);
   }, [refreshToken]);
+
+  useEffect(() => {
+    setExpandedOrder(null);
+  }, [page, type, from, to, refreshToken]);
 
   const ledgerQuery = useIngredientLedger(ingredientId, {
     page,
@@ -162,55 +169,85 @@ export function IngredientLedgerTable({
           movements.map((movement, index) => {
             const meta = typeMeta[movement.type] ?? { label: movement.type, color: muted };
             const stamp = stampOf(movement.createdAt);
+            const expanded = Boolean(
+              movement.referenceOrderId && expandedOrder === movement.referenceOrderId
+            );
             return (
-              <View
-                key={movement.id}
-                style={[
-                  styles.row,
-                  {
-                    borderColor: border,
-                    borderTopWidth: index === 0 ? 0 : StyleSheet.hairlineWidth,
-                    opacity: ledgerQuery.isFetching ? 0.65 : 1,
-                  },
-                ]}
-              >
-                <View style={styles.dateCol}>
-                  <Text style={[styles.date, { color: text }]}>{stamp.day}</Text>
-                  <Text style={[styles.time, { color: muted }]}>{stamp.time}</Text>
-                </View>
-                <View style={styles.typeCol}>
-                  <View style={[styles.badge, { backgroundColor: `${meta.color}1A` }]}>
-                    <Text style={[styles.badgeText, { color: meta.color }]}>{meta.label}</Text>
-                  </View>
-                  {movement.note ? (
-                    <Text numberOfLines={1} style={[styles.note, { color: muted }]}>
-                      {movement.note}
-                    </Text>
-                  ) : null}
-                  {movement.supplier ? (
-                    <Text numberOfLines={1} style={[styles.note, { color: muted }]}>
-                      {movement.supplier}
-                    </Text>
-                  ) : null}
-                  {movement.referenceOrderId ? (
-                    <Text numberOfLines={1} style={[styles.note, { color: primary }]}>
-                      طلب {movement.referenceOrderId}
-                    </Text>
-                  ) : null}
-                </View>
-                <Text
+              <React.Fragment key={movement.id}>
+                <View
                   style={[
-                    styles.qty,
-                    { color: movement.quantity >= 0 ? green : red },
+                    styles.row,
+                    {
+                      borderColor: border,
+                      borderTopWidth: index === 0 ? 0 : StyleSheet.hairlineWidth,
+                      opacity: ledgerQuery.isFetching ? 0.65 : 1,
+                    },
                   ]}
                 >
-                  {movement.quantity > 0 ? '+' : ''}
-                  {fmtQty(movement.quantity)}
-                </Text>
-                <Text style={[styles.balance, { color: text }]}>
-                  {fmtQty(movement.balance)}
-                </Text>
-              </View>
+                  <View style={styles.dateCol}>
+                    <Text style={[styles.date, { color: text }]}>{stamp.day}</Text>
+                    <Text style={[styles.time, { color: muted }]}>{stamp.time}</Text>
+                  </View>
+                  <View style={styles.typeCol}>
+                    <View style={[styles.badge, { backgroundColor: `${meta.color}1A` }]}>
+                      <Text style={[styles.badgeText, { color: meta.color }]}>{meta.label}</Text>
+                    </View>
+                    {movement.note ? (
+                      <Text numberOfLines={1} style={[styles.note, { color: muted }]}>
+                        {movement.note}
+                      </Text>
+                    ) : null}
+                    {movement.supplier ? (
+                      <Text numberOfLines={1} style={[styles.note, { color: muted }]}>
+                        {movement.supplier}
+                      </Text>
+                    ) : null}
+                    {movement.referenceOrderId ? (
+                      <Pressable
+                        onPress={() =>
+                          setExpandedOrder(expanded ? null : movement.referenceOrderId)
+                        }
+                        style={styles.orderLink}
+                        accessibilityRole='button'
+                        accessibilityLabel={`تفاصيل طلب ${movement.referenceOrderId}`}
+                      >
+                        <Text
+                          numberOfLines={1}
+                          style={[styles.note, { color: primary, fontWeight: '700' }]}
+                        >
+                          من طلب {movement.referenceOrderId}
+                        </Text>
+                        {expanded ? (
+                          <ChevronUp size={12} color={primary} />
+                        ) : (
+                          <ChevronDown size={12} color={primary} />
+                        )}
+                      </Pressable>
+                    ) : null}
+                  </View>
+                  <Text
+                    style={[
+                      styles.qty,
+                      { color: movement.quantity >= 0 ? green : red },
+                    ]}
+                  >
+                    {movement.quantity > 0 ? '+' : ''}
+                    {fmtQty(movement.quantity)}
+                  </Text>
+                  <Text style={[styles.balance, { color: text }]}>
+                    {fmtQty(movement.balance)}
+                  </Text>
+                </View>
+
+                {expanded && movement.referenceOrderId ? (
+                  <View style={[styles.orderPanel, { borderColor: border }]}>
+                    <Text variant='caption' style={{ color: muted, fontWeight: '700' }}>
+                      أصناف الطلب {movement.referenceOrderId}
+                    </Text>
+                    <LedgerOrderDetails orderId={movement.referenceOrderId} />
+                  </View>
+                ) : null}
+              </React.Fragment>
             );
           })
         )}
@@ -266,6 +303,53 @@ export function IngredientLedgerTable({
   );
 }
 
+function LedgerOrderDetails({ orderId }: { orderId: string }) {
+  const primary = useColor('primary');
+  const muted = useColor('mutedForeground');
+  const text = useColor('text');
+  const red = useColor('red');
+  const orderQuery = useOrder(orderId);
+  const order = orderQuery.data?.order;
+
+  if (orderQuery.isLoading) {
+    return (
+      <View style={{ paddingVertical: 8, alignItems: 'center' }}>
+        <ActivityIndicator color={primary} size='small' />
+      </View>
+    );
+  }
+  if (orderQuery.isError || !order) {
+    return (
+      <Text variant='caption' style={{ color: red }}>
+        تعذّر تحميل تفاصيل الطلب
+      </Text>
+    );
+  }
+  const items = order.items ?? [];
+  if (items.length === 0) {
+    return (
+      <Text variant='caption' style={{ color: muted }}>
+        الطلب بدون أصناف
+      </Text>
+    );
+  }
+  return (
+    <View style={{ gap: 5 }}>
+      {items.map((item) => (
+        <View key={item.id} style={styles.orderItem}>
+          <Text variant='caption' style={{ color: text, flex: 1 }} numberOfLines={2}>
+            {item.productEmoji ?? ''} {item.productName ?? 'صنف'} ×{item.quantity}
+            {item.note ? `  — ${item.note}` : ''}
+          </Text>
+          <Text variant='caption' style={{ color: muted, fontWeight: '700' }}>
+            {fmtMoneyInt((Number(item.unitPrice) || 0) * (Number(item.quantity) || 0))} ج.م
+          </Text>
+        </View>
+      ))}
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   wrap: { gap: 8 },
   filters: { gap: 8, alignItems: 'center' },
@@ -298,6 +382,25 @@ const styles = StyleSheet.create({
   badge: { alignSelf: 'flex-start', paddingHorizontal: 7, paddingVertical: 2, borderRadius: 999 },
   badgeText: { fontSize: 9, fontWeight: '800' },
   note: { fontSize: 9, marginTop: 2, writingDirection: 'rtl' },
+  orderLink: {
+    flexDirection: 'row',
+    direction: 'rtl',
+    alignItems: 'center',
+    gap: 3,
+    marginTop: 2,
+  },
+  orderPanel: {
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderTopWidth: StyleSheet.hairlineWidth,
+  },
+  orderItem: {
+    flexDirection: 'row',
+    direction: 'rtl',
+    alignItems: 'center',
+    gap: 8,
+  },
   qty: { fontSize: 11, fontWeight: '800', textAlign: 'center', writingDirection: 'ltr' },
   balance: { fontSize: 10, fontWeight: '700', textAlign: 'center', writingDirection: 'ltr' },
   summary: {
