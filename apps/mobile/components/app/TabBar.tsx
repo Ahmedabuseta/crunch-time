@@ -8,6 +8,8 @@ import {
   MAX_DESTINATIONS,
 } from '@/lib/tabBarLayout';
 import { BLUR_INTENSITY, BLUR_REDUCTION, TAB_BAR_GAP, TAB_BAR_HEIGHT } from '@/theme/globals';
+import { prefetchTab } from '@/lib/prefetch';
+import { useQueryClient } from '@tanstack/react-query';
 import { BlurView } from 'expo-blur';
 import type { Tabs } from 'expo-router';
 import React from 'react';
@@ -47,6 +49,7 @@ const PILL_HEIGHT = BUTTON_WIDTH;
 export function TabBar({ state, descriptors, navigation, isDark, blurTarget }: TabBarProps) {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
+  const queryClient = useQueryClient();
   const primary = useColor('primary');
   const muted = useColor('mutedForeground');
   const border = useColor('border');
@@ -98,7 +101,18 @@ export function TabBar({ state, descriptors, navigation, isDark, blurTarget }: T
             target: route.key,
             canPreventDefault: true,
           });
-          if (!focused && !event?.defaultPrevented) navigation.navigate(route.name);
+          if (!focused && !event?.defaultPrevented) {
+            // Start this tab's fetches on the tap rather than on its mount.
+            // Navigation takes a beat longer than the request does, so the
+            // screen finds its data instead of showing a skeleton.
+            prefetchTab(queryClient, route.name);
+            navigation.navigate(route.name);
+          }
+        }}
+        // A finger that lands and rests is a tap the owner has already decided
+        // on; starting here as well makes the common case faster still.
+        onPressIn={() => {
+          if (!focused) prefetchTab(queryClient, route.name);
         }}
         accessibilityRole='button'
         accessibilityState={focused ? { selected: true } : {}}

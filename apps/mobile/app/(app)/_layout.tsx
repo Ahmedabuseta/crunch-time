@@ -3,14 +3,25 @@ import { OfflineBanner } from '@/components/app/OfflineBanner';
 import { useColorScheme } from '@/hooks/useColorScheme';
 import { GlobalActions } from '@/components/app/GlobalActions';
 import { BlurTargetView } from 'expo-blur';
+import { warmOnBoot } from '@/lib/prefetch';
+import { useQueryClient } from '@tanstack/react-query';
 import { Tabs, useIsFocused } from 'expo-router';
 import { BarChart3, LayoutDashboard, MoreHorizontal, PlusCircle } from 'lucide-react-native';
-import React, { useCallback, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 export default function AppTabsLayout() {
   const scheme = useColorScheme() ?? 'dark';
   const isDark = scheme === 'dark';
+
+  // Warm the two screens the app opens into. The board is the landing tab and
+  // the menu is one tap away, so a first launch should not spend its first
+  // frame on a request. This runs after the cache has been restored (the splash
+  // waits for that), so anything already on disk is simply not re-fetched.
+  const queryClient = useQueryClient();
+  useEffect(() => {
+    warmOnBoot(queryClient);
+  }, [queryClient]);
 
   // Android blur is driven by a `BlurTargetView` snapshot, not by whatever is
   // physically underneath — so the tab navigator has to be told which screen

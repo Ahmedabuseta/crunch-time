@@ -8,6 +8,7 @@ import { Text } from '@/components/ui/text';
 import { View } from '@/components/ui/view';
 import { useColor } from '@/hooks/useColor';
 import { usePagedQuery } from '@/hooks/queries/paged';
+import { useDeliveryProfiles } from '@/hooks/queries/reference';
 import { useOnlineStatus } from '@/hooks/useOnlineStatus';
 import { STALE } from '@/lib/cachePolicy';
 import { DATE_PRESETS, dateRange, type DatePreset } from '@/lib/dateRanges';
@@ -59,7 +60,6 @@ export default function BoardScreen() {
   const insets = useSafeAreaInsets();
   const queryClient = useQueryClient();
 
-  const [drivers, setDrivers] = useState<DeliveryProfile[]>([]);
   const [driverFilter, setDriverFilter] = useState('');
   const [datePreset, setDatePreset] = useState<DatePreset>('');
   const [dashboardRefreshing, setDashboardRefreshing] = useState(false);
@@ -90,12 +90,11 @@ export default function BoardScreen() {
 
   const { filters, setFilter, setFilters } = paged;
 
-  useEffect(() => {
-    void api
-      .deliveryProfiles()
-      .then((res) => setDrivers(res.profiles))
-      .catch(() => {});
-  }, []);
+  // Through React Query rather than a bare effect: the driver list is part of
+  // painting the board, so it should be cached, shared with the order detail
+  // screen, and warmed by the tab prefetch — none of which a raw fetch gets.
+  const driversQuery = useDeliveryProfiles();
+  const drivers = driversQuery.data?.profiles ?? [];
 
   // Driver is not a server filter, so it narrows the rows already loaded.
   const orders = driverFilter
