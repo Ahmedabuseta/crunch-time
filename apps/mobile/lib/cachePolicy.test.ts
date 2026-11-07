@@ -1,6 +1,13 @@
 import type { Query } from '@tanstack/react-query';
 import { describe, expect, it } from 'vitest';
-import { CACHE_MAX_AGE, STALE, cacheBuster, networkStateToOnline, shouldDehydrateQuery } from './cachePolicy';
+import {
+  CACHE_MAX_AGE,
+  STALE,
+  cacheBuster,
+  networkStateToOnline,
+  shouldDehydrateQuery,
+  shrinkToNewest,
+} from './cachePolicy';
 
 /** A stand-in for the parts of a Query the policy actually reads. */
 const query = (state: Record<string, unknown>, meta?: Record<string, unknown>) =>
@@ -32,6 +39,48 @@ describe('cacheBuster', () => {
     expect(cacheBuster(undefined)).toBe('1');
     expect(cacheBuster(null)).toBe('1');
     expect(cacheBuster('   ')).toBe('1');
+  });
+});
+
+describe('shrinkToNewest', () => {
+  const entry = (at: number) => ({ state: { dataUpdatedAt: at } });
+
+  it('keeps the newest half when a write does not fit', () => {
+    // Android caps one AsyncStorage entry near 2 MB; a day of paged lists passes
+    // it, and the failed write leaves no cache at all.
+    const kept = shrinkToNewest([entry(1), entry(9), entry(5), entry(7)], 1);
+    expect(kept?.map((q) => q.state.dataUpdatedAt)).toEqual([9, 7]);
+  });
+
+  it('never returns an empty cache', () => {
+    const kept = shrinkToNewest([entry(1), entry(2)], 1);
+    expect(kept).toHaveLength(1);
+  });
+
+  it('gives up rather than retrying forever', () => {
+    expect(shrinkToNewest([entry(1), entry(2), entry(3)], 4)).toBeUndefined();
+    expect(shrinkToNewest([entry(1)], 1)).toBeUndefined();
+  });
+
+  it('treats a query with no timestamp as the oldest', () => {
+    const noStamp: { state: { dataUpdatedAt?: number } } = { state: {} };
+    const kept = shrinkToNewest([noStamp, entry(5), entry(8), entry(6)], 1);
+    expect(kept?.map((q) => q.state.dataUpdatedAt)).toEqual([8, 6]);
+  });
+});
+
+describe('STALE windows', () => {
+  it('never caches the live order board', () => {
+    // The socket pushes every change, so a cached board could show a sale that
+    // has already been updated. This one must stay at zero.
+    expect(STALE.live).toBe(0);
+  });
+
+  it('keeps reference data around for a screen visit and then some', () => {
+    // A phone that re-reads the menu on every tab spends its first frame
+    // fetching data it already has.
+    expect(STALE.reference).toBeGreaterThanOrEqual(15 * 60 * 1000);
+    expect(STALE.config).toBeGreaterThan(STALE.reference);
   });
 });
 

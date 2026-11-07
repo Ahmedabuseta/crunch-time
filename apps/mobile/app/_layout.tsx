@@ -18,6 +18,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { I18nManager, Platform, View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';
+import { useIsRestoring } from '@tanstack/react-query';
 import 'react-native-reanimated';
 
 // The whole app is Arabic and right-to-left, matching the till. RTL is a
@@ -82,12 +83,23 @@ export default function RootLayout() {
 }
 
 /**
- * Holds `AppSplash` over the app until fonts and the persisted session are in,
- * then lets it fade away. The short floor stops the intro animation flashing by
- * on a fast boot.
+ * Holds `AppSplash` over the app until fonts, the persisted session *and the
+ * restored query cache* are in, then lets it fade away.
+ *
+ * Waiting for the cache is the whole point of persisting it: if the app starts
+ * rendering a frame earlier, the first screen mounts with an empty cache, shows
+ * skeletons, and fires a network read — so the owner waits for the network on
+ * every cold start even though the data was already on the phone. Blocking one
+ * more frame means the first thing they see is the real menu and the real board.
+ *
+ * The floor stops the intro animation flashing by on a fast boot; `ready` can
+ * still become true before it, in which case the splash is held to the floor.
  */
 function SplashGate({ fontsReady }: { fontsReady: boolean }) {
   const { ready: sessionReady } = useSession();
+  // True once the on-disk cache has been read back into memory. Until then a
+  // query that mounts would see no data.
+  const restoring = useIsRestoring();
   const [minElapsed, setMinElapsed] = useState(false);
   const [done, setDone] = useState(false);
 
@@ -99,7 +111,12 @@ function SplashGate({ fontsReady }: { fontsReady: boolean }) {
   const handleDone = useCallback(() => setDone(true), []);
 
   if (done) return null;
-  return <AppSplash ready={fontsReady && sessionReady && minElapsed} onDone={handleDone} />;
+  return (
+    <AppSplash
+      ready={fontsReady && sessionReady && !restoring && minElapsed}
+      onDone={handleDone}
+    />
+  );
 }
 
 /**

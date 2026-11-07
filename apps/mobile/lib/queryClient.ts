@@ -1,7 +1,7 @@
 // The app's single QueryClient and its on-disk persistence. The persister keeps
 // the cache in AsyncStorage, so a cold start — with or without a connection —
 // paints the last known menu, board and reports instead of skeletons.
-import { CACHE_MAX_AGE, cacheBuster, shouldDehydrateQuery } from '@/lib/cachePolicy';
+import { CACHE_MAX_AGE, cacheBuster, shouldDehydrateQuery, shrinkToNewest } from '@/lib/cachePolicy';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { QueryClient } from '@tanstack/react-query';
 import { createAsyncStoragePersister } from '@tanstack/query-async-storage-persister';
@@ -35,10 +35,34 @@ export const queryClient = new QueryClient({
   },
 });
 
+/**
+ * Writes the cache to AsyncStorage.
+ *
+ * `throttleTime` is measured from the first write in a burst, and on a busy
+ * shop every sale invalidates several queries at once. A longer window means
+ * one serialisation of the whole cache per burst instead of one per query, and
+ * the data is re-readable from memory regardless — this only decides how soon
+ * a *cold start* sees it.
+ *
+ * `retry` is what makes the cache reliable rather than merely present: Android
+ * caps a single AsyncStorage entry at about 2 MB, and a day of paged order lists
+ * can pass that. The failure is silent — the write throws, nothing is stored,
+ * and the next cold start has no cache at all. Keeping the newest queries and
+ * dropping the old ones always fits, because a cache missing its oldest page
+ * still paints the board.
+ */
 export const persister = createAsyncStoragePersister({
   storage: AsyncStorage,
   key: 'ct.queryCache',
-  throttleTime: 1000,
+  throttleTime: 2000,
+  retry: ({ persistedClient, errorCount }) => {
+    const kept = shrinkToNewest(persistedClient.clientState.queries, errorCount);
+    if (!kept) return undefined;
+    return {
+      ...persistedClient,
+      clientState: { ...persistedClient.clientState, queries: kept },
+    };
+  },
 });
 
 export const persistOptions: PersistQueryClientProviderProps['persistOptions'] = {
