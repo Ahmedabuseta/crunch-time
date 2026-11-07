@@ -33,8 +33,12 @@ let cached: { text: string; at: number } | null = null
  * The digest, cached for `TTL_MS`. Returns `''` when the schema cannot be read —
  * the caller then renders no schema section at all, which is exactly the
  * behaviour the prompt had before this existed.
+ *
+ * The default is deliberately small: this rides on every SQL-capable step, and
+ * Groq's free tier caps a whole request at 8,000 tokens per minute. A bigger
+ * digest pushes the default model over that limit and fails the turn outright.
  */
-export function schemaDigest(maxChars = 2200): string {
+export function schemaDigest(maxChars = 1100): string {
   const now = Date.now()
   if (cached && now - cached.at < TTL_MS) return clamp(cached.text, maxChars)
 
@@ -90,30 +94,48 @@ function render(tables: TableInfo[]): string {
   return ordered.map((table) => renderTable(table, { withRows: false })).filter(Boolean).join('\n')
 }
 
+/**
+ * Columns per table in the digest.
+ *
+ * The digest competes with the tool schemas for a small model's context, and a
+ * default Groq install has an 8,000 TPM ceiling for the whole request. Twelve
+ * columns is enough to write an ordinary query; `db_schema` covers the rest.
+ */
+const COLUMNS_PER_TABLE = 12
+
 function renderTable(table: TableInfo, options: { withRows: boolean }): string {
-  const columns = table.columns
-    .filter((column) => !SENSITIVE.test(column.name))
-    .map((column) => {
-      const note = COLUMN_NOTES[`${table.name}.${column.name}`]
-      return `${column.name}${column.primaryKey ? '*' : ''}${note ? `[${note}]` : ''}`
-    })
+  const names = table.columns.filter((column) => !SENSITIVE.test(column.name))
 
-  if (columns.length === 0) return ''
+  // The full form (db_schema) explains each column; the digest only lists them.
+  // Prose notes are large in Arabic and cost tokens on every single turn.
+  const shown = options.withRows
+    ? names.map((column) => {
+        const note = COLUMN_NOTES[`${table.name}.${column.name}`]
+        return `${column.name}${column.primaryKey ? '*' : ''}${note ? `[${note}]` : ''}`
+      })
+    : names.slice(0, COLUMNS_PER_TABLE).map((column) => column.name)
 
-  const lines = [`- ${table.name}${options.withRows ? ` (${table.rowCount} صف)` : ''}: ${columns.join(', ')}`]
-  const note = TABLE_NOTES[table.name]
-  if (note) lines.push(`  ${note}`)
-  if (table.foreignKeys.length > 0 && options.withRows) {
-    lines.push(`  FK: ${table.foreignKeys.map((fk) => `${fk.from}→${fk.table}.${fk.to}`).join(', ')}`)
+  if (shown.length === 0) return ''
+
+  const more = !options.withRows && names.length > shown.length ? ', …' : ''
+  const head = options.withRows ? `- ${table.name} (${table.rowCount} صف)` : `- ${table.name}`
+  const lines = [`${head}: ${shown.join(', ')}${more}`]
+
+  if (options.withRows) {
+    const note = TABLE_NOTES[table.name]
+    if (note) lines.push(`  ${note}`)
+    if (table.foreignKeys.length > 0) {
+      lines.push(`  FK: ${table.foreignKeys.map((fk) => `${fk.from}→${fk.table}.${fk.to}`).join(', ')}`)
+    }
   }
   return lines.join('\n')
 }
 
 /** Truncates on a table boundary so the last line is never half a column list. */
 function clamp(text: string, maxChars: number): string {
-  const limit = Math.max(200, Math.trunc(Number(maxChars) || 2200))
+  const limit = Math.max(200, Math.trunc(Number(maxChars) || 1100))
   if (text.length <= limit) return text
   const cut = text.lastIndexOf('\n', limit)
   const head = cut > 0 ? text.slice(0, cut) : text.slice(0, limit)
-  return `${head}\n… (باقي الجداول محذوفة — استخدم db_schema)` 
+  return `${head}\n… (باقي الجداول محذوفة — استخدم db_schema)`
 }

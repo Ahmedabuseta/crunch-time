@@ -11,7 +11,7 @@ import { ALL_TOOLS, getTool, redact } from '../tools'
 import { selectTools } from '../tools/select'
 import { schemaDigest } from '../tools/schema-digest'
 import { appendedDelta, partialStringField } from '../partial-json'
-import { buildTurnState, deterministicReview, MAX_REASONING_CHARS, reviewWorthCalling, toolFailed, type ReviewVerdict, type ToolCall, type ToolExchange } from '../loop'
+import { buildTurnState, CLAIM_MARKER, deterministicReview, MAX_REASONING_CHARS, reviewWorthCalling, toolFailed, unsupportedClaim, type ReviewVerdict, type ToolCall, type ToolExchange } from '../loop'
 import { createProvider, type ProviderFactory } from '../provider'
 import { appendTrace, type TurnTrace } from '../trace'
 import { unknownNumbers } from '../guard/numbers'
@@ -139,32 +139,51 @@ export async function modelStepWith(input: ModelStepInput, factory: ProviderFact
   // `buildSystemPrompt`, which drops it for every other step.
   const digest = exposed.some((def) => def.name === 'query_database') ? schemaDigest() : ''
 
-  const system = buildSystemPrompt({
+  const promptFor = (compact: boolean) => buildSystemPrompt({
     facts: input.facts,
     state: buildTurnState(input.step, input.maxSteps, input.exchanges, input.cardIds),
     tools: exposed,
     followupAllowed: true,
     repair: input.repair,
     steer: input.steer,
-    schema: digest,
+    // Dropped on the compact retry: it is the largest optional section, and
+    // `db_schema` can still fetch any table the model needs.
+    schema: compact ? '' : digest,
   })
 
-  const sdkTools = input.forceAnswer
-    ? { [ANSWER_TOOL]: answerTool() }
-    : {
-        ...Object.fromEntries(
-          exposed.map((def) => [
-            def.name,
-            tool({ description: def.description, inputSchema: def.schema }),
-          ]),
-        ),
-        [ANSWER_TOOL]: answerTool(),
-      }
+  const system = promptFor(false)
+
+  const toolsFor = (compact: boolean) => {
+    const defs = [...exposed]
+    if (compact) {
+      // Tools are the bulk of a request. Keep the answer tool plus the ones the
+      // owner's message actually routed to as writes; drop the rest.
+      const keep = defs.filter((def) => def.write)
+      return keep.length > 0 ? keep : defs.slice(0, 6)
+    }
+    return defs
+  }
+
+  const sdkToolsFor = (compact: boolean) => {
+    const defs = toolsFor(compact)
+    return input.forceAnswer || (compact && defs.length === 0)
+      ? { [ANSWER_TOOL]: answerTool() }
+      : {
+          ...Object.fromEntries(
+            defs.map((def) => [
+              def.name,
+              tool({ description: def.description, inputSchema: def.schema }),
+            ]),
+          ),
+          [ANSWER_TOOL]: answerTool(),
+        }
+  }
+
+  const sdkTools = sdkToolsFor(false)
 
   // Tool calls and their results are reassembled here rather than in the
   // workflow: the workflow stores plain JSON, and only this module knows the
   // SDK's message shape.
-  const messages = buildMessages(input.history, input.exchanges)
   const base = { promptChars: system.length, promptVersion: PROMPT_VERSION }
 
   /**
@@ -181,7 +200,7 @@ export async function modelStepWith(input: ModelStepInput, factory: ProviderFact
    * The published text is a *preview*: the number guard may still reject it and
    * the workflow then persists the repaired answer instead.
    */
-  const streamOnce = async () => {
+  const streamOnce = async (compact = false) => {
     // The SDK replaces a provider failure that happens before the first step
     // with a bare NoOutputGeneratedError, so the real one is kept here.
     let streamError: unknown
@@ -191,9 +210,9 @@ export async function modelStepWith(input: ModelStepInput, factory: ProviderFact
 
     const result = streamText({
       model,
-      system,
-      messages,
-      tools: sdkTools,
+      system: compact ? promptFor(true) : system,
+      messages: buildMessages(input.history, input.exchanges),
+      tools: compact ? sdkToolsFor(true) : sdkTools,
       ...(input.forceAnswer ? { toolChoice: 'required' as const } : {}),
       // One step per activity: the workflow decides when to go round again.
       maxRetries: 1,
@@ -277,7 +296,16 @@ export async function modelStepWith(input: ModelStepInput, factory: ProviderFact
   try {
     attempt = await streamOnce()
   } catch (err: any) {
-    throw providerFailure(err)
+    // Too big for the provider's rate window (Groq's free tier caps a whole
+    // minute at 8k tokens). Retrying the same size can never work, but the same
+    // step fits once the schema digest and the unused tool schemas are dropped —
+    // so shrink the request instead of failing the turn.
+    if (!isRequestTooLarge(err)) throw providerFailure(err)
+    try {
+      attempt = await streamOnce(true)
+    } catch (retryErr: any) {
+      throw providerFailure(retryErr)
+    }
   }
 
   /**
@@ -321,7 +349,7 @@ export async function modelStepWith(input: ModelStepInput, factory: ProviderFact
     const forced = streamText({
       model,
       system: `${system}\n\nقدّم ردك الآن باستخدام أداة «${ANSWER_TOOL}» فقط، ومتكتبش نص حر.`,
-      messages,
+      messages: buildMessages(input.history, input.exchanges),
       tools: { [ANSWER_TOOL]: answerTool() },
       // `required` rather than naming the tool: several OpenAI-compatible
       // providers accept "must call some tool" but reject a pinned function,
@@ -418,6 +446,19 @@ function isStructuredOutputUnsupported(err: any): boolean {
   )
 }
 
+/**
+ * The request itself is bigger than the provider's per-minute token budget.
+ *
+ * Groq's free tier reports `Request too large … tokens per minute (TPM):
+ * Limit 8000`. This is about the size of the request, not the size of the
+ * answer, so the fix is a smaller request — not a retry and not a shorter reply.
+ */
+function isRequestTooLarge(err: any): boolean {
+  const status = Number(err?.statusCode ?? err?.status ?? 0)
+  const message = String(err?.message ?? err?.responseBody ?? '')
+  return status === 413 || /request too large|tokens per minute|\btpm\b/i.test(message)
+}
+
 async function usageOf(result: any): Promise<{ promptTokens: number; completionTokens: number }> {
   try {
     const usage = (await result?.usage) as { inputTokens?: number; outputTokens?: number }
@@ -448,14 +489,34 @@ function answerTool() {
   })
 }
 
+/**
+ * Reads the `answer` call's arguments, repairing what can be repaired.
+ *
+ * A provider that claims tool support does not always honour the schema: a
+ * smaller free model will happily omit `cards` or send one string too many.
+ * Failing the whole turn for that throws away a step the owner already paid for
+ * and shows them nothing — so the well-formed fields are kept and the rest
+ * falls back. Only a reply with no usable text at all is a real failure.
+ */
 function readAnswer(input: unknown): AssistantReply {
-  const parsed = AssistantReplySchema.safeParse(input)
-  if (!parsed.success) {
-    throw ApplicationFailure.nonRetryable('رد المساعد غير مطابق للمخطط', 'ValidationError', {
-      issues: parsed.error.flatten(),
-    })
+  const source = (input ?? {}) as Record<string, unknown>
+  const text = typeof source.text === 'string' ? source.text.trim().slice(0, 800) : ''
+  if (!text) {
+    throw ApplicationFailure.nonRetryable('رد المساعد من غير نص', 'ValidationError')
   }
-  return parsed.data
+
+  const cards = Array.isArray(source.cards)
+    ? source.cards.filter((id): id is string => typeof id === 'string').slice(0, 3)
+    : []
+  const followups = Array.isArray(source.followups)
+    ? source.followups
+        .filter((entry): entry is string => typeof entry === 'string')
+        .map((entry) => entry.trim())
+        .filter((entry) => entry.length > 0 && entry.length <= 60)
+        .slice(0, 3)
+    : []
+
+  return { text, cards, followups }
 }
 
 function providerFailure(err: any): Error {
@@ -463,6 +524,16 @@ function providerFailure(err: any): Error {
   const message = String(err?.message ?? err?.responseBody ?? 'تعذّر الاتصال بالمزوّد')
   if (status === 401 || status === 403 || /invalid.*key|unauthor/i.test(message)) {
     return ApplicationFailure.nonRetryable('مفتاح API مرفوض — راجع المفتاح في الإعدادات', 'ProviderAuth')
+  }
+  // The request itself is too big for the rate window (Groq's free tier caps
+  // tokens per minute, not requests). Retrying the same size can never help, so
+  // this is non-retryable: the loop answers from what it already has instead of
+  // failing the whole turn.
+  if (status === 413 || /request too large|tokens per minute|tpm/i.test(message)) {
+    return ApplicationFailure.nonRetryable(
+      'السؤال أكبر من حد المزوّد في الدقيقة — قلّل التفاصيل أو جرّب تاني بعد شوية',
+      'RequestTooLarge',
+    )
   }
   if (status === 429) {
     // Transient: let the workflow retry with backoff.
@@ -717,6 +788,8 @@ export interface ValidateReplyInput {
   reply: AssistantReply
   producedCards: ChatCard[]
   exchanges: ToolExchange[]
+  /** The owner's message, so a figure they wrote is never called invented. */
+  ownerMessage?: string
 }
 
 export interface ValidateReplyOutput {
@@ -727,9 +800,12 @@ export interface ValidateReplyOutput {
 }
 
 /**
- * The wire contract gate. A reply that does not parse is a hard, visible
- * failure — `ValidationError` is configured as non-retryable on the workflow,
- * so it surfaces in the Temporal UI instead of being retried into a bill.
+ * The wire contract gate: fills in a usable text and resolves the card ids.
+ *
+ * `readAnswer` has already reduced the reply to valid fields, so a parse failure
+ * here means something upstream is wrong with the shape of the turn — but the
+ * owner should still get an answer. The fallback text is derived from what the
+ * tools actually produced, never invented.
  */
 export async function validateReply(input: ValidateReplyInput): Promise<ValidateReplyOutput> {
   const fallbackText = (() => {
@@ -742,15 +818,20 @@ export async function validateReply(input: ValidateReplyInput): Promise<Validate
     ...input.reply,
     text: input.reply.text.trim() || fallbackText,
   })
-  if (!parsed.success) {
-    throw ApplicationFailure.nonRetryable('رد المساعد غير مطابق للمخطط', 'ValidationError', {
-      issues: parsed.error.flatten(),
-    })
-  }
+  const reply = parsed.success
+    ? parsed.data
+    : readAnswer({ ...input.reply, text: input.reply.text.trim() || fallbackText })
+
+  // "تم استبدال ١٥ كيلو" with no action card behind it is the worst reply the
+  // assistant can send: the owner reads it as done and the stock never moved.
+  // It is treated like an invented number — one repair round, then the summary.
+  const unsupported = unsupportedClaim(reply.text, input.producedCards)
+  const unknown = unknownNumbers(reply.text, input.exchanges, input.ownerMessage)
+
   return {
-    reply: parsed.data,
-    cards: resolveCards(parsed.data.cards, input.producedCards),
-    unknown: unknownNumbers(parsed.data.text, input.exchanges),
+    reply,
+    cards: resolveCards(reply.cards, input.producedCards),
+    unknown: unsupported ? [...new Set([...unknown, CLAIM_MARKER])] : unknown,
   }
 }
 

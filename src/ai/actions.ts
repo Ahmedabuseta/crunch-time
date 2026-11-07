@@ -329,6 +329,9 @@ function apply(kind: ActionKind, payload: Record<string, any>): unknown {
         fromPackages: Number(payload.fromPackages) || 0,
         toIngredientId: String(payload.toIngredientId),
         toPackages: Number(payload.toPackages) || 0,
+        // Present when the owner spoke in kilos rather than packs.
+        fromQty: payload.fromQty != null ? Number(payload.fromQty) : undefined,
+        toQty: payload.toQty != null ? Number(payload.toQty) : undefined,
         packagePrice: payload.packagePrice != null ? Number(payload.packagePrice) : undefined,
         supplier: payload.supplier ? String(payload.supplier) : undefined,
         note: payload.note ? String(payload.note) : undefined,

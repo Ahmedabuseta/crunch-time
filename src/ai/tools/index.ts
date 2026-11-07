@@ -10,6 +10,7 @@ import { MANAGE_WRITE_TOOLS } from './manage-write'
 import { ANALYTICS_TOOLS } from './analytics'
 import { SQL_TOOLS } from './sql'
 import { ALIAS_TOOLS } from './aliases'
+import { RESOLVE_TOOLS } from './resolve-many'
 import { createDiscoverTool } from './discover'
 import type { ToolDef, ToolRegistry } from './types'
 
@@ -18,6 +19,7 @@ export const ALL_TOOLS: ToolDef[] = [
   ...MANAGE_READ_TOOLS,
   ...ANALYTICS_TOOLS,
   ...SQL_TOOLS,
+  ...RESOLVE_TOOLS,
   ...WRITE_TOOLS,
   ...MANAGE_WRITE_TOOLS,
   ...ALIAS_TOOLS,

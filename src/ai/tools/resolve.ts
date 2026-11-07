@@ -148,6 +148,9 @@ function mapModifierGroup(row: any): ModifierGroupRow {
  */
 const MAX_CANDIDATES = 5
 
+/** Container or measure words an owner puts before the noun. */
+const PACK_WORD = /^(جركن|جركان|عبوه|عبوة|كرتونه|كرتونة|كيلو|كيلوا|كجم|شيكاره|شيكارة|شواله|شوالة|علبه|علبة|زجاجه|زجاجة|لتر)$/
+
 function resolveByName<T>(
   table: 'products' | 'ingredients' | 'sub_recipes' | 'categories' | 'addons' | 'modifier_groups',
   query: string,
@@ -197,6 +200,25 @@ function resolveByName<T>(
     })
     .filter((entry) => entry.score > 0)
     .sort((a, b) => b.score - a.score || a.name.length - b.name.length)
+
+  // "جركن هريسه" is «هريسه» in one jar. Owners wrap the noun in the container
+  // or the measure and never think about it, so the unit word is dropped before
+  // the resolver reports a miss. This runs here rather than in one caller so a
+  // write tool and a lookup tool agree on what a name means.
+  if (scored.length === 0) {
+    const stripped = raw.split(/\s+/).filter((part) => !PACK_WORD.test(normalizeArabic(part))).join(' ').trim()
+    if (stripped && stripped !== raw) {
+      const reduced = withoutArticle(normalizeArabic(stripped))
+      const byStripped = rows
+        .map((row) => {
+          const name = withoutArticle(normalizeArabic(String(row.name ?? '')))
+          return { row, name, score: matchScore(reduced, name) }
+        })
+        .filter((entry) => entry.score > 0)
+        .sort((a, b) => b.score - a.score || a.name.length - b.name.length)
+      if (byStripped.length > 0) scored.push(...byStripped)
+    }
+  }
 
   const best = scored[0]
   if (!best) {

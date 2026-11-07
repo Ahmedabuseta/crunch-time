@@ -1202,6 +1202,9 @@ export function exchange(input: {
   fromPackages: number
   toIngredientId: string
   toPackages: number
+  /** Direct quantities in the ingredient's own unit, when the owner said "١٥ كيلو". */
+  fromQty?: number
+  toQty?: number
   packagePrice?: number
   supplier?: string
   note?: string
@@ -1219,9 +1222,16 @@ export function exchange(input: {
   const toPackages = Math.abs(Number(input.toPackages) || 0)
   if (fromPackages === 0 && toPackages === 0) return { ok: false, error: 'حدد الكميات أولاً' }
 
+  // Returning to and receiving from the same row is a part-exchange: "15 kilo
+  // كوردن ب 10 kilo". The old code rejected it outright, so that message could
+  // never be recorded. Both movements still hit the ledger — one RETURN, one
+  // PURCHASE — which is what the owner's paper trail shows.
+
   const stockNow = (ing: { stockQuantity: number }) => Number(ing.stockQuantity) || 0
-  const fromStockQty = fromPackages * fromPack
-  const toStockQty = toPackages * toPack
+  // An explicit quantity wins: the owner said "١٥ كيلو", and a pack is not a
+  // kilo. Multiplying 15 by a 12 kg pack would return 180 kg.
+  const fromStockQty = Number(input.fromQty ?? 0) > 0 ? Number(input.fromQty) : fromPackages * fromPack
+  const toStockQty = Number(input.toQty ?? 0) > 0 ? Number(input.toQty) : toPackages * toPack
 
   if (fromStockQty > 0 && fromStockQty > stockNow(from)) {
     return { ok: false, error: `الكمية المرتجعة أكبر من المخزون المتاح (${fmtStock(stockNow(from))} ${from.unit})` }

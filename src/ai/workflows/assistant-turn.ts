@@ -16,6 +16,7 @@ import {
   MAX_TOOL_CALLS,
   MAX_EXTRA_TOOLS,
   callSignature,
+  CLAIM_MARKER,
   fallbackAnswer,
   planCalls,
   shouldBrake,
@@ -27,6 +28,16 @@ import {
 import type { TraceCall, TurnTrace } from '../trace'
 
 export { MAX_STEPS }
+
+/**
+ * True when the provider refused the request itself, so no retry of the same
+ * call can succeed: the message was over the rate window, or the key was
+ * rejected. The workflow answers from what it already has instead of failing.
+ */
+function isProviderRefusal(err: unknown): boolean {
+  const type = (err as { type?: unknown } | null)?.type
+  return type === 'RequestTooLarge' || type === 'ProviderAuth'
+}
 
 // Non-retryable by type on purpose: a schema failure, a rejected key or an
 // unknown tool will not fix itself, and retrying them just bills the owner.
@@ -44,6 +55,7 @@ const acts = proxyActivities<Activities>({
       'UnknownTool',
       'ToolFailed',
       'EmptyReply',
+      'RequestTooLarge',
     ],
   },
 })
@@ -93,6 +105,7 @@ export async function assistantTurn(input: TurnInput): Promise<TurnResult> {
   let firstTokenMs: number | null = null
   let steers = 0
   let blocks = 0
+  let providerBlocked = false
 
   const turnActionIds = () =>
     produced
@@ -149,20 +162,31 @@ export async function assistantTurn(input: TurnInput): Promise<TurnResult> {
     // once, so a block never pins the rest of the turn.
     const blockNow = pendingBlock
     pendingBlock = false
-    const out = await traced(() => acts.modelStep({
-      turnId: input.turnId,
-      facts: context.facts,
-      history,
-      exchanges,
-      cardIds: produced.map((card, index) => cardId(card, index)),
-      step,
-      maxSteps: MAX_STEPS,
-      message: input.message,
-      extraTools: [...extraTools],
-      forceAnswer: isLast || pendingRepair !== null || blockNow,
-      repair: pendingRepair ?? undefined,
-      steer: pendingSteer ?? undefined,
-    }))
+    let out: Awaited<ReturnType<typeof acts.modelStep>>
+    try {
+      out = await traced(() => acts.modelStep({
+        turnId: input.turnId,
+        facts: context.facts,
+        history,
+        exchanges,
+        cardIds: produced.map((card, index) => cardId(card, index)),
+        step,
+        maxSteps: MAX_STEPS,
+        message: input.message,
+        extraTools: [...extraTools],
+        forceAnswer: isLast || pendingRepair !== null || blockNow,
+        repair: pendingRepair ?? undefined,
+        steer: pendingSteer ?? undefined,
+      }))
+    } catch (err) {
+      // The model could not produce this step: the request was over the
+      // provider's rate window, or it failed in a way a retry cannot fix. A turn
+      // that already fetched data must still answer from it rather than dying —
+      // that is exactly the turn the owner cares about.
+      if (!isProviderRefusal(err)) throw err
+      providerBlocked = true
+      break
+    }
 
     steps += 1
     promptChars = Math.max(promptChars, out.promptChars)
@@ -291,8 +315,19 @@ export async function assistantTurn(input: TurnInput): Promise<TurnResult> {
       reply: out.reply,
       producedCards: produced,
       exchanges,
+      ownerMessage: input.message,
     })
     unknown = validated.unknown
+
+    // A claim with no action behind it is repaired by *acting*, not by
+    // rewriting: the next step is told to call the write tool (or to say it
+    // needs clarification), and the turn continues normally after that.
+    const claimOnly = unknown.includes(CLAIM_MARKER)
+    if (claimOnly && !repaired && step < MAX_STEPS - 1) {
+      repaired = true
+      pendingRepair = unknown
+      continue
+    }
 
     // One repair round: the answer invented a number. The next step is forced
     // to answer again with the exact figures called out.
@@ -308,8 +343,14 @@ export async function assistantTurn(input: TurnInput): Promise<TurnResult> {
     // A provider that fails to call `answer` after a real tool run is the same
     // situation: the canned "needs context" line would hide data the turn
     // actually fetched, so the summary is the answer.
+    // A pure claim of work that never happened has nothing to summarise — the
+    // honest fallback is that no change was made yet.
     const useFallback = unknown.length > 0 || (out.degraded && exchanges.length > 0)
-    const text = useFallback ? fallbackAnswer(exchanges) : validated.reply.text
+    const text = claimOnly && produced.length === 0
+      ? 'مفيش تغيير اتسجل لسه — محتاج توضيح عشان أقدر أجهّز الإجراء.'
+      : useFallback
+        ? fallbackAnswer(exchanges)
+        : validated.reply.text
     const cards = unknown.length > 0 ? produced.slice(-3) : validated.cards
     const followups = useFallback ? [] : validated.reply.followups
     const degraded = out.degraded || unknown.length > 0
@@ -339,7 +380,13 @@ export async function assistantTurn(input: TurnInput): Promise<TurnResult> {
 
   // Out of steps (or braked): answer from what the tools actually returned
   // instead of discarding a turn that did real work.
-  const text = fallbackAnswer(exchanges)
+  //
+  // A provider refusal says so first: the owner needs to know that the answer is
+  // short because the request was too big, not because the shop has no data.
+  const summary = fallbackAnswer(exchanges)
+  const text = providerBlocked
+    ? `الطلب كبير على المزوّد فمقدرتش أكمل الرد. اللي اتجمع: ${summary}`.slice(0, 780)
+    : summary
   const cards = produced.slice(-3)
   const saved = await acts.persistTurn({
     turnId: input.turnId,

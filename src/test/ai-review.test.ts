@@ -8,10 +8,12 @@ import { describe, expect, it } from 'vitest'
 import {
   MAX_TOTAL_FAILURES,
   allCallsFailed,
+  claimsAppliedChange,
   deterministicReview,
   failedExchanges,
   reviewWorthCalling,
   shouldBrake,
+  unsupportedClaim,
   wrongSubjectWrite,
   type ToolCall,
   type ToolExchange,
@@ -145,6 +147,36 @@ describe('reviewWorthCalling', () => {
 
   it('reviews when the owner set no cap', () => {
     expect(reviewWorthCalling({ stepResults: 1, remaining: null, limit: 0 })).toBe(true)
+  })
+})
+
+describe('unsupportedClaim', () => {
+  it('flags "تم استبدال" with no action card behind it', () => {
+    // The real failure: the model resolved names, wrote "استبدلت ١٥ كيلو", and
+    // sent no write call. The owner would read it as done while stock sat still.
+    const text = 'تمام، استبدلت 15 كغم كوردن بلو بـ 10 كغم واستبدلت 4 برجر بـ 3.'
+    expect(claimsAppliedChange(text)).toBe(true)
+    expect(unsupportedClaim(text, [{ kind: 'table' }])).toBe(true)
+    expect(unsupportedClaim(text, [])).toBe(true)
+  })
+
+  it('accepts the same sentence when a write tool did propose an action', () => {
+    const text = 'جاهز أستبدل ١٥ كيلو كوردن — مستني تأكيدك.'
+    expect(unsupportedClaim(text, [{ kind: 'action' }])).toBe(false)
+  })
+
+  it('flags "باقي العمليات جاهزة" with no cards', () => {
+    expect(unsupportedClaim('باقي عمليات الاستبدال والشراء جاهزة.', [])).toBe(true)
+  })
+
+  it('leaves an ordinary answer alone', () => {
+    expect(unsupportedClaim('مبيعات النهاردة ٤٢٠٠ ج.م.', [{ kind: 'table' }])).toBe(false)
+    expect(unsupportedClaim('شوف التفاصيل في الكارت.', [])).toBe(false)
+  })
+
+  it('does not flag a question or a refusal', () => {
+    expect(unsupportedClaim('محتاج توضيح بخصوص المادة دي؟', [])).toBe(false)
+    expect(unsupportedClaim('مش عندي الرقم ده.', [])).toBe(false)
   })
 })
 

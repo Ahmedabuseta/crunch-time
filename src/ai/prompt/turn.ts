@@ -3,6 +3,8 @@
 // number. Keeping this out of rules.ts means the model sees the loop state on
 // every step instead of a static rule it can drift away from.
 
+import { CLAIM_MARKER } from '../loop'
+
 export interface TurnState {
   step: number
   maxSteps: number
@@ -100,11 +102,20 @@ export function outputSection(followupAllowed: boolean): string[] {
 }
 
 export function repairSection(unknown: string[]): string[] {
-  return [
-    '## تصحيح مطلوب',
-    `الأرقام دي مش موجودة في نتائج الأدوات: ${unknown.join('، ')}.`,
-    'اكتب الرد من جديد. استخدم أرقام من النتائج بس، أو شيل الرقم لو مش متأكد منه. ممنوع تحسب رقم جديد بنفسك.',
-  ]
+  // One marker carries the "you said it was done" case, which has no numbers to
+  // name. The two are separate sentences because the fixes are different.
+  const claims = unknown.includes(CLAIM_MARKER)
+  const numbers = unknown.filter((entry) => entry !== CLAIM_MARKER)
+
+  const lines = ['## تصحيح مطلوب']
+  if (numbers.length > 0) {
+    lines.push(`الأرقام دي مش موجودة في نتائج الأدوات: ${numbers.join('، ')}.`)
+  }
+  if (claims) {
+    lines.push('إنت قلت إن فيه حاجة "اتعملت" أو "استبدلت" ومفيش إجراء اتجهّز في الدور ده. ممنوع تقول «تم» — نادي أداة التغيير عشان كارت التأكيد يظهر، أو قول إنك لسه محتاج توضيح.')
+  }
+  lines.push('اكتب الرد من جديد. استخدم أرقام من النتائج بس، ومتنسبش لنفسك حاجة عملتها. ممنوع تحسب رقم جديد بنفسك.')
+  return lines
 }
 
 export function summarySection(summary: string): string[] {

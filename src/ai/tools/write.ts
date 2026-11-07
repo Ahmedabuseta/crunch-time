@@ -301,13 +301,16 @@ export const WRITE_TOOLS: ToolDef[] = [
 
   {
     name: 'exchange_brand',
-    description: 'مبادلة ماركة قديمة بماركة جديدة: إرجاع عبوات من القديمة واستلام عبوات من الجديدة بسعرها. بيرجّع كارت تأكيد بالطرفين.',
+    description: 'مبادلة أو استبدال: إرجاع كمية من مادة واستلام كمية من مادة تانية (أو من نفس المادة بماركة/سعر جديد). لو صاحب المطعم قال «١٥ كيلو» استخدم from_qty بالجرام (15000) — مش from_packages.',
     write: true,
     schema: z.object({
       from: ingredientRef.describe('المادة القديمة اللي بترجع'),
       to: ingredientRef.describe('المادة الجديدة اللي بتستلم'),
       from_packages: z.number().nonnegative().optional().describe('عدد عبوات القديمة الراجعة'),
       to_packages: z.number().nonnegative().optional().describe('عدد عبوات الجديدة المستلمة'),
+      /** When the owner speaks in kilos, not in packs: "١٥ كيلو". */
+      from_qty: z.number().nonnegative().optional().describe('كمية القديمة الراجعة بالوحدة (جرام/لتر) لما العميل يقول «كيلو» مش «عبوة»'),
+      to_qty: z.number().nonnegative().optional().describe('كمية الجديدة المستلمة بالوحدة'),
       package_price: z.number().nonnegative().optional().describe('سعر عبوة الجديدة'),
       supplier: z.string().optional(),
       note: z.string().max(200).optional(),
@@ -320,18 +323,33 @@ export const WRITE_TOOLS: ToolDef[] = [
 
       const fromItem = fromResolved.row
       const toItem = toResolved.row
-      if (fromItem.id === toItem.id) {
-        return toolOutput({ error: 'الطرفين نفس المادة' }, 'الطرفين نفس المادة')
-      }
 
       const fromPackages = Math.max(0, Number(args.from_packages ?? 0))
       const toPackages = Math.max(0, Number(args.to_packages ?? 0))
-      if (fromPackages === 0 && toPackages === 0) {
+      // The owner talks in kilos ("١٥ كيلو كوردن"), and a pack is rarely 1 kg —
+      // cordon bleu comes in 12 kg packs. Reading "15" as 15 packs would record
+      // 180 kg returned. A direct quantity is honoured when given.
+      const fromQty = Number(args.from_qty ?? 0) > 0
+        ? Number(args.from_qty)
+        : fromPackages * (fromItem.purchaseQty || 1)
+      const toQty = Number(args.to_qty ?? 0) > 0
+        ? Number(args.to_qty)
+        : toPackages * (toItem.purchaseQty || 1)
+      if (fromQty === 0 && toQty === 0) {
         return toolOutput({ error: 'حدد كمية على الأقل في طرف' }, 'حدد كمية على الأقل في طرف')
       }
 
-      const fromQty = fromPackages * (fromItem.purchaseQty || 1)
-      const toQty = toPackages * (toItem.purchaseQty || 1)
+      // Same name on both sides is legitimate: "١٠ كوردن ب ٨ كوردن" is a part
+      // return to the same supplier. It only stops being a swap when it would
+      // return as many as it receives, which is a net-zero move.
+      const sameItem = fromItem.id === toItem.id
+      if (sameItem && fromQty === toQty) {
+        return toolOutput(
+          { error: 'الطرفين نفس المادة بنفس الكمية — مفيش تغيير' },
+          'الطرفين نفس المادة بنفس الكمية',
+        )
+      }
+
       if (fromQty > fromItem.stockQuantity) {
         return toolOutput({ error: `الكمية الراجعة أكبر من مخزون ${fromItem.name}` }, 'الكمية الراجعة أكبر من المخزون')
       }
@@ -339,22 +357,38 @@ export const WRITE_TOOLS: ToolDef[] = [
       const newFrom = fromItem.stockQuantity - fromQty
       const newTo = toItem.stockQuantity + toQty
 
-      const preview = {
-        title: 'مبادلة ماركة',
-        subject: `${fromItem.name} ← ${toItem.name}`,
-        rows: [
-          { label: fromItem.name, before: quantity(fromItem.stockQuantity, fromItem.unit), after: quantity(newFrom, fromItem.unit), tone: 'down' as const },
-          { label: toItem.name, before: quantity(toItem.stockQuantity, toItem.unit), after: quantity(newTo, toItem.unit), tone: 'up' as const },
-          { label: 'الراجع', value: `${fromPackages} عبوة` },
-          { label: 'المستلم', value: `${toPackages} عبوة` },
-          ...(args.package_price != null ? [{ label: 'سعر عبوة الجديدة', value: money(Number(args.package_price)) }] : []),
-        ],
-        result: `${fromQty > 0 ? `${quantity(fromQty, fromItem.unit)} هترجع من ${fromItem.name}` : ''}${fromQty > 0 && toQty > 0 ? ' و' : ''}${toQty > 0 ? `${quantity(toQty, toItem.unit)} هتستلم من ${toItem.name}` : ''}.`,
-      }
+      const preview = sameItem
+        ? {
+            title: 'مرتجع وشراء — نفس المادة',
+            subject: fromItem.name,
+            rows: [
+              { label: fromItem.name, before: quantity(fromItem.stockQuantity, fromItem.unit), after: quantity(newFrom + toQty, fromItem.unit), tone: 'down' as const },
+              { label: 'الراجع', value: `${fromPackages} عبوة (${quantity(fromQty, fromItem.unit)})` },
+              { label: 'المستلم', value: `${toPackages} عبوة (${quantity(toQty, fromItem.unit)})` },
+              ...(args.package_price != null ? [{ label: 'سعر عبوة الجديدة', value: money(Number(args.package_price)) }] : []),
+            ],
+            result: `هترجع ${quantity(fromQty, fromItem.unit)} وتستلم ${quantity(toQty, toItem.unit)} من ${fromItem.name}. الصافي ${quantity(toQty - fromQty, fromItem.unit)}.`,
+          }
+        : {
+            title: 'مبادلة ماركة',
+            subject: `${fromItem.name} ← ${toItem.name}`,
+            rows: [
+              { label: fromItem.name, before: quantity(fromItem.stockQuantity, fromItem.unit), after: quantity(newFrom, fromItem.unit), tone: 'down' as const },
+              { label: toItem.name, before: quantity(toItem.stockQuantity, toItem.unit), after: quantity(newTo, toItem.unit), tone: 'up' as const },
+              { label: 'الراجع', value: `${fromPackages} عبوة` },
+              { label: 'المستلم', value: `${toPackages} عبوة` },
+              ...(args.package_price != null ? [{ label: 'سعر عبوة الجديدة', value: money(Number(args.package_price)) }] : []),
+            ],
+            result: `${fromQty > 0 ? `${quantity(fromQty, fromItem.unit)} هترجع من ${fromItem.name}` : ''}${fromQty > 0 && toQty > 0 ? ' و' : ''}${toQty > 0 ? `${quantity(toQty, toItem.unit)} هتستلم من ${toItem.name}` : ''}.`,
+          }
 
       const action = createAction('exchange_brand', {
         fromIngredientId: fromItem.id,
         toIngredientId: toItem.id,
+        // The quantities are what actually move. Packages are kept only so the
+        // preview can say "٢ عبوة" when the owner spoke in packs.
+        fromQty,
+        toQty,
         fromPackages,
         toPackages,
         packagePrice: args.package_price,

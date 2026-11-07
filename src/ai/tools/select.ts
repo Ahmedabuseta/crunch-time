@@ -10,8 +10,6 @@ import type { ToolDef } from './types'
 
 const CORE = [
   'query_database',
-  // The read-only schema reader: SQL is useless without knowing the columns.
-  'db_schema',
   'query_metrics',
   'product_price',
   'product_list',
@@ -134,6 +132,10 @@ export function selectToolNames(message: string, extra: readonly string[] = []):
   if (stockSignal) add(selected, ['ingredient_list', 'ingredient_details'])
 
   if (action) {
+    // A message that changes several things names several ingredients. One
+    // resolving call is what keeps the model from spending its whole step
+    // budget on a whole-table read per name.
+    selected.add('resolve_names')
     if (product || price || addon) add(selected, PRODUCT_WRITE)
     if (addon) add(selected, ADDON_WRITE)
     if (ingredient) add(selected, INGREDIENT_WRITE)
@@ -156,6 +158,10 @@ export function selectToolNames(message: string, extra: readonly string[] = []):
   // Discovered tools are added last and capped: the router stays the primary
   // selector, and a model cannot grow the schema list without bound.
   for (const name of extra.slice(0, MAX_EXTRA_TOOLS)) selected.add(name)
+
+  // SQL without a schema is a guess, and the digest in the prompt is bounded.
+  // Both travel together, so a model that can run SQL can also look a table up.
+  if (selected.has('query_database')) selected.add('db_schema')
 
   return [...selected]
 }

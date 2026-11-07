@@ -237,7 +237,42 @@ export function deterministicReview(input: {
 }
 
 /**
- * Whether the model review is worth its token cost right now.
+ * Whether the answer claims a change was already applied.
+ *
+ * Rule 1 forbids it — nothing is changed until the owner taps confirm — but a
+ * small model that has just resolved some names will happily write "استبدلت
+ * ١٥ كيلو" and stop. That is the worst possible reply: the owner reads it as
+ * done and the stock never moved.
+ */
+// Note: `words()` normalises ta marbuta to heh and drops punctuation, so
+// «جاهزة.» arrives as «جاهزه». Both spellings are listed.
+const CLAIMED_ACTION = /(تم\s+(ال)?(استبدال|تعديل|تسجيل|استلام|حذف|إضافة|اضافه))|(استبدلت|عدّلت|عدلت|سجلت|استلمت|حذفت|أضفت|اضفت|غيّرت|غيرت|ظبطت)|(جاهزه?(\s|$))|(اتسجل|اتعمل|اتجهّز|اتجهز)/
+
+/**
+ * Stands in for "the answer claimed a change that no tool proposed" in the
+ * repair list. It is a marker, not a number, so `repairSection` can tell the two
+ * failures apart and word the correction properly.
+ */
+export const CLAIM_MARKER = '«ادعاء تنفيذ»'
+
+export function claimsAppliedChange(text: string): boolean {
+  return CLAIMED_ACTION.test(words(text).join(' ')) || CLAIMED_ACTION.test(String(text ?? ''))
+}
+
+/**
+ * True when the answer says a change happened but the turn proposed none.
+ *
+ * `produced` holds every card the tools returned; a write tool always returns an
+ * action card, so "claims a change, has no action card" means the sentence is
+ * unbacked. The caller sends the answer back for repair instead of delivering it.
+ */
+export function unsupportedClaim(text: string, produced: readonly { kind: string }[]): boolean {
+  if (!claimsAppliedChange(text)) return false
+  return !produced.some((card) => card.kind === 'action')
+}
+
+/**
+ * Whether the review is worth its token cost right now.
  *
  * Skipped when the owner is nearly out of budget: the deterministic checks have
  * already run, and a review is a luxury next to actually answering.

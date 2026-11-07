@@ -104,13 +104,24 @@ function matches(value: number, allowed: readonly number[]): boolean {
 /**
  * Numbers in `text` that no tool returned, in order of appearance, deduped.
  * Empty when the turn ran no tools — a greeting or a refusal must stay clean.
+ *
+ * `ownerMessage` is optional, and when given the figures the owner wrote are
+ * allowed too: repeating "١٥ كيلو" back while confirming a swap is the correct
+ * answer, not an invented figure. Only a number nobody said and no tool returned
+ * is suspicious.
  */
-export function unknownNumbers(text: string, exchanges: readonly ToolExchange[]): string[] {
+export function unknownNumbers(
+  text: string,
+  exchanges: readonly ToolExchange[],
+  ownerMessage?: string,
+): string[] {
   const body = String(text ?? '').trim()
   if (!body || exchanges.length === 0) return []
 
   const allowed = allowedNumbers(exchanges)
-  if (allowed.length === 0) return []
+  const said = ownerMessage ? textNumbers(ownerMessage).map((token) => token.value) : []
+  const permitted = new Set<number>([...allowed, ...said.flatMap(variants), ...said])
+  if (permitted.size === 0) return []
 
   const unknown: string[] = []
   const seen = new Set<string>()
@@ -118,7 +129,7 @@ export function unknownNumbers(text: string, exchanges: readonly ToolExchange[])
     // A year is prose, not a business figure: "نوفمبر ٢٠٢٦" must not be
     // reported as invented money just because no tool returned 2026.
     if (token.raw.length === 4 && token.value >= 1900 && token.value <= 2100) continue
-    if (matches(token.value, allowed)) continue
+    if (matches(token.value, [...permitted])) continue
     if (seen.has(token.raw)) continue
     seen.add(token.raw)
     unknown.push(token.raw)
