@@ -8,6 +8,8 @@ export interface TurnState {
   maxSteps: number
   /** Tool calls already run this turn, in order. */
   ran: { name: string; summary: string }[]
+  /** Tool calls that returned an error: the turn's dead ends. */
+  failed: { name: string; summary: string }[]
   cardIds: string[]
 }
 
@@ -56,6 +58,16 @@ export function stateSection(state: TurnState): string[] {
     lines.push('لسه مفيش أدوات اتنادت في الدور ده.')
   }
 
+  const failed = state.failed ?? []
+  if (failed.length > 0) {
+    lines.push('', 'طرق مسدودة — متعدهاش تاني بنفس المدخلات:')
+    for (const entry of failed.slice(-MAX_RAN_LINES)) {
+      const summary = String(entry.summary ?? '').trim().slice(0, 160)
+      if (!summary) continue
+      lines.push(`- ${entry.name} فشلت: ${summary}`)
+    }
+  }
+
   lines.push(
     state.cardIds.length > 0
       ? `كروت متاحة في الرد ده: ${state.cardIds.join(', ')}`
@@ -97,4 +109,25 @@ export function repairSection(unknown: string[]): string[] {
 
 export function summarySection(summary: string): string[] {
   return ['## سياق المحادثة', String(summary).slice(0, 600)]
+}
+
+/**
+ * The reviewer's note for the next step. Deliberately a separate, last section:
+ * the model has just been asked to change course, and an instruction at the
+ * bottom of the prompt is the one small models follow most reliably.
+ */
+export function steerSection(note: string): string[] {
+  return ['## ملاحظة المراجع', String(note).trim().slice(0, 280)]
+}
+
+/**
+ * The database shape, for the steps where `query_database` is on offer.
+ *
+ * Only rendered when SQL is actually callable: the digest is a few hundred
+ * tokens, and every other turn should not pay for it.
+ */
+export function schemaSection(digest: string): string[] {
+  const body = String(digest ?? '').trim()
+  if (!body) return []
+  return ['## مخطط قاعدة البيانات', body]
 }

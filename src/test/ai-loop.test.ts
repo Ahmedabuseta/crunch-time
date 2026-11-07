@@ -2,12 +2,17 @@
 // deterministic fallback answer used when a turn runs out of steps.
 import { describe, expect, it } from 'vitest'
 import {
+  MAX_CONSECUTIVE_FAILURES,
   MAX_STEPS,
+  MAX_TOTAL_FAILURES,
   buildTurnState,
   callSignature,
   duplicateResult,
+  failedExchanges,
   fallbackAnswer,
   planCalls,
+  shouldBrake,
+  skippedResult,
   toolFailed,
   type ToolCall,
   type ToolExchange,
@@ -93,6 +98,16 @@ describe('buildTurnState', () => {
     expect(state.ran).toHaveLength(2)
     expect(state.cardIds).toHaveLength(6)
   })
+
+  it('separates the dead ends from the results', () => {
+    const exchanges: ToolExchange[] = [
+      { id: '1', name: 'ok', args: {}, data: { rows: [] }, summary: 'تم' },
+      { id: '2', name: 'bad', args: {}, data: { error: 'مش موجود' }, summary: 'مش موجود' },
+    ]
+    const state = buildTurnState(1, MAX_STEPS, exchanges, [])
+    expect(state.ran).toHaveLength(2)
+    expect(state.failed.map((entry) => entry.name)).toEqual(['bad'])
+  })
 })
 
 describe('fallbackAnswer', () => {
@@ -113,5 +128,51 @@ describe('fallbackAnswer', () => {
 
   it('asks for context when nothing ran', () => {
     expect(fallbackAnswer([])).toContain('توضيح')
+  })
+
+  it('prefers real findings over error messages', () => {
+    const exchanges: ToolExchange[] = [
+      { id: '1', name: 'query_metrics', args: {}, data: { revenue: 4200 }, summary: 'المبيعات 4200' },
+      { id: '2', name: 'product_price', args: {}, data: { error: 'الصنف مش موجود' }, summary: 'الصنف مش موجود' },
+    ]
+    const text = fallbackAnswer(exchanges)
+    expect(text).toContain('4200')
+    expect(text).not.toContain('مش موجود')
+  })
+})
+
+describe('skippedResult', () => {
+  it('tells the model a budget skip is not a duplicate', () => {
+    const result = skippedResult('budget', undefined)
+    expect(result.data).toEqual({ skipped: true, reason: 'budget' })
+    expect(result.summary).toContain('جاوب من النتائج')
+    expect(result.summary).not.toContain('قبل كده')
+  })
+
+  it('still reuses the earlier summary for a duplicate', () => {
+    const previous: ToolExchange = { id: '1', name: 'x', args: {}, data: {}, summary: 'المبيعات 4200' }
+    expect(skippedResult('duplicate', previous).summary).toContain('4200')
+  })
+})
+
+describe('shouldBrake', () => {
+  it('stops after two failures in a row', () => {
+    expect(shouldBrake(MAX_CONSECUTIVE_FAILURES, 2)).toBe(true)
+    expect(shouldBrake(1, 1)).toBe(false)
+  })
+
+  it('stops a model that fails once every step', () => {
+    // Never trips the consecutive brake, but six failures is a dead turn.
+    expect(shouldBrake(1, MAX_TOTAL_FAILURES)).toBe(true)
+  })
+})
+
+describe('failedExchanges', () => {
+  it('returns only the calls the tools rejected', () => {
+    const exchanges: ToolExchange[] = [
+      { id: '1', name: 'ok', args: {}, data: { rows: [] }, summary: 'تم' },
+      { id: '2', name: 'bad', args: {}, data: { error: 'مش موجود' }, summary: 'مش موجود' },
+    ]
+    expect(failedExchanges(exchanges).map((entry) => entry.name)).toEqual(['bad'])
   })
 })

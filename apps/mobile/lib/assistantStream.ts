@@ -23,7 +23,15 @@ export interface StreamDonePayload {
 export interface StreamHandlers {
   /** A tool started running, e.g. `inventory_status` → «بيراجع المخزون…». */
   onStatus?: (tool: string) => void;
+  /** A delta of the answer itself, as the model writes it. */
   onText?: (delta: string) => void;
+  /**
+   * The final, guarded answer. Sent after the streamed draft and replaces it —
+   * a streamed figure the server's guard rejected must not stay on screen.
+   */
+  onFinalText?: (text: string) => void;
+  /** A delta of the model's reasoning, shown before the answer. */
+  onThinking?: (delta: string) => void;
   onDone?: (payload: StreamDonePayload) => void;
   onError?: (err: { code: string; message: string }) => void;
 }
@@ -108,7 +116,17 @@ export async function streamChat(args: StreamArgs, handlers: StreamHandlers): Pr
         if (typeof data?.tool === 'string') handlers.onStatus?.(data.tool);
         break;
       case 'text':
-        if (typeof data?.d === 'string' && data.d) handlers.onText?.(data.d);
+        if (typeof data?.d === 'string' && data.d) {
+          // `replace` marks the server's authoritative answer: the streamed
+          // draft is discarded rather than extended.
+          if (data.replace === true) handlers.onFinalText?.(data.d);
+          else handlers.onText?.(data.d);
+        }
+        break;
+      case 'thinking':
+        // Its own event so the screen can show it above the answer and fold it
+        // away the moment real text starts.
+        if (typeof data?.d === 'string' && data.d) handlers.onThinking?.(data.d);
         break;
       case 'done':
         handlers.onDone?.({

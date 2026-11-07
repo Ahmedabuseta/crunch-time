@@ -29,6 +29,13 @@ export interface TurnTrace {
   degraded: boolean
   /** Numbers the answer carried that no tool returned. */
   unknownNumbers: string[]
+  /** Chars of reasoning the model produced — 0 means the provider hid it. */
+  reasoningChars: number
+  /** Time to the first token. Separates "slow model" from "slow tools". */
+  firstTokenMs: number | null
+  /** Reviewer verdicts that changed the turn, for tuning the review prompt. */
+  steers: number
+  blocks: number
 }
 
 /**

@@ -28,6 +28,7 @@ const state = (overrides: Partial<Parameters<typeof buildSystemPrompt>[0]['state
     { name: 'query_metrics', summary: 'إجمالي المبيعات 4,200' },
     { name: 'top_items', summary: 'أعلى صنف: سجق' },
   ],
+  failed: [],
   cardIds: ['card-0'],
   ...overrides,
 })
@@ -84,6 +85,29 @@ describe('system prompt', () => {
     expect(system).toContain('سأل عن أسعار السجق')
   })
 
+  it('names the turn dead ends so the model stops re-trying them', () => {
+    const system = buildSystemPrompt({
+      facts,
+      state: state({
+        failed: [{ name: 'product_price', summary: 'الصنف مش موجود' }],
+      }),
+      tools: [tool('product_price')],
+      followupAllowed: true,
+    })
+    expect(system).toContain('طرق مسدودة')
+    expect(system).toContain('product_price فشلت')
+  })
+
+  it('omits the dead-end section when every call succeeded', () => {
+    const system = buildSystemPrompt({
+      facts,
+      state: state(),
+      tools: [tool('product_price')],
+      followupAllowed: true,
+    })
+    expect(system).not.toContain('طرق مسدودة')
+  })
+
   it('stays under a small-model budget with twelve tools', () => {
     const tools = Array.from({ length: 12 }, (_, index) => tool(`tool_${index}`))
     const system = buildSystemPrompt({ facts, state: state(), tools, followupAllowed: true })
@@ -100,5 +124,57 @@ describe('system prompt', () => {
     })
     expect(without).not.toContain('## التعديلات المتسلسلة')
     expect(withPlan).toContain('## التعديلات المتسلسلة')
+  })
+
+  it('renders the schema only when SQL is callable', () => {
+    const digest = '- orders: id, status, total'
+    const withSql = buildSystemPrompt({
+      facts,
+      state: state(),
+      tools: [tool('query_database')],
+      followupAllowed: true,
+      schema: digest,
+    })
+    const withoutSql = buildSystemPrompt({
+      facts,
+      state: state(),
+      tools: [tool('product_price')],
+      followupAllowed: true,
+      schema: digest,
+    })
+    expect(withSql).toContain('## مخطط قاعدة البيانات')
+    expect(withSql).toContain('orders: id, status, total')
+    // Every other turn must not pay the tokens for a digest it cannot use.
+    expect(withoutSql).not.toContain('## مخطط قاعدة البيانات')
+  })
+
+  it('renders the reviewer note last, only when given', () => {
+    const steered = buildSystemPrompt({
+      facts,
+      state: state(),
+      tools: [tool('product_price')],
+      followupAllowed: true,
+      steer: 'متجربش تاني — جاوب من اللي عندك',
+    })
+    expect(steered).toContain('## ملاحظة المراجع')
+    expect(steered).toContain('متجربش تاني')
+    // Last: the freshest instruction a small model will read.
+    expect(steered.trimEnd().endsWith('جاوب من اللي عندك')).toBe(true)
+
+    const plain = buildSystemPrompt({ facts, state: state(), tools: [tool('product_price')], followupAllowed: true })
+    expect(plain).not.toContain('## ملاحظة المراجع')
+  })
+
+  it('stays under a small-model budget with twelve tools, schema and a steer', () => {
+    const tools = Array.from({ length: 12 }, (_, index) => tool(`tool_${index}`))
+    const system = buildSystemPrompt({
+      facts,
+      state: state(),
+      tools: [...tools, tool('query_database')],
+      followupAllowed: true,
+      schema: '- orders: id, status, total\n- products: id, name, price',
+      steer: 'جاوب من اللي عندك',
+    })
+    expect(system.length).toBeLessThan(13_500)
   })
 })

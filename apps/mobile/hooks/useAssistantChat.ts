@@ -24,6 +24,17 @@ const HISTORY_LIMIT = 50;
 const STREAM_FLUSH_MS = 90;
 
 /**
+ * The thinking line is coalesced harder than the answer.
+ *
+ * Reasoning arrives faster and matters less: a 120 ms cadence reads as a live
+ * ticker without re-rendering the footer ten times a second. It is also capped —
+ * only the newest part of a long chain of thought is worth showing, and keeping
+ * the tail means the cap costs the current thought, not the useful end of it.
+ */
+const THINKING_FLUSH_MS = 120;
+const MAX_THINKING_CHARS = 600;
+
+/**
  * Tool name → the line shown while it runs. The server sends the tool id, never
  * prose, so the wording stays the phone's.
  */
@@ -113,6 +124,8 @@ export function useAssistantChat() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [streaming, setStreaming] = useState(false);
   const [partial, setPartial] = useState('');
+  const [thinking, setThinking] = useState('');
+  const [thinkingOpen, setThinkingOpen] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loadingHistory, setLoadingHistory] = useState(true);
@@ -143,6 +156,8 @@ export function useAssistantChat() {
     }
     setStreaming(true);
     setPartial('');
+    setThinking('');
+    setThinkingOpen(false);
     setStatus(null);
     setError(null);
 
@@ -151,6 +166,17 @@ export function useAssistantChat() {
     let content = '';
     let settled = false;
     let flushTimer: ReturnType<typeof setTimeout> | null = null;
+
+    // The thinking buffer, its own timer, and whether the answer has begun —
+    // once it has, the reasoning folds away and never reopens by itself.
+    let thought = '';
+    let thoughtTimer: ReturnType<typeof setTimeout> | null = null;
+    let answerStarted = false;
+
+    const flushThought = () => {
+      thoughtTimer = null;
+      setThinking(thought.length > MAX_THINKING_CHARS ? thought.slice(-MAX_THINKING_CHARS) : thought);
+    };
 
     try {
       await streamChat(
@@ -163,8 +189,21 @@ export function useAssistantChat() {
         },
         {
           onStatus: (tool) => setStatus(statusForTool(tool)),
+          onThinking: (delta) => {
+            thought += delta;
+            // Coalesce exactly like the answer text: schedule one flush, let
+            // every delta in the window extend the buffer.
+            if (thoughtTimer) return;
+            thoughtTimer = setTimeout(flushThought, THINKING_FLUSH_MS);
+          },
           onText: (delta) => {
             content += delta;
+            // The first real word of the answer is the signal to stop showing
+            // the reasoning: the owner can open it again if they want it.
+            if (!answerStarted) {
+              answerStarted = true;
+              setThinkingOpen(false);
+            }
             // Coalesce: the first delta of a window schedules the flush, the
             // rest just extend the buffer.
             if (flushTimer) return;
@@ -172,6 +211,18 @@ export function useAssistantChat() {
               flushTimer = null;
               setPartial(content);
             }, STREAM_FLUSH_MS);
+          },
+          onFinalText: (text) => {
+            // The server's guarded answer: drop the streamed draft entirely, so
+            // a figure it rejected never survives into the transcript.
+            content = text;
+            // A flush scheduled by the last delta would re-apply the draft on
+            // the next tick; cancel it before publishing the real answer.
+            if (flushTimer) {
+              clearTimeout(flushTimer);
+              flushTimer = null;
+            }
+            setPartial(text);
           },
           onDone: (payload) => {
             settled = true;
@@ -201,6 +252,10 @@ export function useAssistantChat() {
         clearTimeout(flushTimer);
         flushTimer = null;
       }
+      if (thoughtTimer) {
+        clearTimeout(thoughtTimer);
+        thoughtTimer = null;
+      }
       // A turn that ended without `done` — a dropped socket, the server's own
       // error event — still holds text worth keeping, so it lands as a message
       // instead of vanishing. An aborted turn is deliberately dropped.
@@ -223,6 +278,8 @@ export function useAssistantChat() {
         setStreaming(false);
         setStatus(null);
         setPartial('');
+        setThinking('');
+        setThinkingOpen(false);
       }
     }
   }, []);
@@ -254,6 +311,8 @@ export function useAssistantChat() {
   }, [messages, run]);
 
   const dismissError = useCallback(() => setError(null), []);
+
+  const toggleThinking = useCallback(() => setThinkingOpen((open) => !open), []);
 
   const abort = useCallback(() => {
     activeRef.current?.abort();
@@ -363,6 +422,8 @@ export function useAssistantChat() {
     // the screen is reset here.
     setStreaming(false);
     setPartial('');
+    setThinking('');
+    setThinkingOpen(false);
     setStatus(null);
     try {
       await api.assistant.clearHistory();
@@ -377,6 +438,9 @@ export function useAssistantChat() {
     messages,
     streaming,
     partial,
+    thinking,
+    thinkingOpen,
+    toggleThinking,
     status,
     error,
     loadingHistory,

@@ -4,6 +4,7 @@ import { AssistantComposer } from '@/components/app/AssistantComposer';
 import { AssistantConfigSheet } from '@/components/app/AssistantConfigSheet';
 import { ChatBubble } from '@/components/app/ChatBubble';
 import { ChatCardView } from '@/components/app/ChatCardView';
+import { ThinkingPanel } from '@/components/app/ThinkingPanel';
 import { AvoidKeyboard } from '@/components/ui/avoid-keyboard';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Spinner } from '@/components/ui/spinner';
@@ -75,6 +76,9 @@ export default function AssistantScreen() {
     messages,
     streaming,
     partial,
+    thinking,
+    thinkingOpen,
+    toggleThinking,
     status,
     error,
     loadingHistory,
@@ -290,7 +294,17 @@ export default function AssistantScreen() {
             <EmptyState loading={loadingHistory} onAsk={ask} disabled={streaming} />
           ) : null
         }
-        ListFooterComponent={streaming ? <PendingTurn partial={partial} status={status} /> : null}
+        ListFooterComponent={
+          streaming ? (
+            <PendingTurn
+              partial={partial}
+              status={status}
+              thinking={thinking}
+              thinkingOpen={thinkingOpen}
+              onToggleThinking={toggleThinking}
+            />
+          ) : null
+        }
       />
 
       {error ? (
@@ -443,21 +457,50 @@ const MessageRow = React.memo(function MessageRow({
   );
 });
 
-/** The line shown while the assistant works and has not written anything yet. */
-function PendingTurn({ partial, status }: { partial: string; status: string | null }) {
+/**
+ * The line shown while the assistant works.
+ *
+ * Order matters: the reasoning comes first, the answer bubble second. Once text
+ * exists the panel folds itself away, so the two are rarely on screen together —
+ * and when they are, the answer is the thing being read.
+ */
+const PendingTurn = React.memo(function PendingTurn({
+  partial,
+  status,
+  thinking,
+  thinkingOpen,
+  onToggleThinking,
+}: {
+  partial: string;
+  status: string | null;
+  thinking: string;
+  thinkingOpen: boolean;
+  onToggleThinking: () => void;
+}) {
   const muted = useColor('mutedForeground');
 
-  if (partial) return <ChatBubble message={{ role: 'assistant', content: partial }} />;
-
   return (
-    <View style={styles.pending} accessibilityLiveRegion='polite'>
-      <Spinner size='sm' variant='dots' color={muted} />
-      <Text variant='caption' style={{ color: muted }}>
-        {status ?? 'بيفكر…'}
-      </Text>
+    <View style={{ gap: 8 }}>
+      <ThinkingPanel
+        text={thinking}
+        open={thinkingOpen}
+        onToggle={onToggleThinking}
+        active={!partial}
+      />
+
+      {partial ? (
+        <ChatBubble message={{ role: 'assistant', content: partial }} />
+      ) : (
+        <View style={styles.pending} accessibilityLiveRegion='polite'>
+          <Spinner size='sm' variant='dots' color={muted} />
+          <Text variant='caption' style={{ color: muted }}>
+            {status ?? 'بيفكر…'}
+          </Text>
+        </View>
+      )}
     </View>
   );
-}
+});
 
 /**
  * A refused or failed turn. Dismissible, and retryable when there is a question

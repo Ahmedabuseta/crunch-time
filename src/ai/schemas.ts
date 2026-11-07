@@ -96,6 +96,20 @@ export const ToolOutputSchema = z.object({
 export type ToolOutput = z.infer<typeof ToolOutputSchema>
 
 /**
+ * What the step reviewer may answer.
+ *
+ * Deliberately three states, not a score: the workflow can act on a verdict, but
+ * not on a number. `note` is the only prose, and it is Arabic so the next prompt
+ * can paste it in unchanged.
+ */
+export const ReviewSchema = z.object({
+  verdict: z.enum(['ok', 'steer', 'block']),
+  note: z.string().max(280).optional(),
+})
+
+export type Review = z.infer<typeof ReviewSchema>
+
+/**
  * Keeps a model-chosen card list honest: unknown ids disappear, duplicates
  * collapse, and the order the model asked for is preserved.
  */

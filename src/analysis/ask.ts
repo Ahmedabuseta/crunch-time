@@ -94,7 +94,7 @@ export interface AskInput {
 
 const SENSITIVE_COLUMN = /pin|hash|secret|token|api_?key|password|cipher/i
 
-const TABLE_NOTES: Record<string, string> = {
+export const TABLE_NOTES: Record<string, string> = {
   orders: 'فواتير البيع (صف لكل فاتورة). status: COMPLETED|REFUNDED|CANCELLED. order_type: delivery|dine-in|takeaway. payment_type: cash|visa|card|wallet. created_at نص ISO UTC. total الإجمالي النهائي، discount_amount خصم الفاتورة، delivery_fee رسوم التوصيل.',
   order_items: 'سطور الفاتورة. صافي السطر = quantity × unit_price − item_discount. product_id يربط المنتج. خصم الفاتورة الإجمالي على orders مش هنا.',
   products: 'المنيو: price، cost_price (من الوصفة)، category_id، active. cost_price = 0 معناها التكلفة غير محددة.',
@@ -124,7 +124,7 @@ const TABLE_NOTES: Record<string, string> = {
   settings: 'إعدادات المتجر؛ متعرضش أي مفاتيح أو أسرار.',
 }
 
-const COLUMN_NOTES: Record<string, string> = {
+export const COLUMN_NOTES: Record<string, string> = {
   'orders.status': 'COMPLETED|REFUNDED|CANCELLED',
   'orders.order_type': 'delivery|dine-in|takeaway',
   'orders.payment_type': 'cash|visa|card|wallet',

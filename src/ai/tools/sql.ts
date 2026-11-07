@@ -4,6 +4,7 @@ import * as analysis from '../../backend/analysis'
 import { tableCard } from '../cards'
 import { asOwnerAsync } from '../privileges'
 import type { ChatCard, ToolOutput } from '../schemas'
+import { tableDigest, tableList } from './schema-digest'
 import { toolOutput, type ToolDef } from './types'
 
 function cellText(value: unknown): string {
@@ -53,6 +54,39 @@ export const SQL_TOOLS: ToolDef[] = [
         const message = error instanceof Error ? error.message : 'فشل الاستعلام'
         return toolOutput({ error: message }, `مش قادر أنفّذ الاستعلام: ${message}`.slice(0, 300))
       }
+    },
+  },
+  {
+    name: 'db_schema',
+    description:
+      'اعرض شكل الجداول قبل ما تكتب SQL: من غير اسم بترجع قائمة الجداول وعدد صفوفها، وباسم جدول بترجع أعمدته وأنواعها والمفاتيح الأجنبية. استخدمها لو «مخطط قاعدة البيانات» اللي في البرومبت مش كفاية.',
+    write: false,
+    schema: z.object({
+      table: z.string().optional().describe('اسم الجدول. سيبها فاضية لقائمة كل الجداول.'),
+    }),
+    async run(args): Promise<ToolOutput> {
+      const name = String(args.table ?? '').trim()
+
+      if (!name) {
+        const tables = tableList()
+        if (tables.length === 0) {
+          return toolOutput({ error: 'تعذّر قراءة المخطط' }, 'مش قادر أقرا المخطط دلوقتي')
+        }
+        return toolOutput(
+          { tables },
+          `${tables.length} جدول — أكبرهم ${tables[0]?.name ?? ''}`,
+        )
+      }
+
+      const digest = tableDigest(name)
+      if (!digest) {
+        const names = tableList().map((entry) => entry.name)
+        return toolOutput(
+          { error: `مفيش جدول اسمه ${name}`, tables: names },
+          `مفيش جدول اسمه ${name}`,
+        )
+      }
+      return toolOutput({ table: name, ddl: digest }, `شكل جدول ${name}`)
     },
   },
 ]

@@ -169,8 +169,20 @@ function respondStream(res: import('node:http').ServerResponse, script: FakeTurn
 
   for (const turn of script) {
     if (turn.kind === 'tool') {
+      // Reasoning is streamed before the call, the way Groq and DeepSeek send
+      // it, so the thinking event can be asserted against the answer event.
+      if (turn.reasoning) {
+        for (const piece of pieces(turn.reasoning)) {
+          write(chunk({ reasoning_content: piece }))
+        }
+      }
       write(chunk({ role: 'assistant', tool_calls: [{ index: 0, id: 'call-1', type: 'function', function: { name: turn.name, arguments: '' } }] }))
-      write(chunk({ tool_calls: [{ index: 0, function: { arguments: JSON.stringify(turn.args) } }] }))
+      // The arguments arrive in pieces, so a live bubble can be driven from
+      // `tool-input-delta` rather than only from the finished call.
+      const args = JSON.stringify(turn.args)
+      for (const piece of pieces(args)) {
+        write(chunk({ tool_calls: [{ index: 0, function: { arguments: piece } }] }))
+      }
       write(chunk({}, 'tool_calls', { prompt_tokens: 20, completion_tokens: 8, total_tokens: 28 }))
       continue
     }

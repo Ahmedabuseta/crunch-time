@@ -11,13 +11,15 @@ import {
   loopSection,
   outputSection,
   repairSection,
+  schemaSection,
   sequenceSection,
   stateSection,
+  steerSection,
   summarySection,
   type TurnState,
 } from './turn'
 
-export const PROMPT_VERSION = '1.0.0'
+export const PROMPT_VERSION = '1.1.0'
 
 export interface TurnFacts extends IdentityFacts {
   /** Folded one-liner from the stored thread summary, when there is one. */
@@ -32,6 +34,10 @@ export interface PromptContext {
   followupAllowed: boolean
   /** Numbers the previous answer invented; drives one repair round. */
   repair?: string[]
+  /** The reviewer asked the model to change course. Rendered last. */
+  steer?: string
+  /** Bounded DDL digest, only when `query_database` is exposed this step. */
+  schema?: string
 }
 
 export function buildSystemPrompt(ctx: PromptContext): string {
@@ -43,6 +49,12 @@ export function buildSystemPrompt(ctx: PromptContext): string {
     toolGuideSection(ctx.tools),
   ]
 
+  // The digest costs a few hundred tokens, so it only rides along on the steps
+  // where the model can actually run SQL.
+  if (ctx.schema && ctx.tools.some((tool) => tool.name === 'query_database')) {
+    sections.push(schemaSection(ctx.schema))
+  }
+
   if (ctx.tools.some((tool) => tool.name === 'propose_actions')) sections.push(sequenceSection())
 
   sections.push(outputSection(ctx.followupAllowed))
@@ -51,6 +63,9 @@ export function buildSystemPrompt(ctx: PromptContext): string {
   if (ctx.facts.conversationSummary?.trim()) sections.push(summarySection(ctx.facts.conversationSummary))
 
   sections.push(toneExamples())
+
+  // Last, so it is the freshest instruction in the prompt.
+  if (ctx.steer?.trim()) sections.push(steerSection(ctx.steer))
 
   return sections.map((lines) => lines.join('\n')).join('\n\n')
 }

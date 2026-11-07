@@ -6,7 +6,13 @@
 // the answer, so reopening the screen shows the finished turn.
 export type TurnEvent =
   | { type: 'status'; tool: string }
-  | { type: 'text'; delta: string }
+  /**
+   * Answer text. A plain `delta` appends; `replace` resets the bubble to `d`,
+   * which is how the final, guarded answer overrides a streamed draft.
+   */
+  | { type: 'text'; delta: string; replace?: boolean }
+  /** The model's reasoning, token by token. */
+  | { type: 'thinking'; delta: string }
   | { type: 'done'; payload: unknown }
   | { type: 'error'; code: string; message: string }
 
@@ -47,8 +53,26 @@ export function publishText(turnId: string, delta: string): void {
   publish(turnId, { type: 'text', delta })
 }
 
+/**
+ * Publishes the authoritative answer, replacing whatever was streamed.
+ *
+ * The streamed draft is the model's first attempt; the number guard may reject
+ * it and the workflow then persists a repaired answer. Sending that as a
+ * replacement — rather than appending — is what keeps an invented figure out of
+ * the transcript while still giving the owner a live bubble.
+ */
+export function publishFinalText(turnId: string, text: string): void {
+  if (!text) return
+  publish(turnId, { type: 'text', delta: text, replace: true })
+}
+
 export function publishStatus(turnId: string, tool: string): void {
   publish(turnId, { type: 'status', tool })
+}
+
+export function publishThinking(turnId: string, delta: string): void {
+  if (!delta) return
+  publish(turnId, { type: 'thinking', delta })
 }
 
 export function publishDone(turnId: string, payload: unknown): void {

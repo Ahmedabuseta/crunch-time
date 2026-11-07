@@ -3,21 +3,23 @@
 // The workflow owns control flow and nothing else. Every model call, every
 // tool run and every database write happens here, which is what lets Temporal
 // replay a turn deterministically and show it in the UI with real durations.
-import { Output, streamText, tool } from 'ai'
+import { generateText, Output, streamText, tool } from 'ai'
 import { ApplicationFailure } from '@temporalio/activity'
-import { getAiConfigWithKey } from '../config'
+import { getAiConfigWithKey, getAiConfig } from '../config'
 import { buildSystemPrompt, PROMPT_VERSION, type TurnFacts } from '../prompt'
 import { ALL_TOOLS, getTool, redact } from '../tools'
 import { selectTools } from '../tools/select'
-import { buildTurnState, type ToolCall, type ToolExchange } from '../loop'
+import { schemaDigest } from '../tools/schema-digest'
+import { appendedDelta, partialStringField } from '../partial-json'
+import { buildTurnState, deterministicReview, MAX_REASONING_CHARS, reviewWorthCalling, toolFailed, type ReviewVerdict, type ToolCall, type ToolExchange } from '../loop'
 import { createProvider, type ProviderFactory } from '../provider'
 import { appendTrace, type TurnTrace } from '../trace'
 import { unknownNumbers } from '../guard/numbers'
-import { resolveCards, AssistantReplySchema, ToolOutputSchema, type AssistantReply, type ChatCard } from '../schemas'
-import { appendMessage, getSummary, modelHistory } from '../history'
-import { recordUsage } from '../guard/budget'
+import { resolveCards, AssistantReplySchema, ReviewSchema, ToolOutputSchema, type AssistantReply, type ChatCard } from '../schemas'
+import { appendMessage, compactThread, getSummary, modelHistory } from '../history'
+import { recordUsage, todaySnapshot, withinBudget } from '../guard/budget'
 import { getSavedReply } from '../guard/replies'
-import { publishStatus, publishText } from '../streams'
+import { publishFinalText, publishStatus, publishText, publishThinking } from '../streams'
 import { getDb } from '../../db/client'
 import * as schema from '../../db/schema'
 import { eq } from 'drizzle-orm'
@@ -99,6 +101,8 @@ export interface ModelStepInput {
   forceAnswer?: boolean
   /** Numbers the previous answer invented, for the single repair round. */
   repair?: string[]
+  /** The reviewer's note for this step: change course, or answer now. */
+  steer?: string
 }
 
 export interface ModelStepCommon {
@@ -106,6 +110,10 @@ export interface ModelStepCommon {
   completionTokens: number
   promptChars: number
   promptVersion: string
+  /** Chars of reasoning the model produced, headed to the trace. */
+  reasoningChars: number
+  /** Time to the first reasoning/text token, or null when there was none. */
+  firstTokenMs: number | null
 }
 
 export type ModelStepOutput =
@@ -127,12 +135,18 @@ export async function modelStepWith(input: ModelStepInput, factory: ProviderFact
 
   const exposed = input.forceAnswer ? [] : selectTools(ALL_TOOLS, input.message, input.extraTools ?? [])
 
+  // Read once per step and only carried when SQL is on offer — see
+  // `buildSystemPrompt`, which drops it for every other step.
+  const digest = exposed.some((def) => def.name === 'query_database') ? schemaDigest() : ''
+
   const system = buildSystemPrompt({
     facts: input.facts,
     state: buildTurnState(input.step, input.maxSteps, input.exchanges, input.cardIds),
     tools: exposed,
     followupAllowed: true,
     repair: input.repair,
+    steer: input.steer,
+    schema: digest,
   })
 
   const sdkTools = input.forceAnswer
@@ -153,11 +167,28 @@ export async function modelStepWith(input: ModelStepInput, factory: ProviderFact
   const messages = buildMessages(input.history, input.exchanges)
   const base = { promptChars: system.length, promptVersion: PROMPT_VERSION }
 
-  const run = async (withOutput: boolean) => {
+  /**
+   * One provider round trip, streamed.
+   *
+   * This drives three things at once, which is why it reads `fullStream` rather
+   * than `textStream` or `toolCalls`:
+   * - `reasoning-delta` → the live thinking line.
+   * - `tool-input-delta` on the `answer` tool → the live answer bubble. The
+   *   reply arrives as that tool's arguments, so the only way to show it as it
+   *   is written is to read the argument JSON as it streams.
+   * - `tool-call` → the finished calls the workflow acts on.
+   *
+   * The published text is a *preview*: the number guard may still reject it and
+   * the workflow then persists the repaired answer instead.
+   */
+  const streamOnce = async () => {
     // The SDK replaces a provider failure that happens before the first step
-    // with a bare NoOutputGeneratedError, so the real one is kept here for the
-    // fallback in `readToolCalls`.
+    // with a bare NoOutputGeneratedError, so the real one is kept here.
     let streamError: unknown
+    const startedAt = Date.now()
+    let firstTokenMs: number | null = null
+    let reasoningChars = 0
+
     const result = streamText({
       model,
       system,
@@ -169,69 +200,101 @@ export async function modelStepWith(input: ModelStepInput, factory: ProviderFact
       onError: ({ error }) => {
         streamError = error
       },
-      ...(withOutput ? { output: Output.object({ schema: AssistantReplySchema }) } : {}),
     })
 
-    if (withOutput) {
-      // Partial objects are unvalidated by definition, so only their `text`
-      // field is used — and only to drive the live bubble. The trusted value
-      // is `result.output` below.
-      let shown = ''
-      try {
-        for await (const partial of result.partialOutputStream) {
-          const value = (partial as { text?: unknown } | undefined)?.text
-          if (typeof value !== 'string') continue
-          if (value.startsWith(shown)) {
-            publishText(input.turnId, value.slice(shown.length))
-            shown = value
-          } else if (value.length > shown.length) {
-            publishText(input.turnId, value.slice(shown.length))
-            shown = value
-          }
-        }
-      } catch {
-        // A malformed partial must not kill the step; the final output decides.
+    const calls: { toolCallId: string; toolName: string; input: unknown }[] = []
+    // Which call each streaming argument belongs to.
+    const names = new Map<string, string>()
+    let answerJson = ''
+    let answerShown = ''
+
+    for await (const part of result.fullStream) {
+      if (firstTokenMs === null && (part.type === 'text-delta' || part.type === 'reasoning-delta')) {
+        firstTokenMs = Date.now() - startedAt
       }
-      return { result, shown, plain: false, streamError: () => streamError }
+
+      switch (part.type) {
+        case 'reasoning-delta': {
+          if (reasoningChars >= MAX_REASONING_CHARS) break
+          reasoningChars += part.text.length
+          publishThinking(input.turnId, part.text)
+          break
+        }
+
+        case 'tool-input-start': {
+          // Parts carry the exchange id as `id`, not `toolCallId`.
+          names.set(part.id, part.toolName)
+          if (part.toolName === ANSWER_TOOL) {
+            answerJson = ''
+            answerShown = ''
+          }
+          break
+        }
+
+        case 'tool-input-delta': {
+          if (names.get(part.id) !== ANSWER_TOOL) break
+          answerJson += part.delta
+          const text = partialStringField(answerJson, 'text')
+          const delta = appendedDelta(answerShown, text)
+          if (delta) {
+            publishText(input.turnId, delta)
+            answerShown = text
+          }
+          break
+        }
+
+        case 'tool-call': {
+          calls.push({
+            toolCallId: part.toolCallId,
+            toolName: part.toolName,
+            input: (part as { input?: unknown }).input,
+          })
+          break
+        }
+
+        case 'error': {
+          streamError = (part as { error?: unknown }).error ?? streamError
+          break
+        }
+
+        default:
+          // `text-delta` is not used: the reply is the `answer` call, and the
+          // provider's own prose for a tool-using step is not shown.
+          break
+      }
     }
 
-    let shown = ''
-    for await (const delta of result.textStream) {
-      shown += delta
-      // Buffered on purpose: this path serves providers that cannot take a
-      // structured output, so the stream is the model's raw JSON. It is
-      // published below once parsed, never word by word into the bubble.
+    return {
+      calls,
+      result,
+      streamError: () => streamError,
+      firstTokenMs,
+      reasoningChars,
     }
-    return { result, shown, plain: true, streamError: () => streamError }
   }
 
-  let attempt: Awaited<ReturnType<typeof run>>
+  let attempt: Awaited<ReturnType<typeof streamOnce>>
   try {
-    // No `response_format`: the answer is a tool call now, so asking a provider
-    // to also constrain the *text* buys nothing and Groq rejects the pair.
-    attempt = await run(false)
+    attempt = await streamOnce()
   } catch (err: any) {
     throw providerFailure(err)
   }
 
   /**
-   * Reads the step's tool calls. Groq refuses a JSON `response_format` on a
-   * request that also carries tools, and the SDK surfaces that 400 as a bare
-   * NoOutputGeneratedError. Retrying once without the structured output keeps
-   * the tool loop alive; the answer then falls back to the streamed prose.
+   * A provider that rejects the request shape (Groq refuses a JSON
+   * `response_format` alongside tools) surfaces as a bare
+   * NoOutputGeneratedError. One retry keeps the loop alive; it streams the same
+   * way, so the live view survives the fallback.
    */
-  const readToolCalls = async () => {
-    try {
-      return (await attempt.result.toolCalls) ?? []
-    } catch (err: any) {
-      const cause = attempt.streamError() ?? err
-      if (!isStructuredOutputUnsupported(cause)) throw providerFailure(cause)
-      attempt = await run(false)
-      return (await attempt.result.toolCalls) ?? []
-    }
+  const readCalls = async () => {
+    if (attempt.calls.length > 0 || !attempt.streamError()) return attempt.calls
+    const cause = attempt.streamError()!
+    if (!isStructuredOutputUnsupported(cause)) throw providerFailure(cause)
+    attempt = await streamOnce()
+    return attempt.calls
   }
 
-  const calls = await readToolCalls()
+  const calls = await readCalls()
   const dataCalls = calls.filter((call) => call.toolName !== ANSWER_TOOL)
 
   if (dataCalls.length > 0) {
@@ -240,6 +303,8 @@ export async function modelStepWith(input: ModelStepInput, factory: ProviderFact
       kind: 'tool-calls',
       calls: dataCalls.map((call) => ({ id: call.toolCallId, name: call.toolName, args: call.input })),
       ...usage,
+      reasoningChars: attempt.reasoningChars,
+      firstTokenMs: attempt.firstTokenMs,
       ...base,
     }
   }
@@ -299,13 +364,16 @@ export async function modelStepWith(input: ModelStepInput, factory: ProviderFact
     ? readAnswer(finalCall.input)
     : { text: getSavedReply('needs_context'), cards: [], followups: [] }
 
-  // The text is not published here: the workflow may still reject invented
-  // numbers and repair it. `persistTurn` publishes the single final answer.
+  // The live bubble was already driven by the argument stream above; nothing is
+  // published here. The workflow may still reject invented numbers and repair
+  // it, and `persistTurn` publishes the one answer that survives.
   return {
     kind: 'answer',
     reply,
     promptTokens,
     completionTokens,
+    reasoningChars: attempt.reasoningChars,
+    firstTokenMs: attempt.firstTokenMs,
     degraded: finalCall === null,
     ...base,
   }
@@ -517,6 +585,133 @@ export async function runTools(input: RunToolsInput): Promise<RunToolsOutput> {
   return { results }
 }
 
+// ─── Step review ───────────────────────────────────────────
+
+export interface ReviewStepInput {
+  turnId: string
+  /** The owner's question, for subject matching and for the reviewer's prompt. */
+  message: string
+  /** Everything the turn has already run, so a repeat is visible as a repeat. */
+  exchanges: ToolExchange[]
+  /** The calls this step made. */
+  stepCalls: ToolCall[]
+  /**
+   * Results of this step. Empty when the review ran in parallel with the tools —
+   * the deterministic checks that need results then wait for the next step.
+   */
+  stepResults: { name: string; data: unknown; summary?: string }[]
+  remainingSteps: number
+}
+
+export interface ReviewStepOutput {
+  review: ReviewVerdict
+  /** True when a model call was spent, for the trace and the budget. */
+  usedModel: boolean
+  promptTokens: number
+  completionTokens: number
+}
+
+/**
+ * Checks one step and says whether the turn should change course.
+ *
+ * Runs beside `runTools`, never after it: the reviewer looks at the *calls*
+ * while the tools execute, so a bad step is caught without adding latency to
+ * the turn. The deterministic half (a write about the wrong subject, a step
+ * where everything failed, a repeated dead end) always runs and costs nothing;
+ * the model half is skipped when the owner's budget is nearly gone.
+ */
+export async function reviewStep(input: ReviewStepInput): Promise<ReviewStepOutput> {
+  const failedThisTurn = input.exchanges.filter((exchange) => toolFailed({ data: exchange.data }))
+
+  const deterministic = deterministicReview({
+    message: input.message,
+    stepCalls: input.stepCalls,
+    stepResults: input.stepResults,
+    failedThisTurn,
+  })
+  if (deterministic) {
+    return { review: deterministic, usedModel: false, promptTokens: 0, completionTokens: 0 }
+  }
+
+  const config = (() => {
+    try {
+      return getAiConfig()
+    } catch {
+      return null
+    }
+  })()
+  if (!config) return { review: { verdict: 'ok' }, usedModel: false, promptTokens: 0, completionTokens: 0 }
+
+  const usage = todaySnapshot(config.dailyTokenLimit)
+  if (!reviewWorthCalling({
+    stepResults: input.stepCalls.length,
+    remaining: usage.remaining,
+    limit: config.dailyTokenLimit,
+  })) {
+    return { review: { verdict: 'ok' }, usedModel: false, promptTokens: 0, completionTokens: 0 }
+  }
+
+  try {
+    const withKey = getAiConfigWithKey()
+    const model = createProvider({
+      provider: withKey.provider,
+      baseUrl: withKey.baseUrl,
+      apiKey: withKey.apiKey,
+    })(withKey.model)
+
+    const done = input.exchanges
+      .slice(-4)
+      .map((exchange) => `- ${exchange.name}: ${String(exchange.summary ?? '').slice(0, 160)}`)
+      .join('\n')
+    const failed = failedThisTurn
+      .slice(-4)
+      .map((exchange) => `- ${exchange.name} فشلت: ${String(exchange.summary ?? '').slice(0, 120)}`)
+      .join('\n')
+
+    const result = await generateText({
+      model,
+      system: [
+        'إنت مراجع خطوة واحدة في مساعد كاشير مطعم. مهمتك: تقرر لو الخطوة دي ماشية صح ولا محتاجة تعديل.',
+        'رد بـ ok لو الخطوات منطقية ومتقدّمة. رد بـ steer لو لازم تغيّر الطريقة أو تجرب مدخلات تانية. رد بـ block لو الخطوة ضايعة ومفيش فايدة من الاستمرار.',
+        'ملاحظتك بالعربي المصري، جملة واحدة، أقل من 200 حرف. متكتبش أرقام.',
+      ].join('\n'),
+      prompt: [
+        `سؤال صاحب المطعم: ${input.message.slice(0, 300)}`,
+        `فاضل ${input.remainingSteps} خطوة.`,
+        input.stepCalls.length > 0
+          ? `أدوات الخطوة دي: ${input.stepCalls.map((call) => call.name).join(', ')}`
+          : 'الخطوة دي مجرتش أدوات.',
+        done ? `اللي اتنفّذ قبل كده:\n${done}` : '',
+        failed ? `طرق مسدودة:\n${failed}` : '',
+      ].filter(Boolean).join('\n\n'),
+      output: Output.object({ schema: ReviewSchema }),
+      maxOutputTokens: 220,
+      maxRetries: 1,
+    })
+
+    const parsed = ReviewSchema.safeParse(result.output)
+    const promptTokens = Number(result.usage?.inputTokens ?? 0) || 0
+    const completionTokens = Number(result.usage?.outputTokens ?? 0) || 0
+    recordOrIgnore(promptTokens, completionTokens)
+
+    if (!parsed.success) {
+      return { review: { verdict: 'ok' }, usedModel: true, promptTokens, completionTokens }
+    }
+    if (parsed.data.verdict === 'ok' || !parsed.data.note?.trim()) {
+      return { review: { verdict: 'ok' }, usedModel: true, promptTokens, completionTokens }
+    }
+    return {
+      review: { verdict: parsed.data.verdict, note: parsed.data.note.trim() },
+      usedModel: true,
+      promptTokens,
+      completionTokens,
+    }
+  } catch {
+    // A reviewer that cannot be reached must never fail the turn it reviews.
+    return { review: { verdict: 'ok' }, usedModel: false, promptTokens: 0, completionTokens: 0 }
+  }
+}
+
 export interface ValidateReplyInput {
   turnId: string
   reply: AssistantReply
@@ -566,21 +761,63 @@ export interface PersistTurnInput {
   text: string
   cards: ChatCard[]
   followups: string[]
-  promptTokens: number
-  completionTokens: number
 }
 
 export async function persistTurn(input: PersistTurnInput): Promise<{ messageId: string }> {
   const message = appendMessage(input.threadId, 'assistant', input.text, input.cards, input.followups)
-  // The one publish of the turn: whatever is here is the validated answer, not
-  // a draft that a repair round or the number guard might replace.
-  publishText(input.turnId, input.text)
+  // The one publish of the turn, and it *replaces* the streamed draft: whatever
+  // is here is the validated answer, and a draft the number guard rejected must
+  // not linger in the bubble.
+  publishFinalText(input.turnId, input.text)
+  return { messageId: message.id }
+}
+
+function recordOrIgnore(promptTokens: number, completionTokens: number): void {
   try {
-    recordUsage({ promptTokens: input.promptTokens, completionTokens: input.completionTokens })
+    recordUsage({ promptTokens, completionTokens })
   } catch {
     // Usage accounting must never fail a turn.
   }
-  return { messageId: message.id }
+}
+
+/**
+ * The daily cap, asked between steps rather than only before the turn starts.
+ *
+ * `prepareTurn` refuses a turn that begins over budget, but one turn is up to
+ * eight model calls: without this check a single turn can cross the owner's cap
+ * by most of its own cost. Reads as "allowed" on any database failure.
+ */
+export async function budgetAllows(): Promise<{ allowed: boolean }> {
+  try {
+    const config = getAiConfig()
+    return { allowed: withinBudget(config.dailyTokenLimit) }
+  } catch {
+    return { allowed: true }
+  }
+}
+
+/**
+ * Charges one step's usage immediately.
+ *
+ * Recording only at `persistTurn` meant a turn that threw halfway — the case
+ * where the owner has already paid for five or six model calls — left no trace
+ * in `ai_usage` at all, so the cap under-counted exactly the failing turns.
+ */
+export async function recordStepUsage(input: {
+  promptTokens: number
+  completionTokens: number
+}): Promise<{ ok: true }> {
+  recordOrIgnore(Number(input.promptTokens) || 0, Number(input.completionTokens) || 0)
+  return { ok: true }
+}
+
+/**
+ * Folds a long thread into its summary once the window starts truncating.
+ *
+ * Separate from `persistTurn` so compaction never fails a committed answer.
+ */
+export async function compactHistory(input: { threadId: string }): Promise<{ compacted: boolean }> {
+  return compactThread(input.threadId)
 }
 
 export interface PersistTraceInput {
@@ -620,9 +857,13 @@ export const activities = {
   modelStep,
   runTool,
   runTools,
+  reviewStep,
   validateReply,
   persistTurn,
   persistTrace,
+  compactHistory,
+  budgetAllows,
+  recordStepUsage,
   applyPendingAction,
   cancelPendingAction,
   expirePendingAction,

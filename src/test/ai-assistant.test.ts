@@ -193,9 +193,13 @@ describe('tool registry', () => {
     expect(ANALYTICS_TOOLS).toHaveLength(1)
     expect(MANAGE_WRITE_TOOLS).toHaveLength(17)
     expect(ALIAS_TOOLS).toHaveLength(3)
-    // Stocktake, plan and alias-writing tools join the write set; find_tools is a read.
+    // Stocktake, plan and alias-writing tools join the write set; find_tools and
+    // db_schema are reads.
     expect(ALL_TOOLS.filter((tool) => tool.write)).toHaveLength(25)
-    expect(TOOLS.size).toBe(49)
+    expect(TOOLS.size).toBe(50)
+    // The SQL pair is one readable schema lookup plus one read-only query.
+    expect(TOOLS.has('db_schema')).toBe(true)
+    expect(TOOLS.get('db_schema')?.write).toBe(false)
   })
 
   it('gives every tool a description and a schema', () => {

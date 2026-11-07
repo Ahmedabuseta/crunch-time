@@ -10,6 +10,8 @@ import type { ToolDef } from './types'
 
 const CORE = [
   'query_database',
+  // The read-only schema reader: SQL is useless without knowing the columns.
+  'db_schema',
   'query_metrics',
   'product_price',
   'product_list',

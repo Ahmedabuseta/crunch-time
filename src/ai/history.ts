@@ -121,6 +121,32 @@ export function needsSummary(threadId: string): boolean {
 }
 
 /**
+ * Folds the oldest turns into a stored summary, once the thread is long enough.
+ *
+ * `KEEP_TURNS` already drops everything older than twenty turns from the model's
+ * window, so without this the assistant silently forgets the start of a long
+ * conversation. `cheapSummary` is deterministic and costs no tokens: it lists the
+ * questions asked, which is what a follow-up like «وإمبارح؟» needs to resolve.
+ *
+ * Called from the turn activity rather than from `persistTurn` so a failure
+ * here can never take down a turn that already produced an answer.
+ */
+export function compactThread(threadId: string): { compacted: boolean } {
+  try {
+    if (!needsSummary(threadId)) return { compacted: false }
+    const summary = cheapSummary(threadId)
+    if (!summary.trim()) return { compacted: false }
+    const rows = listMessages(threadId, 1)
+    const upto = rows[rows.length - 1]?.createdAt ?? now()
+    saveSummary(threadId, summary, upto)
+    return { compacted: true }
+  } catch {
+    // A transcript that cannot be compacted still answers; it just forgets.
+    return { compacted: false }
+  }
+}
+
+/**
  * Drops the newest assistant line. A retry re-runs the same question, so the
  * old answer has to go: otherwise the transcript (and every later history load)
  * would show two answers to one question.

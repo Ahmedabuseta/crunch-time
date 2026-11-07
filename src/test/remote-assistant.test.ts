@@ -107,11 +107,17 @@ beforeAll(async () => {
   // Turn 1 calls a data tool; turn 2 answers through the `answer` tool, which
   // is where the reply schema is enforced.
   fake = await startFakeOpenAI([
-    { kind: 'tool', name: 'sales_summary', args: {} },
+    {
+      kind: 'tool',
+      name: 'sales_summary',
+      args: {},
+      reasoning: 'السؤال عن مبيعات النهاردة، هبدأ بملخص المبيعات.',
+    },
     {
       kind: 'tool',
       name: 'answer',
       args: { text: ANSWER, cards: ['card-0'], followups: ['وإمبارح؟'] },
+      reasoning: 'عندي الأرقام، هكتب الرد.',
     },
   ])
 
@@ -167,12 +173,23 @@ suite('assistant chat over HTTP', () => {
     const events = await chat('بعت بكام النهاردة؟')
 
     const textEvents = events.filter((event) => event.event === 'text')
-    const streamed = textEvents.map((event) => JSON.parse(event.data).d as string).join('')
 
-    // The reply arrives whole inside the tool call, so there is one publish:
-    // schema enforcement replaced token streaming.
-    expect(textEvents.length).toBeGreaterThan(0)
-    expect(streamed).toBe(ANSWER)
+    // Deltas drive the live bubble, and the last one replaces them with the
+    // validated answer. Joining the appends must still reproduce the answer.
+    const appends = textEvents.filter((event) => !JSON.parse(event.data).replace)
+    const replace = textEvents[textEvents.length - 1]
+    expect(appends.length).toBeGreaterThan(1)
+    expect(appends.map((event) => JSON.parse(event.data).d as string).join('')).toBe(ANSWER)
+    expect(JSON.parse(replace.data)).toEqual({ d: ANSWER, replace: true })
+
+    // Reasoning is streamed before the answer, so the phone can show the
+    // thinking line first and fold it away when the text starts.
+    const thinkingEvents = events.filter((event) => event.event === 'thinking')
+    expect(thinkingEvents.length).toBeGreaterThan(0)
+    const firstThinking = events.findIndex((event) => event.event === 'thinking')
+    const firstText = events.findIndex((event) => event.event === 'text')
+    expect(firstThinking).toBeGreaterThanOrEqual(0)
+    expect(firstThinking).toBeLessThan(firstText)
 
     const done = events.find((event) => event.event === 'done')
     expect(done).toBeDefined()
@@ -266,13 +283,18 @@ suite('assistant chat over HTTP', () => {
       expect(updateAiConfig({ baseUrl: inventing.url }).ok).toBe(true)
 
       const events = await chat('بعت بكام النهاردة؟')
-      const streamed = events
-        .filter((event) => event.event === 'text')
-        .map((event) => JSON.parse(event.data).d as string)
-        .join('')
+      const texts = events.filter((event) => event.event === 'text')
 
-      expect(streamed).not.toContain('9999')
-      expect(streamed).toBe(ANSWER)
+      // The draft *is* streamed — the owner watches the model write — but the
+      // guard rejects the invented figure and the final event replaces it.
+      // What the phone ends up rendering is what this asserts.
+      const settled = texts.reduce((shown, event) => {
+        const data = JSON.parse(event.data) as { d: string; replace?: boolean }
+        return data.replace ? data.d : shown + data.d
+      }, '')
+
+      expect(settled).toBe(ANSWER)
+      expect(settled).not.toContain('9999')
 
       const done = events.find((event) => event.event === 'done')
       expect(done).toBeDefined()
@@ -306,13 +328,15 @@ suite('assistant chat over HTTP', () => {
       expect(payload.followups).toEqual(['وإمبارح؟'])
       expect(payload.cards).toHaveLength(1)
 
-      const streamed = events
+      const settled = events
         .filter((event) => event.event === 'text')
-        .map((event) => JSON.parse(event.data).d as string)
-        .join('')
+        .reduce((shown, event) => {
+          const data = JSON.parse(event.data) as { d: string; replace?: boolean }
+          return data.replace ? data.d : shown + data.d
+        }, '')
       // The forced step produced the answer; the free prose never surfaced.
-      expect(streamed).toBe(ANSWER)
-      expect(streamed).not.toContain('أهلاً')
+      expect(settled).toBe(ANSWER)
+      expect(settled).not.toContain('أهلاً')
 
       const history = await fetch(`${base}/assistant/history`, {
         headers: { authorization: `Bearer ${token}` },

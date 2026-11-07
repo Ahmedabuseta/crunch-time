@@ -224,7 +224,10 @@ export function registerAssistantRoutes(app: FastifyInstance, backend: Backend) 
 
     const unsubscribe = subscribe(turnId, (event: TurnEvent) => {
       if (event.type === 'status') send('status', { tool: event.tool })
-      else if (event.type === 'text') send('text', { d: event.delta })
+      else if (event.type === 'thinking') send('thinking', { d: event.delta })
+      else if (event.type === 'text') {
+        send('text', event.replace ? { d: event.delta, replace: true } : { d: event.delta })
+      }
     })
 
     // `req.raw`'s own 'close' fires as soon as the request body is fully read,
