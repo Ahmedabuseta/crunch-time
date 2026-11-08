@@ -29,6 +29,8 @@ export type Dimension =
   | 'day'
   | 'week'
   | 'month'
+  /** Local hour of the day, 0–23. */
+  | 'hour'
   | 'category'
   | 'product'
   | 'cashier'
@@ -75,7 +77,7 @@ const METRICS: readonly Metric[] = [
 ]
 
 const DIMENSIONS: readonly Dimension[] = [
-  'day', 'week', 'month', 'category', 'product', 'cashier', 'order_type', 'payment',
+  'day', 'week', 'month', 'hour', 'category', 'product', 'cashier', 'order_type', 'payment',
 ]
 
 /** The two dimensions that have to be aggregated from order items. */
@@ -390,18 +392,37 @@ function aggregateColumns(level: Level, metric: Metric): string {
     ${cost} AS cost_total`
 }
 
+/**
+ * The order's timestamp as a naive local-time string: `YYYY-MM-DD HH:MM:SS`.
+ *
+ * Orders are stored as UTC ISO (`…T…Z`). Slicing that string gives the UTC
+ * date, which files a 00:30 Cairo order under the previous day — the bug this
+ * replaced. SQLite's `'localtime'` modifier needs a timestamp it can parse, so
+ * the `T` is swapped for a space and the `Z` is truncated first; anything after
+ * the seconds is dropped anyway.
+ */
+const LOCAL_STAMP = "replace(substr(o.created_at, 1, 19), 'T', ' ')"
+
+/** The local calendar date of an order, `YYYY-MM-DD`. */
+const LOCAL_DAY = `date(${LOCAL_STAMP}, 'localtime')`
+
 /** The GROUP BY expression for a dimension. All identifier text is constant. */
 function groupSql(dimension: Dimension): GroupSql {
   switch (dimension) {
     case 'day':
-      return { key: 'substr(o.created_at, 1, 10)', label: 'substr(o.created_at, 1, 10)' }
+      return { key: LOCAL_DAY, label: LOCAL_DAY }
     case 'week':
       return {
-        key: "strftime('%Y-W%W', substr(o.created_at, 1, 10))",
-        label: "strftime('%Y-W%W', substr(o.created_at, 1, 10))",
+        key: `strftime('%Y-W%W', ${LOCAL_DAY})`,
+        label: `strftime('%Y-W%W', ${LOCAL_DAY})`,
       }
     case 'month':
-      return { key: 'substr(o.created_at, 1, 7)', label: 'substr(o.created_at, 1, 7)' }
+      return { key: `substr(${LOCAL_DAY}, 1, 7)`, label: `substr(${LOCAL_DAY}, 1, 7)` }
+    case 'hour':
+      return {
+        key: `CAST(strftime('%H', ${LOCAL_STAMP}, 'localtime') AS INTEGER)`,
+        label: `CAST(strftime('%H', ${LOCAL_STAMP}, 'localtime') AS INTEGER)`,
+      }
     case 'cashier': {
       const expr = "COALESCE(NULLIF(TRIM(o.cashier_name), ''), 'غير محدد')"
       return { key: expr, label: expr }
@@ -417,10 +438,20 @@ function groupSql(dimension: Dimension): GroupSql {
   }
 }
 
+/**
+ * The label a group is shown with.
+ *
+ * The hour dimension groups on a number so it sorts — and reads — as 0…23 —
+ * but "14" alone is a poor label, so it is rendered as `14:00`.
+ */
 function labelFor(dimension: Dimension, key: string, sqlLabel: unknown): string {
   const label = text(sqlLabel) || key
   if (dimension === 'order_type') return ORDER_TYPE_LABELS[key] ?? label
   if (dimension === 'payment') return PAYMENT_LABELS[key] ?? label
+  if (dimension === 'hour') {
+    const hour = Number(key)
+    return Number.isFinite(hour) ? `${String(hour).padStart(2, '0')}:00` : label
+  }
   return label
 }
 

@@ -285,6 +285,8 @@ contextBridge.exposeInMainWorld('api', {
     dailySummary: (date?: string) => invoke('report:dailySummary', date),
     periodSummary: (from?: string, to?: string) => invoke('report:periodSummary', from, to),
     hourlyBreakdown: (date?: string) => invoke('report:hourlyBreakdown', date),
+    peakAnalysis: (opts?: { from?: string; to?: string; limit?: number }) =>
+      invoke('report:peakAnalysis', opts),
     topItems: (limit?: number, from?: string, to?: string) => invoke('report:topItems', limit, from, to),
     categoryRevenue: (from?: string, to?: string) => invoke('report:categoryRevenue', from, to),
     addonStats: (from?: string, to?: string) => invoke('report:addonStats', from, to),

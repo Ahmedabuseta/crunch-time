@@ -34,6 +34,7 @@ const DIMENSION_LABELS: Record<Dimension, string> = {
   day: 'اليوم',
   week: 'الأسبوع',
   month: 'الشهر',
+  hour: 'الساعة',
   category: 'القسم',
   product: 'الصنف',
   cashier: 'الكاشير',
@@ -111,8 +112,8 @@ export const ANALYTICS_TOOLS: ToolDef[] = [
         'items_sold', 'cost', 'gross_profit', 'margin',
       ]).describe('المقياس: revenue=المبيعات، orders=عدد الطلبات، avg_ticket=متوسط الفاتورة، discounts=الخصومات، delivery_fees=رسوم التوصيل، items_sold=عدد الوحدات المباعة، cost=تكلفة المبيعات، gross_profit=الربح الإجمالي، margin=هامش الربح ٪'),
       dimension: z.enum([
-        'day', 'week', 'month', 'category', 'product', 'cashier', 'order_type', 'payment',
-      ]).optional().describe('التجميع: day=يوم، week=أسبوع، month=شهر، category=قسم، product=صنف، cashier=كاشير، order_type=نوع الطلب، payment=طريقة الدفع. سيبه فاضي لو عايز رقم واحد إجمالي'),
+        'day', 'week', 'month', 'hour', 'category', 'product', 'cashier', 'order_type', 'payment',
+      ]).optional().describe('التجميع: day=يوم، week=أسبوع، month=شهر، hour=ساعة اليوم (لأسئلة «أي ساعة بتبيع أكتر»)، category=قسم، product=صنف، cashier=كاشير، order_type=نوع الطلب، payment=طريقة الدفع. سيبه فاضي لو عايز رقم واحد إجمالي'),
       from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe('بداية المدة YYYY-MM-DD (افتراضي النهاردة)'),
       to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe('نهاية المدة YYYY-MM-DD (افتراضي النهاردة)'),
       filters: z.object({

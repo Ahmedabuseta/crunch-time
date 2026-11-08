@@ -370,6 +370,7 @@ export interface ApiBridge {
     dailySummary: (date?: string) => Promise<any>
     periodSummary: (from?: string, to?: string) => Promise<any>
     hourlyBreakdown: (date?: string) => Promise<any[]>
+    peakAnalysis: (opts?: { from?: string; to?: string; limit?: number }) => Promise<any>
     topItems: (limit?: number, from?: string, to?: string) => Promise<any[]>
     categoryRevenue: (from?: string, to?: string) => Promise<any[]>
     addonStats: (from?: string, to?: string) => Promise<any[]>

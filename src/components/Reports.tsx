@@ -13,7 +13,7 @@ import {
   TrendingUp, ShoppingBag, DollarSign, BarChart3, Package, ArrowDownRight, ArrowUpRight,
   Receipt, Wallet, Hourglass, Layers, CreditCard, CalendarDays, Filter, Tag,
   AlertTriangle, Users, Target, CalendarClock, Boxes, ShieldAlert, TrendingDown, Percent,
-  RefreshCw, ChevronLeft, ChevronRight, ChevronDown, Lock, Unlock,
+  RefreshCw, ChevronLeft, ChevronRight, ChevronDown, Lock, Unlock, Flame,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { fmtMoney } from '@/lib/format'
@@ -57,6 +57,7 @@ const TAB_ITEMS: { id: TabId; label: string; icon: LucideIcon }[] = [
 ]
 
 const ANAL_CARDS: { id: string; tab: TabId; label: string }[] = [
+  { id: 'peaks', tab: 'overview', label: 'أفضل الأيام' },
   { id: 'sales-trend', tab: 'overview', label: 'اتجاه المبيعات' },
   { id: 'abc-xyz', tab: 'inventory', label: 'ABC/XYZ' },
   { id: 'inventory-turnover', tab: 'inventory', label: 'دوران المخزون' },
@@ -74,7 +75,7 @@ export function Reports() {
   const {
     dashboard, hourly, topItems, categoryRevenue, addonStats, ticketDist, orderTypeSplit,
     revenueTrend, paymentMethods, profitSummary, transactions, shiftSummary, laborSummary, voidSummary,
-    abcXyz, turnover, ppv, salesTrend, daysOnHand, discountSummary, loading, refreshAll, refreshRevenueTrend, refreshSalesTrend,
+    abcXyz, turnover, ppv, salesTrend, daysOnHand, discountSummary, peaks, loading, refreshAll, refreshRevenueTrend, refreshSalesTrend,
   } = useReportStore()
 
   const [tab, setTab] = useState<TabId>('overview')
@@ -393,7 +394,13 @@ export function Reports() {
               {ANAL_CARDS.map(a => (
                 <button
                   key={a.id}
-                  onClick={() => goToAnalysis(a.id, a.tab, a.tab === 'overview' ? !!salesTrend : hasInventory)}
+                  onClick={() => goToAnalysis(
+                    a.id,
+                    a.tab,
+                    a.tab === 'overview'
+                      ? (a.id === 'peaks' ? (peaks?.orderCount ?? 0) > 0 : !!salesTrend)
+                      : hasInventory,
+                  )}
                   className="px-2.5 py-1 rounded-full text-[10px] font-bold transition-colors cursor-pointer border border-border bg-card text-muted-foreground hover:text-primary hover:border-primary/50"
                 >
                   {a.label}
@@ -477,6 +484,144 @@ export function Reports() {
                 </Section>
               )}
             </div>
+
+            {/* Best days and busiest hours.
+                The hourly chart above shows volume; this ranks it, which is the
+                form an owner can act on — who to schedule and when to prep. */}
+            {peaks && peaks.orderCount > 0 && (
+              <Section
+                id="peaks"
+                scroll
+                icon={<Flame className="h-4 w-4 text-primary" />}
+                title="أفضل الأيام وأكثر الساعات"
+                action={
+                  <span className="text-[10px] font-bold text-muted-foreground">
+                    {peaks.days} يوم · {peaks.orderCount} طلب
+                  </span>
+                }
+              >
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
+                  <MiniStat
+                    label="أقوى يوم"
+                    value={
+                      peaks.topDays[0]
+                        ? `${WEEKDAYS[peaks.topDays[0].weekday]} · ${fmtMoney(peaks.topDays[0].revenue)}`
+                        : '—'
+                    }
+                    tone="text-primary"
+                  />
+                  <MiniStat
+                    label="أزحم ساعة"
+                    value={
+                      peaks.bestHour
+                        ? `${String(peaks.bestHour.hour).padStart(2, '0')}:00 · ${peaks.bestHour.ordersPerDay} طلب/يوم`
+                        : '—'
+                    }
+                    tone="text-blue-400"
+                  />
+                  <MiniStat
+                    label="أفضل متوسط فاتورة"
+                    value={
+                      peaks.topHoursByRevenue[0]
+                        ? `${String(peaks.topHoursByRevenue[0].hour).padStart(2, '0')}:00 · ${fmtMoney(peaks.topHoursByRevenue[0].avgTicket)}`
+                        : '—'
+                    }
+                    tone="text-green-400"
+                  />
+                  <MiniStat
+                    label="أعلى يوم بالسجل"
+                    value={
+                      peaks.topDays[0]
+                        ? `${peaks.topDays[0].date.slice(5).replace('-', '/')} · ${peaks.topDays[0].orderCount} طلب`
+                        : '—'
+                    }
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-4">
+                  {/* Best days by revenue. */}
+                  <div>
+                    <p className="text-[10px] font-bold text-muted-foreground mb-2">أعلى الأيام إيراداً:</p>
+                    <div className="space-y-1.5">
+                      {peaks.topDays.map((d, i) => (
+                        <div key={d.date} className="flex items-center gap-3 bg-secondary/40 rounded-xl px-3 py-2">
+                          <span className={cn('text-[10px] font-black w-4 text-center', i === 0 ? 'text-primary' : 'text-muted-foreground')}>
+                            {i + 1}
+                          </span>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex justify-between text-xs">
+                              <span className="font-bold truncate">{WEEKDAYS[d.weekday]}</span>
+                              <span className={cn('font-black', i === 0 ? 'text-primary' : 'text-foreground')}>
+                                {fmtMoney(d.revenue)}
+                              </span>
+                            </div>
+                            <div className="flex justify-between text-[10px] text-muted-foreground mt-0.5">
+                              <span>{d.date.slice(5).replace('-', '/')}</span>
+                              <span>{d.orderCount} طلب · متوسط {fmtMoney(d.avgTicket)}</span>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Busiest hours by ticket count, with the staffing number. */}
+                  <div>
+                    <p className="text-[10px] font-bold text-muted-foreground mb-2">أكثر الساعات ازدحاماً:</p>
+                    <div className="space-y-1.5">
+                      {peaks.topHoursByOrders.map((h, i) => (
+                        <div key={h.hour} className="flex items-center gap-3 bg-secondary/40 rounded-xl px-3 py-2">
+                          <span className={cn('text-[10px] font-black w-4 text-center', i === 0 ? 'text-primary' : 'text-muted-foreground')}>
+                            {i + 1}
+                          </span>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex justify-between text-xs">
+                              <span className="font-bold tabular-nums">{String(h.hour).padStart(2, '0')}:00</span>
+                              <span className={cn('font-black', i === 0 ? 'text-primary' : 'text-foreground')}>
+                                {h.orderCount} طلب
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-2 mt-1">
+                              {/* The bar is the hour's share of the whole window. */}
+                              <div className="flex-1 h-1 rounded-full bg-secondary overflow-hidden">
+                                <div className="h-full rounded-full bg-primary/70" style={{ width: `${Math.min(100, h.share)}%` }} />
+                              </div>
+                              <span className="text-[10px] text-muted-foreground tabular-nums shrink-0">
+                                {h.share}% · {h.ordersPerDay}/يوم
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Weekday averages: which day of the week is worth staffing up. */}
+                {peaks.weekdayAverages.length > 0 && (
+                  <div className="mt-4">
+                    <p className="text-[10px] font-bold text-muted-foreground mb-2">
+                      متوسط الإيراد لأيام الأسبوع (لكل يوم من أيامه):
+                    </p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {peaks.weekdayAverages.map((w, i) => (
+                        <span
+                          key={w.weekday}
+                          className={cn(
+                            'px-2.5 py-1 rounded-full text-[10px] font-bold border tabular-nums',
+                            i === 0
+                              ? 'bg-primary/10 text-primary border-primary/20'
+                              : 'bg-secondary/40 text-muted-foreground border-border'
+                          )}
+                        >
+                          {WEEKDAYS[w.weekday]} {fmtMoney(w.revenue)}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </Section>
+            )}
 
             {/* Sales trend & forecast */}
             {salesTrend && (

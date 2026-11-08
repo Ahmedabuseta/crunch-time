@@ -212,3 +212,38 @@ export interface DaysOnHandReport {
   rows: DaysOnHandRow[]
   concentrations: { ingredientId: string; rows: SupplierConcentrationRow[]; topSupplierPct: number; singleSupplierConcentration: boolean }[]
 }
+
+/** One ranked local day. */
+export interface PeakDay {
+  date: string
+  /** 0 = Sunday, matching the WEEKDAYS list on the reports screen. */
+  weekday: number
+  revenue: number
+  orderCount: number
+  avgTicket: number
+}
+
+/** One ranked local hour of the day. */
+export interface PeakHour {
+  hour: number
+  revenue: number
+  orderCount: number
+  avgTicket: number
+  /** Share of the window's orders, as a percentage. */
+  share: number
+  /** Average orders in this hour per day — the number to staff against. */
+  ordersPerDay: number
+}
+
+export interface PeakAnalysisReport {
+  from: string
+  to: string
+  days: number
+  orderCount: number
+  revenue: number
+  topDays: PeakDay[]
+  weekdayAverages: PeakDay[]
+  topHoursByRevenue: PeakHour[]
+  topHoursByOrders: PeakHour[]
+  bestHour: PeakHour | null
+}

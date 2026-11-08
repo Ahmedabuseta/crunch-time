@@ -398,9 +398,19 @@ describe('validation', () => {
 
   it('rejects an unknown metric, dimension or lookup value', () => {
     expect(() => queryMetrics({ metric: 'profit' as any, from: DAY_1, to: DAY_2 })).toThrow(/مقياس/)
-    expect(() => queryMetrics({ metric: 'revenue', dimension: 'hour' as any, from: DAY_1, to: DAY_2 })).toThrow(/تجميع/)
+    // `hour` is a real dimension now; the whitelist still has to refuse a
+    // grouping nobody defined.
+    expect(() => queryMetrics({ metric: 'revenue', dimension: 'minute' as any, from: DAY_1, to: DAY_2 })).toThrow(/تجميع/)
     expect(() => queryMetrics({ metric: 'revenue', from: DAY_1, to: DAY_2, filters: { orderType: 'drone' } })).toThrow(/نوع طلب/)
     expect(() => queryMetrics({ metric: 'revenue', from: DAY_1, to: DAY_2, filters: { status: 'DRAFT' } })).toThrow(/حالة/)
+  })
+
+  it('accepts the hour dimension and labels it as a clock time', () => {
+    const result = queryMetrics({ metric: 'orders', dimension: 'hour', from: DAY_1, to: DAY_2 })
+    expect(result.rows.length).toBeGreaterThan(0)
+    // The group key is a number so it sorts 0…23; the label is what the screen
+    // and the model read.
+    for (const row of result.rows) expect(row.label).toMatch(/^\d{2}:00$/)
   })
 
   it('requires an admin session', () => {

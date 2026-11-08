@@ -749,6 +749,10 @@ export function registerIpcHandlers() {
     b.reports.hourlyBreakdown(date)
   )
 
+  ipcMain.handle('report:peakAnalysis', (_e, opts?: { from?: string; to?: string; limit?: number }) =>
+    b.reports.peakAnalysis(opts)
+  )
+
   ipcMain.handle('report:topItems', (_e, limit = 10, from?: string, to?: string) =>
     b.reports.topItems(limit, from, to)
   )

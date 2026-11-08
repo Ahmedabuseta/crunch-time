@@ -298,6 +298,178 @@ export function hourlyReport(from?: string, to?: string, blockHours?: number) {
   return { hourly, blocks }
 }
 
+// ─── Best days and busiest hours ───────────────────────────────
+//
+// The hourly chart and the weekday factors already exist, but neither answers
+// the question an owner actually asks: *which* day and *which* hours sell most,
+// ranked, so staffing and prep can follow the answer. Everything here is
+// computed from `orders` on demand in local time — no table, no cache.
+
+export interface PeakDay {
+  /** Local `YYYY-MM-DD`. */
+  date: string
+  /** 0 = Sunday, matching the WEEKDAYS list the reports screen renders with. */
+  weekday: number
+  revenue: number
+  orderCount: number
+  avgTicket: number
+}
+
+export interface PeakHour {
+  /** Local hour, 0–23. */
+  hour: number
+  revenue: number
+  orderCount: number
+  avgTicket: number
+  /** This hour's share of the window's orders, as a percentage. */
+  share: number
+  /**
+   * Average orders in this hour per day of the window — the number to staff
+   * against. A 3-order hour in a 60-day window is not a rush.
+   */
+  ordersPerDay: number
+}
+
+export interface PeakAnalysis {
+  from: string
+  to: string
+  /** Calendar days in the window, inclusive. */
+  days: number
+  orderCount: number
+  revenue: number
+  /** Highest-revenue local days, at most `limit`. */
+  topDays: PeakDay[]
+  /** One entry per weekday that has data, by average revenue per occurrence. */
+  weekdayAverages: PeakDay[]
+  /** Busiest hours by money. */
+  topHoursByRevenue: PeakHour[]
+  /** Busiest hours by ticket count — these two lists can differ. */
+  topHoursByOrders: PeakHour[]
+  /** The hour with the highest average revenue per day. */
+  bestHour: PeakHour | null
+}
+
+function weekdayOf(date: string): number {
+  // Midday avoids a DST shift moving the date to the day before.
+  return new Date(`${date}T12:00:00`).getDay()
+}
+
+/**
+ * Ranks the window's days and hours.
+ *
+ * `limit` clamps to 1–20 and defaults to 5. Cancelled and refunded orders are
+ * excluded, like every other report here: refunded money went back to the
+ * customer, so counting it would rank a day that was mostly refunds as a good
+ * one.
+ */
+export function peakAnalysis(opts?: { from?: string; to?: string; limit?: number }): PeakAnalysis {
+  requireAdmin()
+  const from = String(opts?.from || localDaysBefore(6)).slice(0, 10)
+  const to = String(opts?.to || localToday()).slice(0, 10)
+  const limit = Math.max(1, Math.min(20, Math.trunc(Number(opts?.limit) || 5)))
+
+  const db = getDb()
+  const window = db.select().from(orders).all().filter(
+    (o) => o.status !== 'CANCELLED' && o.status !== 'REFUNDED' && inLocalDayRange(o.createdAt, from, to),
+  )
+
+  const dayAgg = new Map<string, { revenue: number; orderCount: number }>()
+  const hourAgg = new Map<number, { revenue: number; orderCount: number }>()
+  let revenue = 0
+
+  for (const o of window) {
+    // The local date and local hour, taken the same way `hourlyBreakdown` and
+    // `localDateOf` take them — never by slicing the UTC stored string.
+    const day = localDateOf(o.createdAt)
+    const hour = new Date(o.createdAt).getHours()
+    revenue += Number(o.total) || 0
+
+    const d = dayAgg.get(day) ?? { revenue: 0, orderCount: 0 }
+    d.revenue += Number(o.total) || 0
+    d.orderCount += 1
+    dayAgg.set(day, d)
+
+    const h = hourAgg.get(hour) ?? { revenue: 0, orderCount: 0 }
+    h.revenue += Number(o.total) || 0
+    h.orderCount += 1
+    hourAgg.set(hour, h)
+  }
+
+  const days = Math.max(1, localDatesBetween(from, to).length)
+
+  const dayRows: PeakDay[] = [...dayAgg.entries()]
+    .map(([date, agg]) => ({
+      date,
+      weekday: weekdayOf(date),
+      revenue: r2(agg.revenue),
+      orderCount: agg.orderCount,
+      avgTicket: agg.orderCount > 0 ? r2(agg.revenue / agg.orderCount) : 0,
+    }))
+    .sort((a, b) => b.revenue - a.revenue || (a.date < b.date ? -1 : 1))
+
+  // A weekday's average divides by how many times it occurred in the window,
+  // not by the number of days — otherwise a 30-day window makes every weekday
+  // look four times worse than it is.
+  const occurrences = new Map<number, number>()
+  for (const date of localDatesBetween(from, to)) {
+    const wd = weekdayOf(date)
+    occurrences.set(wd, (occurrences.get(wd) ?? 0) + 1)
+  }
+  const byWeekday = new Map<number, { revenue: number; orderCount: number; lastDate: string }>()
+  for (const row of dayRows) {
+    const acc = byWeekday.get(row.weekday) ?? { revenue: 0, orderCount: 0, lastDate: row.date }
+    acc.revenue += row.revenue
+    acc.orderCount += row.orderCount
+    if (row.date > acc.lastDate) acc.lastDate = row.date
+    byWeekday.set(row.weekday, acc)
+  }
+  const weekdayAverages: PeakDay[] = [...byWeekday.entries()]
+    .map(([weekday, acc]) => {
+      const seen = Math.max(1, occurrences.get(weekday) ?? 1)
+      return {
+        date: acc.lastDate,
+        weekday,
+        revenue: r2(acc.revenue / seen),
+        orderCount: Math.round((acc.orderCount / seen) * 10) / 10,
+        avgTicket: acc.orderCount > 0 ? r2(acc.revenue / acc.orderCount) : 0,
+      }
+    })
+    .sort((a, b) => b.revenue - a.revenue)
+
+  const totalOrders = window.length
+  const hourRows: PeakHour[] = [...hourAgg.entries()]
+    .map(([hour, agg]) => ({
+      hour,
+      revenue: r2(agg.revenue),
+      orderCount: agg.orderCount,
+      avgTicket: agg.orderCount > 0 ? r2(agg.revenue / agg.orderCount) : 0,
+      share: totalOrders > 0 ? Math.round((agg.orderCount / totalOrders) * 1000) / 10 : 0,
+      ordersPerDay: Math.round((agg.orderCount / days) * 10) / 10,
+    }))
+
+  const topHoursByRevenue = [...hourRows].sort((a, b) => b.revenue - a.revenue || a.hour - b.hour).slice(0, limit)
+  const topHoursByOrders = [...hourRows].sort((a, b) => b.orderCount - a.orderCount || a.hour - b.hour).slice(0, limit)
+
+  // "Best" means the most money in a typical day, which is what a staffing
+  // decision is actually about — not the single busiest hour of one spike.
+  const bestHour = [...hourRows].sort(
+    (a, b) => b.ordersPerDay - a.ordersPerDay || b.revenue - a.revenue || a.hour - b.hour,
+  )[0] ?? null
+
+  return {
+    from,
+    to,
+    days,
+    orderCount: totalOrders,
+    revenue: r2(revenue),
+    topDays: dayRows.slice(0, limit),
+    weekdayAverages,
+    topHoursByRevenue,
+    topHoursByOrders,
+    bestHour,
+  }
+}
+
 export function topItems(limit = 10, from?: string, to?: string) {
   requireAdmin()
   const db = getDb()
