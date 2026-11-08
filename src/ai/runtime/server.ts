@@ -28,15 +28,29 @@ export function findBinary(): string | null {
   // `resourcesPath` exists only in a packaged Electron build and is not part of
   // Node's own typings.
   const resourcesPath = (process as any).resourcesPath as string | undefined
+  const isWindows = process.platform === 'win32'
+
+  // The extension decides the platform, so the platform decides the order.
+  // Listing `temporal.exe` first (as this did) makes a Linux or macOS checkout
+  // that happens to contain both — which is exactly what `fetch:temporal` leaves
+  // behind after a Windows release build — hand a Windows PE to the OS. Under
+  // Wine that fails with "version mismatch"; without it, with ENOEXEC.
+  const local = isWindows
+    ? [
+        path.join(process.cwd(), 'build', 'temporal.exe'),
+        path.join(process.cwd(), 'build', 'temporal'),
+      ]
+    : [
+        path.join(process.cwd(), 'build', 'temporal'),
+        path.join(process.cwd(), 'build', 'temporal.exe'),
+      ]
+
   const candidates = [
     process.env.TEMPORAL_CLI_PATH,
-    // Windows ships the PE with its extension; the extension-less name is the
-    // Linux/macOS binary and is also what older packages carried.
-    resourcesPath ? path.join(resourcesPath, 'temporal.exe') : null,
-    resourcesPath ? path.join(resourcesPath, 'temporal') : null,
-    // repository build output, used by `npm run dev` and by tests
-    path.join(process.cwd(), 'build', 'temporal.exe'),
-    path.join(process.cwd(), 'build', 'temporal'),
+    // Packaged builds carry the binary the installer was built for.
+    resourcesPath ? path.join(resourcesPath, isWindows ? 'temporal.exe' : 'temporal') : null,
+    resourcesPath ? path.join(resourcesPath, isWindows ? 'temporal' : 'temporal.exe') : null,
+    ...local,
   ].filter(Boolean) as string[]
 
   for (const candidate of candidates) {
@@ -153,6 +167,17 @@ export async function startTemporal(port: number): Promise<{ ok: boolean; error?
     lastError = null
     let exited = false
 
+    // Keep the tail of the child's own output. Without it a spawn that dies
+    // immediately — a wrong-platform binary, a locked database, a port already
+    // taken — reports only "stopped (1)", which says nothing an owner or a
+    // developer can act on.
+    let stderrTail = ''
+    const collect = (chunk: Buffer) => {
+      stderrTail = `${stderrTail}${chunk.toString()}`.slice(-1200)
+    }
+    proc.stderr?.on('data', collect)
+    proc.stdout?.on('data', collect)
+
     proc.on('exit', (code) => {
       exited = true
       if (child === proc) {
@@ -160,7 +185,10 @@ export async function startTemporal(port: number): Promise<{ ok: boolean; error?
         boundPort = null
         // A wrong-platform binary exits here with ENOEXEC/216; keep the code so
         // the start path can report it instead of waiting out the port timer.
-        lastError = `خدمة التشغيل وقفت (${code ?? 'signal'})`
+        const detail = stderrTail.trim()
+        lastError = detail
+          ? `خدمة التشغيل وقفت (${code ?? 'signal'}): ${detail.slice(-400)}`
+          : `خدمة التشغيل وقفت (${code ?? 'signal'})`
       }
     })
     proc.on('error', (err) => {

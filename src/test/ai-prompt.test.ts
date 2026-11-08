@@ -11,6 +11,9 @@ const facts: TurnFacts = {
   today: '2026-11-03',
   weekday: 'الثلاثاء',
   conversationSummary: null,
+  taxPercent: 14,
+  deliveryFee: 25,
+  storePhone: '01000000000',
 }
 
 const tool = (name: string, write = false): ToolDef => ({

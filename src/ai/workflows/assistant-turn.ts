@@ -102,6 +102,7 @@ export async function assistantTurn(input: TurnInput): Promise<TurnResult> {
   let unknown: string[] = []
   let steps = 0
   let reasoningChars = 0
+  let skills: string[] = []
   let firstTokenMs: number | null = null
   let steers = 0
   let blocks = 0
@@ -127,6 +128,7 @@ export async function assistantTurn(input: TurnInput): Promise<TurnResult> {
       promptChars,
       degraded,
       unknownNumbers: unknown,
+      skills,
       reasoningChars,
       firstTokenMs,
       steers,
@@ -191,6 +193,9 @@ export async function assistantTurn(input: TurnInput): Promise<TurnResult> {
     steps += 1
     promptChars = Math.max(promptChars, out.promptChars)
     promptVersion = out.promptVersion
+    // The playbooks are chosen from the message, so they are the same on every
+    // step of a turn; the last step's copy is the trace's copy.
+    skills = out.skills
     promptTokens += out.promptTokens
     completionTokens += out.completionTokens
     reasoningChars += out.reasoningChars

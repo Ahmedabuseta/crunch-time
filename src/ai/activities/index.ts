@@ -6,7 +6,7 @@
 import { generateText, Output, streamText, tool } from 'ai'
 import { ApplicationFailure } from '@temporalio/activity'
 import { getAiConfigWithKey, getAiConfig } from '../config'
-import { buildSystemPrompt, PROMPT_VERSION, type TurnFacts } from '../prompt'
+import { buildSystemPrompt, promptSkillIds, PROMPT_VERSION, type TurnFacts } from '../prompt'
 import { ALL_TOOLS, getTool, redact } from '../tools'
 import { selectTools } from '../tools/select'
 import { schemaDigest } from '../tools/schema-digest'
@@ -48,6 +48,9 @@ export async function loadContext(input: LoadContextInput): Promise<LoadContextO
   const row = getDb().select({
     name: settings.restaurantName,
     currency: settings.currencyLabel,
+    taxRate: settings.taxRate,
+    deliveryFee: settings.deliveryFee,
+    storePhone: settings.storePhone,
   }).from(settings).where(eq(settings.id, 'settings')).get()
 
   const now = new Date()
@@ -61,6 +64,12 @@ export async function loadContext(input: LoadContextInput): Promise<LoadContextO
     // A thread row that has not been written yet is the normal first turn.
   }
 
+  // `tax_rate` is stored as a fraction (0.14) but read by people as a percent.
+  // A value above 1 was already written as a percentage, so it is left alone —
+  // the same normalisation `readBusinessContext` uses for the analyst.
+  const stored = Number(row?.taxRate) || 0
+  const taxPercent = stored > 1 ? stored : stored * 100
+
   return {
     facts: {
       restaurantName: row?.name || 'Crunch Time',
@@ -68,6 +77,9 @@ export async function loadContext(input: LoadContextInput): Promise<LoadContextO
       today,
       weekday: now.toLocaleDateString('ar-EG', { weekday: 'long' }),
       conversationSummary,
+      taxPercent: Math.round(taxPercent * 10) / 10,
+      deliveryFee: Number(row?.deliveryFee) || 0,
+      storePhone: row?.storePhone || null,
     },
     messages: modelHistory(input.threadId),
     startedAt: now.toISOString(),
@@ -110,6 +122,8 @@ export interface ModelStepCommon {
   completionTokens: number
   promptChars: number
   promptVersion: string
+  /** Playbooks that shaped this step's prompt, for the turn trace. */
+  skills: string[]
   /** Chars of reasoning the model produced, headed to the trace. */
   reasoningChars: number
   /** Time to the first reasoning/text token, or null when there was none. */
@@ -144,6 +158,10 @@ export async function modelStepWith(input: ModelStepInput, factory: ProviderFact
     state: buildTurnState(input.step, input.maxSteps, input.exchanges, input.cardIds),
     tools: exposed,
     followupAllowed: true,
+    // The owner's message decides which playbooks load. On the compact retry
+    // this is left alone: a skill's rules are the domain knowledge the turn
+    // needs, and dropping them to save tokens would be dropping the point.
+    message: input.message,
     repair: input.repair,
     steer: input.steer,
     // Dropped on the compact retry: it is the largest optional section, and
@@ -184,7 +202,13 @@ export async function modelStepWith(input: ModelStepInput, factory: ProviderFact
   // Tool calls and their results are reassembled here rather than in the
   // workflow: the workflow stores plain JSON, and only this module knows the
   // SDK's message shape.
-  const base = { promptChars: system.length, promptVersion: PROMPT_VERSION }
+  const base = {
+    promptChars: system.length,
+    promptVersion: PROMPT_VERSION,
+    // Recorded so a turn can be explained after the fact: two answers that
+    // differ can be compared against the playbook that produced them.
+    skills: promptSkillIds({ message: input.message }),
+  }
 
   /**
    * One provider round trip, streamed.

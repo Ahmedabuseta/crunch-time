@@ -1,0 +1,745 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>كرنش تايم — مراجعة المساعد: الدور والمعرفة والمهارات</title>
+<style>
+  :root {
+    --ink: #0B0C0E;
+    --ink-2: #3D4147;
+    --ink-3: #6C727A;
+    --line: #D8DBDF;
+    --line-2: #E8EAED;
+    --paper: #F4F5F7;
+    --panel: #FFFFFF;
+    --accent: #CB9400;
+    --good: #00703C;
+    --good-bg: #E9F5EE;
+    --part: #8A5A00;
+    --part-bg: #FBF0DC;
+    --gap: #B00020;
+    --gap-bg: #FBE9EC;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--paper); }
+  body {
+    margin: 0;
+    font-family: "Tajawal", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+    color: var(--ink); background: var(--paper); line-height: 1.65;
+    -webkit-font-smoothing: antialiased;
+  }
+  .num { font-variant-numeric: tabular-nums; direction: ltr; unicode-bidi: isolate; }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 0 28px 96px; }
+
+  header.mast {
+    background: var(--panel); border-bottom: 1px solid var(--line);
+    padding: 56px 0 40px; margin-bottom: 40px;
+  }
+  header.mast .wrap { padding-bottom: 0; }
+  .kicker {
+    font-size: 11px; letter-spacing: .18em; text-transform: uppercase;
+    color: var(--ink-3); font-weight: 700; margin: 0 0 18px;
+  }
+  h1 { font-size: clamp(28px, 4vw, 44px); line-height: 1.15; margin: 0 0 16px; font-weight: 800; letter-spacing: -.02em; }
+  .lede { font-size: 16px; color: var(--ink-2); max-width: 64ch; margin: 0; }
+  .meta-row {
+    display: flex; flex-wrap: wrap; gap: 32px;
+    margin-top: 34px; padding-top: 22px; border-top: 1px solid var(--line-2);
+  }
+  .meta-item { display: flex; flex-direction: column; gap: 2px; }
+  .meta-item .k { font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-3); font-weight: 700; }
+  .meta-item .v { font-size: 15px; font-weight: 700; }
+
+  .scoreboard { display: grid; grid-template-columns: repeat(4, 1fr); background: var(--panel); border: 1px solid var(--line); }
+  .score { padding: 26px 24px; border-inline-start: 1px solid var(--line-2); }
+  .score:first-child { border-inline-start: 0; }
+  .score .n { font-size: 32px; font-weight: 800; line-height: 1; letter-spacing: -.03em; }
+  .score .l { font-size: 12px; color: var(--ink-3); margin-top: 8px; font-weight: 600; }
+  .score .d { font-size: 11px; color: var(--ink-3); margin-top: 2px; }
+
+  section { margin-top: 56px; }
+  .sec-head {
+    display: flex; align-items: baseline; gap: 14px;
+    padding-bottom: 12px; border-bottom: 2px solid var(--ink); margin-bottom: 4px;
+  }
+  .sec-head h2 { font-size: 20px; margin: 0; font-weight: 800; letter-spacing: -.01em; }
+  .sec-head .tag { font-size: 11px; color: var(--ink-3); font-weight: 700; letter-spacing: .1em; text-transform: uppercase; margin-inline-start: auto; }
+  .sec-note { font-size: 13px; color: var(--ink-3); margin: 12px 0 24px; max-width: 80ch; }
+
+  .tbl { background: var(--panel); border: 1px solid var(--line); }
+  .tbl table { width: 100%; border-collapse: collapse; }
+  .tbl thead th {
+    text-align: right; font-size: 10px; letter-spacing: .1em; text-transform: uppercase;
+    color: var(--ink-3); font-weight: 700; padding: 12px 16px;
+    border-bottom: 1px solid var(--line); background: var(--paper);
+  }
+  .tbl td { padding: 16px; vertical-align: top; border-bottom: 1px solid var(--line-2); font-size: 13.5px; }
+  .tbl tr:last-child td { border-bottom: 0; }
+  .tbl tr:hover td { background: #FAFBFC; }
+  .s-name { font-weight: 700; font-size: 14px; }
+  .s-sub { display: block; font-size: 11px; color: var(--ink-3); margin-top: 3px; font-weight: 600; }
+
+  .badge {
+    display: inline-block; padding: 4px 10px; border-radius: 2px;
+    font-size: 11px; font-weight: 800; letter-spacing: .02em; white-space: nowrap;
+  }
+  .b-good { background: var(--good-bg); color: var(--good); }
+  .b-part { background: var(--part-bg); color: var(--part); }
+  .b-gap  { background: var(--gap-bg);  color: var(--gap); }
+
+  .findings { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1px; background: var(--line); border: 1px solid var(--line); }
+  .finding { background: var(--panel); padding: 22px 24px; }
+  .finding .top { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+  .finding .idx { font-size: 11px; font-weight: 800; color: var(--ink-3); border: 1px solid var(--line); padding: 1px 6px; }
+  .finding h4 { margin: 0; font-size: 14px; font-weight: 800; }
+  .finding p { margin: 6px 0 0; font-size: 13px; color: var(--ink-2); }
+  .finding code {
+    font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 11.5px;
+    background: var(--paper); border: 1px solid var(--line-2);
+    padding: 1px 5px; direction: ltr; display: inline-block; unicode-bidi: isolate;
+  }
+
+  .prio { background: var(--panel); border: 1px solid var(--line); }
+  .prio-row {
+    display: grid; grid-template-columns: 54px 1fr 220px; gap: 20px;
+    padding: 20px 24px; border-bottom: 1px solid var(--line-2); align-items: start;
+  }
+  .prio-row:last-child { border-bottom: 0; }
+  .prio-row .p { font-size: 11px; font-weight: 800; letter-spacing: .06em; color: var(--ink-3); padding-top: 2px; }
+  .prio-row h4 { margin: 0 0 4px; font-size: 14.5px; font-weight: 800; }
+  .prio-row p { margin: 0; font-size: 13px; color: var(--ink-2); }
+  .prio-row .why { font-size: 12px; color: var(--ink-3); }
+
+  .matrix { background: var(--panel); border: 1px solid var(--line); }
+  .matrix table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .matrix th {
+    text-align: right; padding: 12px 16px; font-size: 10px; text-transform: uppercase;
+    letter-spacing: .1em; color: var(--ink-3); border-bottom: 1px solid var(--line); background: var(--paper);
+  }
+  .matrix td { padding: 12px 16px; border-bottom: 1px solid var(--line-2); }
+  .matrix tr:last-child td { border-bottom: 0; }
+  .ok { color: var(--good); font-weight: 700; }
+  .no { color: var(--gap); font-weight: 700; }
+  .half { color: var(--part); font-weight: 700; }
+
+  /* ── prompt anatomy ───────────────────────── */
+  .anat { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; background: var(--line); border: 1px solid var(--line); }
+  .anat-col { background: var(--panel); padding: 0; }
+  .anat-col h3 {
+    margin: 0; padding: 14px 20px; font-size: 12px; font-weight: 800;
+    letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3);
+    border-bottom: 1px solid var(--line); background: var(--paper);
+  }
+  .anat-col.old h3 { color: var(--gap); }
+  .anat-col.new h3 { color: var(--good); }
+  .blk { padding: 12px 20px; border-bottom: 1px solid var(--line-2); font-size: 13px; }
+  .blk:last-child { border-bottom: 0; }
+  .blk .t { font-weight: 800; }
+  .blk .m { font-size: 11.5px; color: var(--ink-3); margin-top: 2px; }
+  .blk.dim { opacity: .45; }
+  .blk.added { background: var(--good-bg); }
+  .blk.moved { background: var(--part-bg); }
+  .blk .pill {
+    display: inline-block; font-size: 10px; font-weight: 800; padding: 1px 7px;
+    border-radius: 2px; margin-inline-start: 8px; background: var(--panel);
+    border: 1px solid var(--line); color: var(--ink-3);
+  }
+
+  /* ── worked example ───────────────────────── */
+  .worked { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; background: var(--line); border: 1px solid var(--line); }
+  .worked-col { background: var(--panel); }
+  .worked-col h3 {
+    margin: 0; padding: 14px 20px; font-size: 12px; font-weight: 800;
+    text-transform: uppercase; letter-spacing: .06em; color: var(--ink-3);
+    border-bottom: 1px solid var(--line); background: var(--paper);
+  }
+  .worked-col.old h3 { color: var(--gap); }
+  .worked-col.new h3 { color: var(--good); }
+  .step { padding: 12px 20px; border-bottom: 1px solid var(--line-2); font-size: 13px; }
+  .step:last-child { border-bottom: 0; }
+  .step .k { font-size: 10px; text-transform: uppercase; letter-spacing: .1em; color: var(--ink-3); font-weight: 800; display: block; margin-bottom: 3px; }
+  .step code {
+    font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 11.5px;
+    background: var(--paper); border: 1px solid var(--line-2); padding: 2px 6px;
+    display: inline-block; direction: ltr; unicode-bidi: isolate; margin-top: 3px;
+  }
+  .quote {
+    font-size: 13.5px; padding: 10px 14px; background: var(--paper);
+    border-inline-start: 3px solid var(--accent); color: var(--ink); margin-top: 6px;
+  }
+
+  /* ── bar comparison ───────────────────────── */
+  .bars { background: var(--panel); border: 1px solid var(--line); padding: 24px; }
+  .bar-row { margin-bottom: 18px; }
+  .bar-row:last-child { margin-bottom: 0; }
+  .bar-row .lbl { font-size: 12px; font-weight: 700; margin-bottom: 6px; display: flex; justify-content: space-between; }
+  .bar-row .lbl .v { color: var(--ink-3); font-weight: 700; }
+  .bar-pair { display: flex; flex-direction: column; gap: 4px; }
+  .bar { height: 14px; border-radius: 2px; position: relative; }
+  .bar.old { background: var(--gap); opacity: .28; }
+  .bar.new { background: var(--good); opacity: .78; }
+  .bar span {
+    position: absolute; inset-inline-start: 8px; top: 50%; transform: translateY(-50%);
+    font-size: 10px; font-weight: 800; color: var(--ink);
+  }
+
+  .flow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 12.5px; margin: 0 0 20px; }
+  .flow .node {
+    border: 1px solid var(--line); background: var(--panel); padding: 6px 12px;
+    font-weight: 700; font-size: 12px;
+  }
+  .flow .node.hot { border-color: var(--accent); color: var(--part); background: var(--part-bg); }
+  .flow .arrow { color: var(--ink-3); font-weight: 800; }
+
+  footer {
+    margin-top: 72px; padding-top: 22px; border-top: 1px solid var(--line);
+    font-size: 12px; color: var(--ink-3); display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap;
+  }
+
+  @media (max-width: 860px) {
+    .scoreboard { grid-template-columns: repeat(2, 1fr); }
+    .score { border-inline-start: 0; border-top: 1px solid var(--line-2); }
+    .findings, .anat, .worked { grid-template-columns: 1fr; }
+    .prio-row { grid-template-columns: 1fr; gap: 8px; }
+    .tbl, .matrix { overflow-x: auto; }
+    .tbl table, .matrix table { min-width: 720px; }
+  }
+  @media print {
+    body { background: #fff; }
+    header.mast { padding-top: 0; }
+    section { break-inside: avoid; }
+  }
+</style>
+</head>
+<body>
+
+<header class="mast">
+  <div class="wrap">
+    <p class="kicker">مراجعة هندسية · كرنش تايم · المساعد الذكي</p>
+    <h1>المساعد عنده أدوات، بس مالوش دور<br />ومعرفته أربع كلمات</h1>
+    <p class="lede">
+      مراجعة مبنية على قراءة البرومبت الفعلي (<code>src/ai/prompt/</code>) وعدد الأدوات
+      (51 أداة) والـ<span class="num">23</span> قاعدة اللي بتتحمّل في كل دور.
+      الخلاصة: الأدوات جاهزة، والدور والمعرفة والمهارات مش موجودين.
+    </p>
+    <div class="meta-row">
+      <div class="meta-item"><span class="k">النطاق</span><span class="v">51 أداة · <span class="num">23</span> قاعدة · <span class="num">4</span> حقائق</span></div>
+      <div class="meta-item"><span class="k">الأساس</span><span class="v">src/ai/prompt + src/ai/tools</span></div>
+      <div class="meta-item"><span class="k">التاريخ</span><span class="v num">2026-11-08</span></div>
+      <div class="meta-item"><span class="k">الإصدار</span><span class="v num">1.14.0 → 2.0.0</span></div>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <!-- ─── scoreboard ─── -->
+  <div class="scoreboard">
+    <div class="score">
+      <div class="n" style="color:var(--gap)">0%</div>
+      <div class="l">دور معرّف</div>
+      <div class="d">مفيش «إنت مسؤول عن إيه» ولا «ممنوع تعمل إيه»</div>
+    </div>
+    <div class="score">
+      <div class="n" style="color:var(--gap)"><span class="num">4</span></div>
+      <div class="l">حقائق المحل</div>
+      <div class="d">اسم · عملة · تاريخ · يوم — والضريبة والتوصيل مش موجودين</div>
+    </div>
+    <div class="score">
+      <div class="n" style="color:var(--part)">51</div>
+      <div class="l">أداة متاحة</div>
+      <div class="d">الأدوات قوية — دي مش المشكلة</div>
+    </div>
+    <div class="score">
+      <div class="n" style="color:var(--gap)"><span class="num">0</span></div>
+      <div class="l">مهارة</div>
+      <div class="d">مفيش أي مفهوم skill في الكود</div>
+    </div>
+  </div>
+
+  <!-- ─── 1. findings ─── -->
+  <section>
+    <div class="sec-head">
+      <h2>اللي ناقص فعلاً — بالملف والسطر</h2>
+      <span class="tag">التشخيص</span>
+    </div>
+    <p class="sec-note">
+      كل نقطة هنا متأكد منها من الكود، مش تخمين. الأدوات نفسها سليمة — النقص في الطبقة اللي بتقول للموديل إزاي يستخدمها.
+    </p>
+
+    <div class="findings">
+      <div class="finding">
+        <div class="top"><span class="idx">01</span><span class="badge b-gap">حرج</span></div>
+        <h4>مفيش دور — في مسمّى وظيفة</h4>
+        <p>
+          <code>identitySection</code> بتقول «أنت كرنش تايم، مساعد كاشير» وخلاص. مفيش
+          «إنت مسؤول عن دقة الأرقام»، ولا «ممنوع تختلق رقم»، ولا «إيه شكل الإجابة الكويسة».
+          الـ<span class="num">23</span> قاعدة اللي بعدها بتبقى أوامر منفصلة من غير إطار.
+        </p>
+      </div>
+
+      <div class="finding">
+        <div class="top"><span class="idx">02</span><span class="badge b-gap">حرج</span></div>
+        <h4>القواعد كلها عن المخزون، ومفيش غيرها</h4>
+        <p>
+          <span class="num">6</span> قواعد من <span class="num">23</span> (١٦–٢١) كلها عن الجرد والعجز.
+          الوصفات والخصومات والدليفري والمصروفات والورديات والعملاء — <strong>صفر قواعد</strong>.
+          ودي بالظبط المجالات اللي الموديل بيتصرف فيها من دمّه.
+        </p>
+      </div>
+
+      <div class="finding">
+        <div class="top"><span class="idx">03</span><span class="badge b-part">متوسط</span></div>
+        <h4>الـ٢٣ قاعدة بيتحملوا في كل دور</h4>
+        <p>
+          سؤال «السجق بكام؟» بيحمل معاه قواعد الجرد كلها. ده ~<span class="num">40%</span>
+          من البرومبت في مجال مالوش علاقة، وبيزاحم الـschema digest على حد
+          <span class="num">8k</span> توكن في الدقيقة.
+        </p>
+      </div>
+
+      <div class="finding">
+        <div class="top"><span class="idx">04</span><span class="badge b-part">متوسط</span></div>
+        <h4>أربع حقائق بس، والباقي موجود ومالوش لازمة</h4>
+        <p>
+          <code>loadContext</code> (سطر ٦٥) بيقرا الاسم والعملة والتاريخ واليوم.
+          الضريبة ورسوم التوصيل وتليفون المحل كلهم في <code>settings</code> ومش بيوصلوا
+          للموديل — فمش عارف يرد «الضريبة كام؟» غير بأداة.
+        </p>
+      </div>
+
+      <div class="finding">
+        <div class="top"><span class="idx">05</span><span class="badge b-gap">حرج</span></div>
+        <h4>مفيش مهارات خالص</h4>
+        <p>
+          <code>grep skill src/ai</code> بيرجع صفر. كل مجال بيتخدم بنفس البرومبت المسطح،
+          ومفيش طريقة تعطي الوصفات قواعد من غير ما تزوّدها لكل سؤال تاني.
+        </p>
+      </div>
+
+      <div class="finding">
+        <div class="top"><span class="idx">06</span><span class="badge b-part">متوسط</span></div>
+        <h4>محلل الديسكتوب عنده اللي المساعد ناقصه</h4>
+        <p>
+          <code>src/analysis/ask.ts</code> عنده قاموس أعمال وشروح جداول وأعمدة وأمثلة.
+          المساعد عنده لستة أدوات وبس — نفس البيانات، معرفة أقل بكتير.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─── 2. coverage ─── -->
+  <section>
+    <div class="sec-head">
+      <h2>تغطية المجالات: قواعد وأمثلة ومدخلات</h2>
+      <span class="tag">الفجوة</span>
+    </div>
+    <p class="sec-note">
+      قراءة القواعد الـ٢٣ وتوزيعها على المجالات الحقيقية للمحل. «مثال» = مثال محلول في البرومبت،
+      وده أقوى حاجة لموديل صغير — لاحظ إنه صفر في كل مجال.
+    </p>
+
+    <div class="matrix">
+      <table>
+        <thead>
+          <tr>
+            <th>المجال</th>
+            <th>أدوات</th>
+            <th>قواعد</th>
+            <th>مثال محلول</th>
+            <th>الحالة</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><span class="s-name">المبيعات والأرقام</span><span class="s-sub">query_metrics · sales_summary</span></td>
+            <td class="ok"><span class="num">4</span></td>
+            <td class="half"><span class="num">3</span></td>
+            <td class="no">لا</td>
+            <td><span class="badge b-part">جزئي</span></td>
+          </tr>
+          <tr>
+            <td><span class="s-name">الجرد والعجز</span><span class="s-sub">stock_audit · record_stocktake</span></td>
+            <td class="ok"><span class="num">3</span></td>
+            <td class="ok"><span class="num">6</span></td>
+            <td class="no">لا</td>
+            <td><span class="badge b-part">جزئي — أقوى مجال، ومع ذلك بلا مثال</span></td>
+          </tr>
+          <tr>
+            <td><span class="s-name">تعديل المخزون</span><span class="s-sub">restock · exchange_brand · adjust_stock</span></td>
+            <td class="ok"><span class="num">8</span></td>
+            <td class="half"><span class="num">2</span></td>
+            <td class="no">لا</td>
+            <td><span class="badge b-part">جزئي</span></td>
+          </tr>
+          <tr>
+            <td><span class="s-name">الأسعار والهوامش</span><span class="s-sub">product_price · item_margins</span></td>
+            <td class="ok"><span class="num">3</span></td>
+            <td class="half"><span class="num">2</span></td>
+            <td class="half">ملاحظة نبرة فقط</td>
+            <td><span class="badge b-part">جزئي</span></td>
+          </tr>
+          <tr>
+            <td><span class="s-name">الوصفات والتكلفة</span><span class="s-sub">recipe_costs · subrecipe_*</span></td>
+            <td class="ok"><span class="num">9</span></td>
+            <td class="no"><span class="num">0</span></td>
+            <td class="no">لا</td>
+            <td><span class="badge b-gap">فاضي</span></td>
+          </tr>
+          <tr>
+            <td><span class="s-name">الخصومات</span><span class="s-sub">query_metrics.discounts فقط</span></td>
+            <td class="half"><span class="num">1</span></td>
+            <td class="no"><span class="num">0</span></td>
+            <td class="no">لا</td>
+            <td><span class="badge b-gap">فاضي</span></td>
+          </tr>
+          <tr>
+            <td><span class="s-name">الدليفري والعملاء</span><span class="s-sub">orders_search فقط</span></td>
+            <td class="half"><span class="num">1</span></td>
+            <td class="no"><span class="num">0</span></td>
+            <td class="no">لا</td>
+            <td><span class="badge b-gap">فاضي</span></td>
+          </tr>
+          <tr>
+            <td><span class="s-name">المصروفات</span><span class="s-sub">query_database فقط</span></td>
+            <td class="half"><span class="num">1</span></td>
+            <td class="no"><span class="num">0</span></td>
+            <td class="no">لا</td>
+            <td><span class="badge b-gap">فاضي</span></td>
+          </tr>
+          <tr>
+            <td><span class="s-name">الورديات والموظفون</span><span class="s-sub">staff_performance · query_database</span></td>
+            <td class="half"><span class="num">2</span></td>
+            <td class="no"><span class="num">0</span></td>
+            <td class="no">لا</td>
+            <td><span class="badge b-gap">فاضي</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ─── 3. anatomy ─── -->
+  <section>
+    <div class="sec-head">
+      <h2>شكل البرومبت: قبل وبعد</h2>
+      <span class="tag">التصميم</span>
+    </div>
+    <p class="sec-note">
+      الدور بييجي الأول عشان القواعد تبقى نتيجة ليه مش أوامر منفصلة. بعدها القواعد العامة بس،
+      وبعدها الـ«مهارة» اللي الرسالة بتختارها — بقواعدها ومثالها — مش كل المجالات مرة واحدة.
+    </p>
+
+    <div class="anat">
+      <div class="anat-col old">
+        <h3>الوضع الحالي</h3>
+        <div class="blk">
+          <div class="t">تعريف</div>
+          <div class="m">سطرين: مين إنت + النهاردة إيه</div>
+        </div>
+        <div class="blk">
+          <div class="t">٢٣ قاعدة مسطحة</div>
+          <div class="m">٦ جرد · ٤ SQL · ٢ سعر · ١١ عامة — كلهم في كل دور، مهما كان السؤال</div>
+        </div>
+        <div class="blk dim">
+          <div class="t">حالة الدور</div>
+          <div class="m">عدد الخطوات + اللي اتنفّذ</div>
+        </div>
+        <div class="blk dim">
+          <div class="t">دليل الأدوات</div>
+          <div class="m">الأسماء والأوصاف المتاحة</div>
+        </div>
+        <div class="blk dim">
+          <div class="t">الإخراج</div>
+          <div class="m">شكل الرد: text + cards + followups</div>
+        </div>
+        <div class="blk dim">
+          <div class="t">أمثلة النبرة</div>
+          <div class="m">٤ أسطر، ٣ منهم عن الأرقام</div>
+        </div>
+      </div>
+
+      <div class="anat-col new">
+        <h3>بعد التغيير</h3>
+        <div class="blk added">
+          <div class="t">الدور <span class="pill">جديد</span></div>
+          <div class="m">
+            «إنت مساعد تشغيل المحل» + <strong>مسؤول عن:</strong> دقة قبل سرعة، تقول «مش عارف»،
+            متغيّرش من غير تأكيد + <strong>حقائق المحل:</strong> الضريبة والتوصيل والتليفون
+          </div>
+        </div>
+        <div class="blk">
+          <div class="t">٤ ثوابت بس</div>
+          <div class="m">متقولش «تم» · نادي أداة التغيير · كل رقم من أداة · نطاقك المحل</div>
+        </div>
+        <div class="blk added">
+          <div class="t">المهارة: الأساس <span class="pill">دائماً</span></div>
+          <div class="m">النطاق والنبرة والافتراضات + مثال واحد</div>
+        </div>
+        <div class="blk moved">
+          <div class="t">المهارة: المجال <span class="pill">حسب الرسالة</span></div>
+          <div class="m">
+            واحدة من: المبيعات · الجرد · تعديل المخزون · الأسعار · الوصفات —
+            بقواعدها ومثال محلول
+          </div>
+        </div>
+        <div class="blk dim">
+          <div class="t">حالة الدور + الأدوات + الإخراج</div>
+          <div class="m">زي ما هو</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="flow" style="margin-top:24px">
+      <span class="node">الرسالة</span>
+      <span class="arrow">←</span>
+      <span class="node">مُوجّه المهارات</span>
+      <span class="arrow">←</span>
+      <span class="node hot">الأساس + مجال واحد</span>
+      <span class="arrow">←</span>
+      <span class="node">البرومبت</span>
+    </div>
+    <p class="sec-note" style="margin-top:0">
+      المُوجّه حتمي زي مُوجّه الأدوات: كلمات مفتاحية بعد تطبيع العربي، بدون أي استدعاء موديل.
+      عشان كده تقدر تفسّر لصاحب المطعم ليه الرد اتبنى بالشكل ده.
+    </p>
+  </section>
+
+  <!-- ─── 4. worked example ─── -->
+  <section>
+    <div class="sec-head">
+      <h2>دور واحد، قبل وبعد</h2>
+      <span class="tag">مثال محلول</span>
+    </div>
+    <p class="sec-note">
+      «في عجز في السجق؟» — السؤال اللي القواعد الستة اتعملت عشانه أصلاً.
+      لاحظ إن عدد القواعد المحمّلة بيقل، لكن عمق قواعد المجال بيزيد (المثال المحلول جديد).
+    </p>
+
+    <div class="worked">
+      <div class="worked-col old">
+        <h3>قبل</h3>
+        <div class="step">
+          <span class="k">القواعد المحمّلة</span>
+          ٢٣ قاعدة — منها ٦ عن الجرد و٤ عن SQL، وكلهم بيتحملوا في كل دور
+        </div>
+        <div class="step">
+          <span class="k">المثال</span>
+          لا شيء — البرومبت بيوصف، مش بيورّي
+        </div>
+        <div class="step">
+          <span class="k">الأداة</span>
+          <code>stock_audit(ingredient)</code>
+        </div>
+        <div class="step">
+          <span class="k">الرد المتوقع</span>
+          <div class="quote">
+            «آخر تسوية كانت ١٠/٣ والرصيد ٨ كجم موجب، فمفيش عجز مسجل.»
+          </div>
+        </div>
+      </div>
+
+      <div class="worked-col new">
+        <h3>بعد</h3>
+        <div class="step">
+          <span class="k">المهارة المختارة</span>
+          <code>general</code> + <code>stock-audit</code>
+        </div>
+        <div class="step">
+          <span class="k">القواعد المحمّلة</span>
+          ٤ ثوابت + ٧ أساس + ٧ جرد = <span class="num">18</span> (كانت ٢٣ بلا مجالات)
+        </div>
+        <div class="step">
+          <span class="k">المثال</span>
+          «آخر تسوية ١٠/٣ مسجلة كفرق ٢ كجم، والرصيد ٨ كجم موجب.
+          مفيش عجز مؤكد — لو جردت فعلاً قولي الكمية.»
+        </div>
+        <div class="step">
+          <span class="k">الأداة</span>
+          <code>stock_audit(ingredient)</code> ← <code>record_stocktake</code> لو رد بالكمية
+        </div>
+        <div class="step">
+          <span class="k">التتبّع</span>
+          الـ trace بيسجل <code>skills: [general, stock-audit]</code>
+          — فتقدر تقارن الأدوار بعدين
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─── 5. size ─── -->
+  <section>
+    <div class="sec-head">
+      <h2>حجم البرومبت لكل مجال</h2>
+      <span class="tag">الميزانية</span>
+    </div>
+    <p class="sec-note">
+      الأرقام من القياس الفعلي على البرومبت الحقيقي. الميزانية بتتحرك من «كل المجالات
+      في كل دور» لـ«المجال المطلوب بعمق أكبر». السؤال البسيط بقى أرخص، وسؤال الجرد بقى أغنى.
+    </p>
+
+    <div class="bars">
+      <div class="bar-row">
+        <div class="lbl"><span>سؤال سعر — «السجق بكام؟»</span><span class="v num">6,374 حرف → 3,938</span></div>
+        <div class="bar-pair">
+          <div class="bar old" style="width:100%"><span>قبل · ٢٣ قاعدة في كل دور</span></div>
+          <div class="bar new" style="width:62%"><span>بعد · −38%</span></div>
+        </div>
+      </div>
+
+      <div class="bar-row">
+        <div class="lbl"><span>سؤال مبيعات — «بعت بكام النهاردة؟»</span><span class="v num">6,374 → 4,476</span></div>
+        <div class="bar-pair">
+          <div class="bar old" style="width:100%"><span>قبل · ٢٣ قاعدة في كل دور</span></div>
+          <div class="bar new" style="width:70%"><span>بعد · −30%</span></div>
+        </div>
+      </div>
+
+      <div class="bar-row">
+        <div class="lbl"><span>سؤال جرد — «في عجز في السجق؟»</span><span class="v num">6,374 → 4,842</span></div>
+        <div class="bar-pair">
+          <div class="bar old" style="width:100%"><span>قبل · ٢٣ قاعدة في كل دور</span></div>
+          <div class="bar new" style="width:76%"><span>بعد · −24% رغم المثال المحلول الجديد</span></div>
+        </div>
+      </div>
+    </div>
+    <p class="sec-note" style="margin-top:14px">
+      مقاسة على البرومبت الحقيقي بـ١٢ أداة. قبل: كل دور <span class="num">6,374</span> حرف مهما كان السؤال.
+      بعد: <span class="num">3,938</span> لسؤال سعر، <span class="num">4,842</span> لسؤال جرد.
+      يعني كل سؤال اتخصم منه على الأقل <span class="num">1,530</span> حرف — وسؤال الجرد كسب مثال محلول
+      في نفس الوقت. ده اللي بيفرّق على حد <span class="num">8k</span> توكن.
+    </p>
+  </section>
+
+  <!-- ─── 6. plan ─── -->
+  <section>
+    <div class="sec-head">
+      <h2>خطة التنفيذ</h2>
+      <span class="tag">المراحل</span>
+    </div>
+
+    <div class="prio">
+      <div class="prio-row">
+        <div class="p">١</div>
+        <div>
+          <h4>الدور + حقائق المحل</h4>
+          <p>
+            <code>prompt/identity.ts</code> جديد، و<code>loadContext</code> يقرا
+            الضريبة والتوصيل والتليفون. مفيش تغيير في التوجيه، فمفيش خطر رجوع.
+          </p>
+        </div>
+        <div class="why">مخرج: المساعد يعرف يرد «الضريبة كام؟» بلا أداة، ويعرف إنه مسؤول عن الدقة.</div>
+      </div>
+
+      <div class="prio-row">
+        <div class="p">٢</div>
+        <div>
+          <h4>المهارات</h4>
+          <p>
+            <code>prompt/skills/</code>: ٦ ملفات تعريف (الأساس + ٥ مجالات)، ومُوجّه حتمي،
+            ونقل الـ١٩ قاعدة من <code>rules.ts</code> لمكانها. <code>PROMPT_VERSION</code> ← <span class="num">2.0.0</span>.
+          </p>
+        </div>
+        <div class="why">مخرج: سؤال السعر مش بيحمل قواعد الجرد، وسؤال الجرد بقى معاه مثال محلول.</div>
+      </div>
+
+      <div class="prio-row">
+        <div class="p">٣</div>
+        <div>
+          <h4>التتبّع والصفحة</h4>
+          <p>
+            الـ trace يسجل <code>skills</code>، والصفحة دي تتحدّث بالأرقام النهائية.
+          </p>
+        </div>
+        <div class="why">مخرج: تقدر تقول لأي رد اتاخد ليه، وتقارن أدوار قبل وبعد.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─── 7. risk ─── -->
+  <section>
+    <div class="sec-head">
+      <h2>المخاطر وإزاي بتتمسك</h2>
+      <span class="tag">التحقق</span>
+    </div>
+
+    <div class="tbl">
+      <table>
+        <thead>
+          <tr><th>الخطر</th><th>إزاي بيتمسك</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><span class="s-name">قاعدة تُفقد أثناء النقل</span></td>
+            <td>
+              تيست بيأكد إن كل قاعدة من ١٦–٢١ موجودة بنصّها لما مهارة الجرد تتختار.
+              جربته فعلاً: بيرجع يفشل لو شلت قاعدة.
+            </td>
+          </tr>
+          <tr>
+            <td><span class="s-name">مهارة غلط تتختار</span></td>
+            <td>
+              المطابقة على كلمات كاملة مش أجزاء: «بيع» كانت بتطابق جوه «مبيعات»
+              وتاخد الدور لمكان غلط. فيه تيست لكل مجال + تيست للتعادل.
+            </td>
+          </tr>
+          <tr>
+            <td><span class="s-name">البرومبت يكبر بدل ما يصغر</span></td>
+            <td>تيست على حد أقصى للحجم مع ١٢ أداة + مهارة مجال.</td>
+          </tr>
+          <tr>
+            <td><span class="s-name">الرد الغامض يرجع</span></td>
+            <td>
+              الـ<code>validationReply</code> وحارس الأرقام و<i>unsupportedClaim</i>
+              زي ما هم — التغيير في الطبقة اللي بتشرح، مش في الطبقة اللي بتمنع.
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ─── 8. out of scope ─── -->
+  <section>
+    <div class="sec-head">
+      <h2>برّه النطاق — وقراراته</h2>
+      <span class="tag">حدود</span>
+    </div>
+    <p class="sec-note">
+      كل واحدة من دول كانت هتزوّد المعرفة، ورفضتها لسبب مكتوب — مش نسيان.
+    </p>
+
+    <div class="tbl">
+      <table>
+        <thead><tr><th>الحاجة</th><th>ليه لأ</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><span class="s-name">لقطة حيّة للمحل في كل دور</span></td>
+            <td>كويري كل دور على ميزانية <span class="num">8k</span> توكن — و<code>sales_summary</code> بترد في خطوة واحدة.</td>
+          </tr>
+          <tr>
+            <td><span class="s-name">أداة <code>load_skill</code></span></td>
+            <td>المُوجّه بيحقن المهارة، فمفيش خطوة بتتصرف من ميزانية ٨ خطوات.</td>
+          </tr>
+          <tr>
+            <td><span class="s-name">قاموس أعمال كامل</span></td>
+            <td>مفيد، بس مش اختياري في نفس الشريحة — دخل في مرحلة تانية لو الأرقام طلبت.</td>
+          </tr>
+          <tr>
+            <td><span class="s-name">لمس المراجع (reviewer)</span></td>
+            <td>بيحكم على خطوة، مش على مجال — مش متأثر بالتقسيم.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <footer>
+    <span>كرنش تايم · مراجعة المساعد — الدور والمعرفة والمهارات</span>
+    <span class="num">src/ai/prompt · 51 tools · PROMPT_VERSION 2.0.0</span>
+  </footer>
+</div>
+
+</body>
+</html>
