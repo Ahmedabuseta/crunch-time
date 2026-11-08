@@ -348,6 +348,48 @@ describe('catalog tools', () => {
     expect((getSqlite().prepare('SELECT COUNT(*) AS c FROM recipes WHERE product_id = ?').get(product.id) as any).c).toBe(before)
   })
 
+  it('converts a quantity the owner spoke in kilos', async () => {
+    // The reported bug: "قلل المخزون ٥ كيلو" arrived as delta:-5 and was applied
+    // as five grams, because the schema said nothing about the unit.
+    const row = getSqlite()
+      .prepare("SELECT id, name, unit, stock_quantity FROM ingredients WHERE unit = 'g' AND stock_quantity > 10000 ORDER BY name LIMIT 1")
+      .get() as any
+    expect(row).toBeTruthy()
+
+    const result = await runTool({
+      turnId: 't',
+      name: 'adjust_stock',
+      args: { ingredient: row.name, delta: -5, unit: 'kg' },
+    })
+
+    expect((result.data as any).delta).toBe(-5000)
+    // The card must show the owner's own figure next to what will be applied,
+    // so a unit mistake is visible before confirming.
+    const card = result.cards[0]
+    if (card?.kind === 'action') {
+      const diff = card.rows.find((entry) => entry.label === 'الفرق')
+      expect(diff?.value).toContain('5 kg')
+      expect(diff?.value).toContain('5,000')
+    }
+  })
+
+  it('refuses a weight for a material counted in pieces', async () => {
+    const row = getSqlite()
+      .prepare("SELECT name FROM ingredients WHERE unit IN ('pcs','قطعة') AND active = 1 ORDER BY name LIMIT 1")
+      .get() as any
+    expect(row).toBeTruthy()
+
+    const result = await runTool({
+      turnId: 't',
+      name: 'adjust_stock',
+      args: { ingredient: row.name, delta: 3, unit: 'kg' },
+    })
+    // "٣ كيلو" of something sold by the piece is a misunderstanding, not a
+    // number to accept.
+    expect((result.data as any).error).toBeTruthy()
+    expect(result.summary).toContain('مش مناسبة')
+  })
+
   it('returns the pending action card from a write tool', async () => {
     const category = getSqlite().prepare('SELECT name FROM categories WHERE active = 1 ORDER BY name LIMIT 1').get() as any
     const result = await runTool({

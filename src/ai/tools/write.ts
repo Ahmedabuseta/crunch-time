@@ -8,6 +8,7 @@ import { money, percent, quantity, actionCard, marginPercent, packagesFor, metri
 import { createAction, getAction } from '../actions'
 import type { ToolOutput } from '../schemas'
 import { resolveIngredient, resolveProduct, siblingsOf } from './resolve'
+import { readUnit, toMaterialUnits, unitFits } from './quantity-unit'
 import { toolOutput, type ToolDef } from './types'
 
 const ingredientRef = z.string().min(1).describe('اسم المادة كما هو في المخزون')
@@ -74,8 +75,11 @@ export const WRITE_TOOLS: ToolDef[] = [
     schema: z.object({
       ingredient: ingredientRef,
       packages: z.number().positive().optional().describe('عدد العبوات المستلمة'),
-      qty: z.number().positive().optional().describe('كمية مباشرة بوحدة المادة (معناها by_quantity=true)'),
+      qty: z.number().positive().optional().describe('كمية مباشرة بالرقم اللي صاحب المطعم قاله (معناها by_quantity=true)'),
       by_quantity: z.boolean().optional(),
+      unit: z.enum(['kg', 'g', 'l', 'ml', 'unit']).optional().describe(
+        'وحدة الكمية المباشرة: kg=كيلو، g=جرام، l=لتر، ml=ملي. متحوّلش بنفسك',
+      ),
       unit_cost: z.number().nonnegative().optional().describe('سعر الوحدة'),
       package_price: z.number().nonnegative().optional().describe('سعر العبوة'),
       supplier: z.string().optional(),
@@ -87,7 +91,18 @@ export const WRITE_TOOLS: ToolDef[] = [
 
       const item = resolved.row
       const byQuantity = Boolean(args.by_quantity) || (args.packages === undefined && args.qty !== undefined)
-      const amount = byQuantity ? Number(args.qty ?? 0) : Number(args.packages ?? 0)
+      const said = readUnit(args.unit)
+      if (byQuantity && !unitFits(said, item.unit)) {
+        return toolOutput(
+          { error: `الوحدة «${args.unit}» مش مناسبة لـ${item.name} — بوحدة ${item.unit}` },
+          `الوحدة مش مناسبة — ${item.name} بيتقاس بـ${item.unit}`,
+        )
+      }
+      // A quantity the owner stated is converted here; a package count is
+      // already in the material's terms and never needs it.
+      const amount = byQuantity
+        ? toMaterialUnits(Number(args.qty ?? 0), said, item.unit)
+        : Number(args.packages ?? 0)
       if (!Number.isFinite(amount) || amount <= 0) {
         return toolOutput({ error: 'حدد كمية أكبر من صفر' }, 'حدد كمية أكبر من صفر')
       }
@@ -141,7 +156,10 @@ export const WRITE_TOOLS: ToolDef[] = [
     write: true,
     schema: z.object({
       ingredient: ingredientRef,
-      delta: z.number().describe('الفرق: موجب زيادة، سالب نقص'),
+      delta: z.number().describe('الفرق: موجب زيادة، سالب نقص. الرقم اللي صاحب المطعم قاله، من غير تحويل'),
+      unit: z.enum(['kg', 'g', 'l', 'ml', 'unit']).optional().describe(
+        'الوحدة اللي صاحب المطعم قال بيها: kg=كيلو، g=جرام، l=لتر، ml=ملي، unit=عبوة/قطعة. سيبه فاضي لو مفيش وحدة. متحوّلش الرقم بنفسك',
+      ),
       note: z.string().max(200).optional(),
     }),
     async run(args, ctx): Promise<ToolOutput> {
@@ -149,7 +167,16 @@ export const WRITE_TOOLS: ToolDef[] = [
       if (!resolved.ok) return toolOutput({ error: resolved.error }, resolved.error)
 
       const item = resolved.row
-      const delta = Math.round(Number(args.delta) * 100) / 100
+      // «قلل ٥ كيلو» is 5000 grams for a material stocked in grams. The number
+      // is the owner's; the conversion belongs here, where the unit is known.
+      const said = readUnit(args.unit)
+      if (!unitFits(said, item.unit)) {
+        return toolOutput(
+          { error: `الوحدة «${args.unit}» مش مناسبة لـ${item.name} — بوحدة ${item.unit}` },
+          `الوحدة مش مناسبة — ${item.name} بيتقاس بـ${item.unit}`,
+        )
+      }
+      const delta = toMaterialUnits(Number(args.delta), said, item.unit)
       if (!Number.isFinite(delta) || delta === 0) {
         return toolOutput({ error: 'حدد فرق أكبر من صفر' }, 'حدد فرق أكبر من صفر')
       }
@@ -163,7 +190,14 @@ export const WRITE_TOOLS: ToolDef[] = [
         subject: item.name,
         rows: [
           { label: 'المخزون', before: quantity(item.stockQuantity, item.unit), after: quantity(newStock, item.unit), tone: delta > 0 ? ('up' as const) : ('down' as const) },
-          { label: 'الفرق', value: `${delta > 0 ? '+' : ''}${quantity(delta, item.unit)}` },
+          {
+            label: 'الفرق',
+            // Show what the owner said next to what will be applied, so a unit
+            // mistake is visible on the card instead of after confirming.
+            value: said === 'unit'
+              ? `${delta > 0 ? '+' : ''}${quantity(delta, item.unit)}`
+              : `${delta > 0 ? '+' : ''}${args.delta} ${args.unit} = ${quantity(delta, item.unit)}`,
+          },
           ...(args.note ? [{ label: 'السبب', value: String(args.note) }] : []),
         ],
         result: `${item.name} هيبقى ${quantity(newStock, item.unit)} بعد التسوية.`,
@@ -186,7 +220,10 @@ export const WRITE_TOOLS: ToolDef[] = [
     write: true,
     schema: z.object({
       ingredient: ingredientRef,
-      counted_quantity: z.number().nonnegative().max(10_000_000).describe('الكمية الفعلية بعد الجرد بوحدة المادة'),
+      counted_quantity: z.number().nonnegative().max(10_000_000).describe('الكمية الفعلية بعد الجرد بالرقم اللي صاحب المطعم قاله، من غير تحويل'),
+      unit: z.enum(['kg', 'g', 'l', 'ml', 'unit']).optional().describe(
+        'الوحدة اللي قال بيها: kg=كيلو، g=جرام، l=لتر، ml=ملي، unit=عبوة/قطعة. متحوّلش بنفسك',
+      ),
       note: z.string().max(200).optional(),
     }),
     async run(args, ctx): Promise<ToolOutput> {
@@ -194,7 +231,14 @@ export const WRITE_TOOLS: ToolDef[] = [
       if (!resolved.ok) return toolOutput({ error: resolved.error }, resolved.error)
 
       const item = resolved.row
-      const counted = Math.round(Number(args.counted_quantity) * 100) / 100
+      const said = readUnit(args.unit)
+      if (!unitFits(said, item.unit)) {
+        return toolOutput(
+          { error: `الوحدة «${args.unit}» مش مناسبة لـ${item.name} — بوحدة ${item.unit}` },
+          `الوحدة مش مناسبة — ${item.name} بيتقاس بـ${item.unit}`,
+        )
+      }
+      const counted = toMaterialUnits(Number(args.counted_quantity), said, item.unit)
       if (!Number.isFinite(counted) || counted < 0) {
         return toolOutput({ error: 'الكمية الفعلية لازم تكون صفر أو أكبر' }, 'الكمية الفعلية غير صالحة')
       }
@@ -257,7 +301,10 @@ export const WRITE_TOOLS: ToolDef[] = [
     write: true,
     schema: z.object({
       ingredient: ingredientRef,
-      qty: z.number().positive().describe('الكمية التالفة بوحدة المادة'),
+      qty: z.number().positive().describe('الكمية التالفة بالرقم اللي صاحب المطعم قاله، من غير تحويل'),
+      unit: z.enum(['kg', 'g', 'l', 'ml', 'unit']).optional().describe(
+        'الوحدة اللي قال بيها: kg=كيلو، g=جرام، l=لتر، ml=ملي، unit=عبوة/قطعة. متحوّلش بنفسك',
+      ),
       note: z.string().max(200).optional(),
     }),
     async run(args, ctx): Promise<ToolOutput> {
@@ -265,7 +312,14 @@ export const WRITE_TOOLS: ToolDef[] = [
       if (!resolved.ok) return toolOutput({ error: resolved.error }, resolved.error)
 
       const item = resolved.row
-      const qty = Math.round(Number(args.qty) * 100) / 100
+      const said = readUnit(args.unit)
+      if (!unitFits(said, item.unit)) {
+        return toolOutput(
+          { error: `الوحدة «${args.unit}» مش مناسبة لـ${item.name} — بوحدة ${item.unit}` },
+          `الوحدة مش مناسبة — ${item.name} بيتقاس بـ${item.unit}`,
+        )
+      }
+      const qty = toMaterialUnits(Number(args.qty), said, item.unit)
       if (!Number.isFinite(qty) || qty <= 0) {
         return toolOutput({ error: 'حدد كمية أكبر من صفر' }, 'حدد كمية أكبر من صفر')
       }
@@ -309,8 +363,11 @@ export const WRITE_TOOLS: ToolDef[] = [
       from_packages: z.number().nonnegative().optional().describe('عدد عبوات القديمة الراجعة'),
       to_packages: z.number().nonnegative().optional().describe('عدد عبوات الجديدة المستلمة'),
       /** When the owner speaks in kilos, not in packs: "١٥ كيلو". */
-      from_qty: z.number().nonnegative().optional().describe('كمية القديمة الراجعة بالوحدة (جرام/لتر) لما العميل يقول «كيلو» مش «عبوة»'),
-      to_qty: z.number().nonnegative().optional().describe('كمية الجديدة المستلمة بالوحدة'),
+      from_qty: z.number().nonnegative().optional().describe('كمية القديمة الراجعة بالرقم اللي صاحب المطعم قاله، من غير تحويل'),
+      to_qty: z.number().nonnegative().optional().describe('كمية الجديدة المستلمة بالرقم اللي قاله، من غير تحويل'),
+      unit: z.enum(['kg', 'g', 'l', 'ml', 'unit']).optional().describe(
+        'وحدة from_qty/to_qty: kg=كيلو، g=جرام، l=لتر، ml=ملي. متحوّلش بنفسك',
+      ),
       package_price: z.number().nonnegative().optional().describe('سعر عبوة الجديدة'),
       supplier: z.string().optional(),
       note: z.string().max(200).optional(),
@@ -328,12 +385,14 @@ export const WRITE_TOOLS: ToolDef[] = [
       const toPackages = Math.max(0, Number(args.to_packages ?? 0))
       // The owner talks in kilos ("١٥ كيلو كوردن"), and a pack is rarely 1 kg —
       // cordon bleu comes in 12 kg packs. Reading "15" as 15 packs would record
-      // 180 kg returned. A direct quantity is honoured when given.
+      // 180 kg returned. A direct quantity is honoured when given, converted
+      // from the unit the owner spoke into each side's own unit.
+      const saidQtyUnit = readUnit(args.unit)
       const fromQty = Number(args.from_qty ?? 0) > 0
-        ? Number(args.from_qty)
+        ? toMaterialUnits(Number(args.from_qty), saidQtyUnit, fromItem.unit)
         : fromPackages * (fromItem.purchaseQty || 1)
       const toQty = Number(args.to_qty ?? 0) > 0
-        ? Number(args.to_qty)
+        ? toMaterialUnits(Number(args.to_qty), saidQtyUnit, toItem.unit)
         : toPackages * (toItem.purchaseQty || 1)
       if (fromQty === 0 && toQty === 0) {
         return toolOutput({ error: 'حدد كمية على الأقل في طرف' }, 'حدد كمية على الأقل في طرف')
