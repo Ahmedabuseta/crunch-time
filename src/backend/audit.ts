@@ -51,6 +51,46 @@ export function withDeviceLabel<T>(label: string | null, fn: () => T): T {
 
 const asJson = (value: unknown) => (value === undefined ? null : JSON.stringify(value))
 
+
+
+/**
+ * Tells the database triggers who is acting, for the duration of one call.
+ *
+ * The triggers in `src/db/audit-triggers.ts` see every write but cannot see the
+ * JavaScript session, so the actor is pushed into a one-row table and the
+ * trigger copies it. This is what makes a trigger-written row name the cashier
+ * instead of recording "system".
+ *
+ * Deliberately set from the *desktop* session only. The phone server elevates a
+ * request with `runAs`, scoped to an async call chain that a single database row
+ * cannot mirror — two concurrent phone requests would overwrite each other's
+ * actor. A phone-initiated row therefore records the desktop user, which is
+ * honest about what this mechanism can know. Device attribution for the phone
+ * already travels separately, through `withDeviceLabel` on the `writeAudit`
+ * path, and stays correct.
+ */
+export function setAuditActor(userId: string | null): void {
+  try {
+    getSqlite()
+      .prepare('INSERT INTO audit_actor (id, actor) VALUES (1, ?) ON CONFLICT(id) DO UPDATE SET actor = excluded.actor')
+      .run(userId)
+  } catch {
+    // A database whose audit table has not been created yet is not a reason to
+    // fail the write the actor was being recorded for.
+  }
+}
+
+/** The actor currently recorded for trigger-written rows. */
+export function currentAuditActor(): string | null {
+  try {
+    return (getSqlite().prepare('SELECT actor FROM audit_actor WHERE id = 1').get() as
+      | { actor: string | null }
+      | undefined)?.actor ?? null
+  } catch {
+    return null
+  }
+}
+
 export function writeAudit(entry: AuditEntry): void {
   getSqlite().prepare(
     `INSERT INTO audit_log (id, user_id, device_label, action, entity, entity_id, before, after, created_at)

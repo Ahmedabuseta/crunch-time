@@ -441,6 +441,17 @@ export interface ApiBridge {
       usage: { inputTokens: number; outputTokens: number }
     }>
   }
+  /** Who changed what, with before/after snapshots. */
+  audit: {
+    list: (filters?: {
+      entity?: string
+      entityId?: string
+      action?: string
+      from?: string
+      to?: string
+      limit?: number
+    }) => Promise<any[]>
+  }
   backup: {
     trigger: () => Promise<any>
     getStatus: () => Promise<any>

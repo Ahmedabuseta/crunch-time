@@ -317,6 +317,18 @@ contextBridge.exposeInMainWorld('api', {
     ask: (question: string) => invoke('analysis:ask', question),
   },
 
+  // ─── Audit log ────────────────────────────────────────────
+  audit: {
+    list: (filters?: {
+      entity?: string
+      entityId?: string
+      action?: string
+      from?: string
+      to?: string
+      limit?: number
+    }) => invoke('audit:list', filters),
+  },
+
   // ─── Backup ───────────────────────────────────────────────
   backup: {
     trigger: () => invoke('backup:trigger'),

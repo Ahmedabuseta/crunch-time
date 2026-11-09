@@ -183,8 +183,14 @@ describe('admin API parity over HTTP', () => {
     ]) {
       expect(actions.has(expected), `missing audit action ${expected}`).toBe(true)
     }
-    // Every entry carries a device label from the request.
-    expect(entries.every((e) => e.deviceLabel)).toBe(true)
+    // Every entry that the admin route itself wrote carries a device label.
+    // The table triggers add a second, lower-level trail of the same writes
+    // (`action: 'create' | 'update'`), and those come from the database, which
+    // knows nothing about HTTP headers — so the check is scoped to the named
+    // route-level actions above rather than to every row.
+    const routeEntries = entries.filter((e) => e.action.includes('.'))
+    expect(routeEntries.length).toBeGreaterThan(0)
+    expect(routeEntries.every((e) => e.deviceLabel)).toBe(true)
   })
 
   it('triggers a backup and reports its status', async () => {

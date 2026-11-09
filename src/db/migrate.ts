@@ -1,4 +1,5 @@
 import { getSqlite } from './client'
+import { installAuditTriggers } from './audit-triggers'
 import { migration as usersMigration } from './migrations/001-users'
 import { migration as catalogMigration } from './migrations/002-catalog'
 import { migration as operationsMigration } from './migrations/003-operations'
@@ -99,6 +100,17 @@ export function runMigrations() {
     // screen with no users (or any other logo screen, but no data behind it).
     legacyBackfillError = error instanceof Error ? error.message : String(error)
     console.error('[db] legacy backfills failed — startup continues:', error)
+  }
+
+  // Audit triggers last: every table now exists, so the snapshots are generated
+  // from the final schema. Recreated on each start, which is how a table that
+  // gained a column starts auditing it.
+  try {
+    installAuditTriggers(db)
+  } catch (error) {
+    // A missing audit trail is worse than nothing but not worth refusing to
+    // open the shop for; keep it in the startup log.
+    console.error('[db] audit triggers failed — startup continues:', error)
   }
 }
 
@@ -350,23 +362,42 @@ function applyLegacyBackfills(db: import('better-sqlite3').Database) {
   // product↔addon links and product costs for the current menu.
 
   // ─── Recompute product costs for whatever recipes exist ────
-  // Still valuable: runs after any seed so cost_price reflects current recipes.
-  const recomputeCost = db.prepare(`
-    SELECT COALESCE(SUM(c), 0) AS c FROM (
-      SELECT r.quantity_per_unit * i.cost_per_unit AS c
-      FROM recipes r JOIN ingredients i ON i.id = r.ingredient_id
-      WHERE r.product_id = ? AND r.ingredient_id IS NOT NULL
-      UNION ALL
-      SELECT r.quantity_per_unit * sri.quantity_per_unit * i.cost_per_unit AS c
-      FROM recipes r
-      JOIN sub_recipe_ingredients sri ON sri.sub_recipe_id = r.sub_recipe_id
-      JOIN ingredients i ON i.id = sri.ingredient_id
-      WHERE r.product_id = ?
-    )
-  `)
-  const updateCost = db.prepare('UPDATE products SET cost_price = ? WHERE id = ?')
-  const allProductIds = db.prepare('SELECT id FROM products').all() as { id: string }[]
-  for (const { id } of allProductIds) {
-    updateCost.run((recomputeCost.get(id, id) as { c: number }).c, id)
+  //
+  // This used to run on every start, and it silently overwrote the owner's own
+  // cost figures: a product priced by hand at 999 came back as 37.349 after the
+  // next launch, because the recipe sum was written over it unconditionally.
+  //
+  // It is now a one-shot migration. A cost recompute is only correct when the
+  // recipes or ingredient costs have just changed — which `recomputeProductCost`
+  // does at the point of change — not as a side effect of opening the app.
+  const recomputeDone = db
+    .prepare("SELECT id FROM schema_migrations WHERE id = 'recompute-product-costs'")
+    .get()
+  if (!recomputeDone) {
+    const recomputeCost = db.prepare(`
+      SELECT COALESCE(SUM(c), 0) AS c FROM (
+        SELECT r.quantity_per_unit * i.cost_per_unit AS c
+        FROM recipes r JOIN ingredients i ON i.id = r.ingredient_id
+        WHERE r.product_id = ? AND r.ingredient_id IS NOT NULL
+        UNION ALL
+        SELECT r.quantity_per_unit * sri.quantity_per_unit * i.cost_per_unit AS c
+        FROM recipes r
+        JOIN sub_recipe_ingredients sri ON sri.sub_recipe_id = r.sub_recipe_id
+        JOIN ingredients i ON i.id = sri.ingredient_id
+        WHERE r.product_id = ?
+      )
+    `)
+    const updateCost = db.prepare('UPDATE products SET cost_price = ? WHERE id = ?')
+    const allProductIds = db.prepare('SELECT id FROM products').all() as { id: string }[]
+
+    // One transaction: a machine that dies halfway through must not leave half
+    // the menu repriced and no record that the pass was meant to run.
+    db.transaction(() => {
+      for (const { id } of allProductIds) {
+        updateCost.run((recomputeCost.get(id, id) as { c: number }).c, id)
+      }
+    })()
+    db.prepare("INSERT INTO schema_migrations (id, applied_at) VALUES ('recompute-product-costs', ?)")
+      .run(new Date().toISOString())
   }
 }

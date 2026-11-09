@@ -5,6 +5,9 @@ import { ipcMain, app, BrowserWindow, dialog, powerSaveBlocker } from 'electron'
 import { appendFileSync, mkdirSync } from 'node:fs'
 import path from 'node:path'
 import { legacyBackfillError, runMigrations } from '../db/migrate'
+import { resumeAudit, suspendAudit } from '../db/audit-triggers'
+import { setAuditActor } from '../backend/audit'
+import { getSqlite } from '../db/client'
 import { seedDatabase } from '../db/seed'
 import { createBackend, Backend } from '../backend'
 import type { MenuExportOptions } from '../backend/menu-export'
@@ -109,7 +112,14 @@ export async function initBackend() {
       // startup log so a machine-only failure can be diagnosed from the file.
       recordStartupError('database backfills failed', legacyBackfillError)
     }
-    await seedDatabase()
+    // Seeding a brand-new install writes the whole demo menu. Audit it and the
+    // owner's log opens with ~2,500 entries for data nobody entered.
+    suspendAudit(getSqlite())
+    try {
+      await seedDatabase()
+    } finally {
+      resumeAudit(getSqlite())
+    }
   } catch (error) {
     recordStartupError('database initialisation failed', error)
   }
@@ -151,9 +161,13 @@ export function registerIpcHandlers() {
   // ─── Session: track current user for role-based access ─────
   ipcMain.handle('session:setUser', (_e, user: { id: string; role: string } | null) => {
     b.session.setUser(user)
+    // Trigger-written audit rows name this actor. Set here because the session
+    // lives in JavaScript and the triggers can only read the database.
+    setAuditActor(user?.id ?? null)
   })
   ipcMain.handle('session:clearUser', () => {
     b.session.clearUser()
+    setAuditActor(null)
   })
 
   // ═══════════════════════════════════════════════════════════
@@ -748,6 +762,12 @@ export function registerIpcHandlers() {
   ipcMain.handle('report:hourlyBreakdown', (_e, date?: string) =>
     b.reports.hourlyBreakdown(date)
   )
+
+  // ─── Audit log: who changed what ────────────────────────────
+  ipcMain.handle('audit:list', (
+    _e,
+    filters?: { entity?: string; entityId?: string; action?: string; from?: string; to?: string; limit?: number },
+  ) => b.audit.listAudit(filters))
 
   ipcMain.handle('report:peakAnalysis', (_e, opts?: { from?: string; to?: string; limit?: number }) =>
     b.reports.peakAnalysis(opts)

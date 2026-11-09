@@ -17,6 +17,7 @@ vi.mock('electron', () => ({
 
 const { runMigrations } = await import('../db/migrate')
 const { getSqlite, closeSqlite } = await import('../db/client')
+const { removeAuditTriggers } = await import('../db/audit-triggers')
 
 afterAll(() => {
   // Windows locks open files — close the connection before
@@ -31,6 +32,11 @@ describe('driver_status upgrade on an existing database', () => {
     const sqlite = getSqlite()
 
     // Stand in for a pre-feature production database: same table, no column.
+    //
+    // The audit triggers from `runMigrations` reference every column by name, so
+    // a schema change has to happen without them — the same rule a migration
+    // here follows when it drops one.
+    removeAuditTriggers(sqlite)
     sqlite.exec('ALTER TABLE orders DROP COLUMN driver_status')
     sqlite.exec(`
       INSERT INTO users (id, name, pin_hash, role, active, created_at, hourly_rate, commission_rate)

@@ -15,6 +15,7 @@ import { OrderHistory } from '@/components/OrderHistory'
 import { DeliveryPage } from '@/components/pages/DeliveryPage'
 import { Reports } from '@/components/Reports'
 import { AnalysisPage } from '@/components/pages/AnalysisPage'
+import { AuditPage } from '@/components/pages/AuditPage'
 import { ProductsPage } from '@/components/pages/ProductsPage'
 import { CategoriesPage } from '@/components/pages/CategoriesPage'
 import { AddonsPage } from '@/components/pages/AddonsPage'
@@ -190,6 +191,7 @@ function App() {
       case 'shifts': return <ShiftsPage onOpenShiftReport={(id) => { setShiftReportId(id); setPage('shift-report') }} />
       case 'shift-report': return <ShiftReportPage shiftId={shiftReportId} onBack={() => setPage('shifts')} />
       case 'cash-drawer': return <CashDrawerPage />
+      case 'audit': return <AuditPage />
       case 'settings': return <SettingsPage />
       default: return <ProductGrid category={category} />
     }
