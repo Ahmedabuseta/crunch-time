@@ -6,6 +6,7 @@ import { appendFileSync, mkdirSync } from 'node:fs'
 import path from 'node:path'
 import { legacyBackfillError, runMigrations } from '../db/migrate'
 import { resumeAudit, suspendAudit } from '../db/audit-triggers'
+import { recomputeAllProductCosts } from '../db/product-cost'
 import { setAuditActor } from '../backend/audit'
 import { getSqlite } from '../db/client'
 import { seedDatabase } from '../db/seed'
@@ -120,6 +121,10 @@ export async function initBackend() {
     } finally {
       resumeAudit(getSqlite())
     }
+    // The seed writes recipes, and a product's cost is derived from them — so
+    // without this a fresh install runs with every cost at 0 until the *next*
+    // launch. `runMigrations` already did this pass, before the recipes existed.
+    recomputeAllProductCosts()
   } catch (error) {
     recordStartupError('database initialisation failed', error)
   }

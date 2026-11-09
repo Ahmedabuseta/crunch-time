@@ -94,8 +94,9 @@ beforeAll(async () => {
   runMigrations()
   await seedDatabase()
 
-  // The seed leaves cost_price at 0 (the owner prices the menu in), so the
-  // margin assertions pin the three products they use.
+  // Cost is derived from a product's recipe, so a product with no recipe has
+  // cost 0. These three are pinned directly to make the margin assertions exact
+  // and independent of what the seed's recipes happen to cost.
   const setCost = getSqlite().prepare('UPDATE products SET cost_price = ? WHERE id = ?')
   setCost.run(KOFTA_COST, KOFTA)
   setCost.run(SAUSAGE_COST, SAUSAGE)

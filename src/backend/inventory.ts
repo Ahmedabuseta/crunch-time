@@ -2,7 +2,7 @@
 import { and, asc, desc, eq, sql } from 'drizzle-orm'
 import { getDb, getSqlite } from '../db/client'
 import * as schema from '../db/schema'
-import { deductInventory, expandRecipes, listRecipeRows, now, recomputeProductCost, r2, uuid } from './shared'
+import { deductInventory, expandRecipes, listRecipeRows, now, recomputeForIngredient, recomputeForSubRecipe, recomputeProductCost, r2, uuid } from './shared'
 import { hardDelete } from './shared'
 import { localDayEnd, localDayStart } from './day-range'
 import { requireAdmin } from './session'
@@ -200,18 +200,10 @@ export function updateIngredient(id: string, data: any) {
     patch.storage = normalizeStorage(patch.storage, patch.category ?? current?.category)
   }
   db.update(ingredients).set(patch).where(eq(ingredients.id, id)).run()
-  // A cost change must reach product costs immediately — the
-  // startup recompute is not enough once the app is running.
+  // A cost change must reach product costs immediately — a product's cost is
+  // derived from its recipe, and the recipe just changed underneath it.
   if (data?.costPerUnit != null) {
-    const s = getSqlite()
-    const productIds = s.prepare(`
-      SELECT DISTINCT product_id FROM recipes WHERE ingredient_id = ?
-      UNION
-      SELECT DISTINCT r.product_id FROM recipes r
-      JOIN sub_recipe_ingredients sri ON sri.sub_recipe_id = r.sub_recipe_id
-      WHERE sri.ingredient_id = ?
-    `).all(id, id) as { product_id: string }[]
-    for (const { product_id } of productIds) recomputeProductCost(product_id)
+    recomputeForIngredient(id)
   }
   return { ok: true }
 }
@@ -404,21 +396,30 @@ export function upsertSubRecipeIngredient(data: { id?: string; subRecipeId: stri
   requireAdmin()
   const db = getDb()
   if (data.id) {
+    const before = db.select({ subRecipeId: subRecipeIngredients.subRecipeId })
+      .from(subRecipeIngredients).where(eq(subRecipeIngredients.id, data.id)).get()
     db.update(subRecipeIngredients).set({ ingredientId: data.ingredientId, quantityPerUnit: data.quantityPerUnit })
       .where(eq(subRecipeIngredients.id, data.id)).run()
+    // A sub-recipe's contents are part of every product that includes it.
+    recomputeForSubRecipe(before?.subRecipeId ?? data.subRecipeId)
     return { id: data.id }
   }
   const id = uuid()
   db.insert(subRecipeIngredients).values({ id, subRecipeId: data.subRecipeId, ingredientId: data.ingredientId, quantityPerUnit: data.quantityPerUnit }).run()
+  recomputeForSubRecipe(data.subRecipeId)
   return { id }
 }
 
 export function deleteSubRecipeIngredient(id: string) {
   requireAdmin()
   const db = getDb()
-  const row = db.select({ id: subRecipeIngredients.id }).from(subRecipeIngredients).where(eq(subRecipeIngredients.id, id)).get()
+  const row = db.select({ id: subRecipeIngredients.id, subRecipeId: subRecipeIngredients.subRecipeId })
+    .from(subRecipeIngredients).where(eq(subRecipeIngredients.id, id)).get()
   if (!row) return { ok: false, error: 'ارتباط المادة غير موجود' }
   db.delete(subRecipeIngredients).where(eq(subRecipeIngredients.id, id)).run()
+  // Removing a line changes the sub-recipe's cost, and with it every product
+  // that includes it.
+  recomputeForSubRecipe(row.subRecipeId)
   return { ok: true }
 }
 

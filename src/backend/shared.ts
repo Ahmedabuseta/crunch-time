@@ -20,23 +20,20 @@ export function getOpenShiftId(dataShiftId?: string | null): string | null {
   return row?.id || dataShiftId || null
 }
 
-// Recalculate a product's cost_price from its recipe (Σ quantity × ingredient cost)
-export function recomputeProductCost(productId: string) {
-  const s = getSqlite()
-  const rows = s.prepare(`
-    SELECT r.quantity_per_unit AS qty, i.cost_per_unit AS unitCost
-    FROM recipes r JOIN ingredients i ON i.id = r.ingredient_id
-    WHERE r.product_id = ? AND r.ingredient_id IS NOT NULL
-    UNION ALL
-    SELECT r.quantity_per_unit * sri.quantity_per_unit AS qty, i.cost_per_unit AS unitCost
-    FROM recipes r
-    JOIN sub_recipe_ingredients sri ON sri.sub_recipe_id = r.sub_recipe_id
-    JOIN ingredients i ON i.id = sri.ingredient_id
-    WHERE r.product_id = ? AND r.sub_recipe_id IS NOT NULL
-  `).all(productId, productId) as any[]
-  const cost = rows.reduce((sum, r) => sum + (Number(r.qty) || 0) * (Number(r.unitCost) || 0), 0)
-  s.prepare('UPDATE products SET cost_price = ? WHERE id = ?').run(r2(cost), productId)
-}
+// Product cost is derived from the recipe — the single source of truth.
+// The implementation lives in `db/product-cost.ts` so the startup recompute in
+// the migration path and the write paths here share one definition instead of
+// two copies that can drift.
+export {
+  productCostFromRecipe,
+  recomputeAllProductCosts,
+  productsUsingIngredient,
+  productsUsingSubRecipe,
+  recomputeProducts,
+  recomputeForIngredient,
+  recomputeForSubRecipe,
+  writeProductCost as recomputeProductCost,
+} from '../db/product-cost'
 
 // Expand recipe rows (ingredients AND sub-recipes) into flat ingredient consumptions
 export function expandRecipes(rows: { ingredient_id?: string | null; sub_recipe_id?: string | null; quantity_per_unit: number }[]): { ingredientId: string; qty: number }[] {

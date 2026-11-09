@@ -44,11 +44,13 @@ function cleanProduct(data: any, partial: boolean): Record<string, unknown> {
   if (!partial || data.emoji !== undefined) out.emoji = String(data.emoji ?? '').trim() || '🍽️'
   if (!partial || data.description !== undefined) out.description = String(data.description ?? '').trim()
 
-  if (data.costPrice !== undefined) {
-    const cost = Number(data.costPrice)
-    if (!Number.isFinite(cost) || cost < 0) throw new Error('تكلفة المنتج غير صالحة')
-    out.costPrice = cost
-  }
+  // `costPrice` is deliberately not accepted here.
+  //
+  // A product's cost is derived from its recipe — Σ quantity × ingredient cost —
+  // and that recipe is the single source of truth. Letting a caller write the
+  // total directly would create a second source that the next recipe edit
+  // silently overwrites, which is exactly the confusion this replaces.
+  // `recomputeProductCost` is the only writer of `cost_price`.
   if (data.active !== undefined) out.active = Boolean(data.active)
   if (data.supportsRollback !== undefined) out.supportsRollback = Boolean(data.supportsRollback)
   return out

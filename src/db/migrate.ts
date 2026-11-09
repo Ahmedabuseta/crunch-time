@@ -1,5 +1,6 @@
 import { getSqlite } from './client'
 import { installAuditTriggers } from './audit-triggers'
+import { recomputeAllProductCosts } from './product-cost'
 import { migration as usersMigration } from './migrations/001-users'
 import { migration as catalogMigration } from './migrations/002-catalog'
 import { migration as operationsMigration } from './migrations/003-operations'
@@ -361,43 +362,20 @@ function applyLegacyBackfills(db: import('better-sqlite3').Database) {
   // backfills can only attach the wrong data. seedDatabase owns recipes,
   // product↔addon links and product costs for the current menu.
 
-  // ─── Recompute product costs for whatever recipes exist ────
+  // ─── Recompute product costs from their recipes ─────────────
   //
-  // This used to run on every start, and it silently overwrote the owner's own
-  // cost figures: a product priced by hand at 999 came back as 37.349 after the
-  // next launch, because the recipe sum was written over it unconditionally.
+  // The recipe is the single source of truth for a product's cost: the stored
+  // `cost_price` is derived (Σ quantity × ingredient cost), never entered by
+  // hand. So this runs on every start, on purpose.
   //
-  // It is now a one-shot migration. A cost recompute is only correct when the
-  // recipes or ingredient costs have just changed — which `recomputeProductCost`
-  // does at the point of change — not as a side effect of opening the app.
-  const recomputeDone = db
-    .prepare("SELECT id FROM schema_migrations WHERE id = 'recompute-product-costs'")
-    .get()
-  if (!recomputeDone) {
-    const recomputeCost = db.prepare(`
-      SELECT COALESCE(SUM(c), 0) AS c FROM (
-        SELECT r.quantity_per_unit * i.cost_per_unit AS c
-        FROM recipes r JOIN ingredients i ON i.id = r.ingredient_id
-        WHERE r.product_id = ? AND r.ingredient_id IS NOT NULL
-        UNION ALL
-        SELECT r.quantity_per_unit * sri.quantity_per_unit * i.cost_per_unit AS c
-        FROM recipes r
-        JOIN sub_recipe_ingredients sri ON sri.sub_recipe_id = r.sub_recipe_id
-        JOIN ingredients i ON i.id = sri.ingredient_id
-        WHERE r.product_id = ?
-      )
-    `)
-    const updateCost = db.prepare('UPDATE products SET cost_price = ? WHERE id = ?')
-    const allProductIds = db.prepare('SELECT id FROM products').all() as { id: string }[]
-
-    // One transaction: a machine that dies halfway through must not leave half
-    // the menu repriced and no record that the pass was meant to run.
-    db.transaction(() => {
-      for (const { id } of allProductIds) {
-        updateCost.run((recomputeCost.get(id, id) as { c: number }).c, id)
-      }
-    })()
-    db.prepare("INSERT INTO schema_migrations (id, applied_at) VALUES ('recompute-product-costs', ?)")
-      .run(new Date().toISOString())
-  }
+  // An earlier version of this file made it a one-shot migration, after a manual
+  // cost seemed to be overwritten. That reading was wrong: there is no manual
+  // cost to protect, and skipping the pass let a stale figure survive a crash or
+  // a restore. Running it each time is self-healing — the menu's cost always
+  // matches the recipes it is made from, whatever happened before the launch.
+  //
+  // The seed writes its recipes *after* migrations run, so the bootstrap calls
+  // the same function once more; a fresh install would otherwise run with every
+  // cost at zero until its second launch.
+  recomputeAllProductCosts(db)
 }
